@@ -20,6 +20,8 @@ let urls = [];
 let subConverter = "SUBAPI.cmliussss.net"; //在线订阅转换后端，目前使用CM的订阅转换功能。支持自建psub 可自行搭建https://github.com/bulianglin/psub
 let subConfig = "https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini"; //订阅配置文件
 let subProtocol = 'https';
+const subscriptionNotificationCache = new Map();
+const subscriptionNotificationCooldown = 10 * 1000;
 
 export default {
 	async fetch(request, env) {
@@ -90,8 +92,11 @@ export default {
 			}
 			MainData = 自建节点;
 			urls = await ADD(订阅链接);
-			await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
 			const isSubConverterRequest = request.headers.get('subconverter-request') || request.headers.get('subconverter-version') || userAgent.includes('subconverter');
+			const isInternalSubscriptionRequest = token === fakeToken || isSubConverterRequest;
+			if (!isInternalSubscriptionRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request)) {
+				await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+			}
 			let 订阅格式 = 'base64';
 			if (!(userAgent.includes('null') || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase()))) {
 				if (userAgent.includes('sing-box') || userAgent.includes('singbox') || url.searchParams.has('sb') || url.searchParams.has('singbox')) {
@@ -263,6 +268,28 @@ async function nginx() {
 	</html>
 	`
 	return text;
+}
+
+function shouldSendSubscriptionNotification(request) {
+	const now = Date.now();
+	const url = new URL(request.url);
+	const key = [
+		request.headers.get('CF-Connecting-IP') || 'unknown',
+		request.headers.get('User-Agent') || 'unknown',
+		url.pathname,
+		url.search
+	].join('|');
+	const lastNotification = subscriptionNotificationCache.get(key);
+
+	if (lastNotification && now - lastNotification < subscriptionNotificationCooldown) return false;
+	subscriptionNotificationCache.set(key, now);
+
+	if (subscriptionNotificationCache.size > 200) {
+		for (const [cacheKey, timestamp] of subscriptionNotificationCache) {
+			if (now - timestamp >= subscriptionNotificationCooldown) subscriptionNotificationCache.delete(cacheKey);
+		}
+	}
+	return true;
 }
 
 async function sendMessage(type, ip, add_data = "") {
@@ -593,7 +620,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					button { letter-spacing: 0; }
 					button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
-					.header-inner { width: min(1280px, calc(100% - 40px)); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+					.header-inner { width: min(1440px, calc(100% - 40px)); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
 					.brand-mark { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; background: #143f32; color: #fff; }
 					.brand-mark svg { width: 20px; height: 20px; }
@@ -602,7 +629,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
-					main { width: min(1280px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 64px; }
+					main { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 64px; }
 					.page-intro { display: flex; align-items: end; justify-content: space-between; gap: 32px; margin-bottom: 30px; }
 					.eyebrow { margin: 0 0 8px; color: var(--green); font-size: 12px; font-weight: 800; text-transform: uppercase; }
 					h1 { margin: 0; font-size: 42px; line-height: 1.13; letter-spacing: 0; }
@@ -614,15 +641,25 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 					.section-heading h2 { margin: 0; font-size: 19px; }
 					.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 26px; align-items: start; }
+					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 26px; align-items: start; }
 					.workspace-main, .workspace-sidebar { min-width: 0; }
 					.workspace-grid .section { margin-top: 0; }
 					.workspace-sidebar { display: flex; flex-direction: column; gap: 26px; }
 					.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; gap: 10px; }
+					.workspace-sidebar .compact-subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 					.workspace-sidebar .subscription-card { padding: 14px; }
 					.workspace-sidebar .subscription-head { min-height: 42px; }
 					.workspace-sidebar .format-icon { width: 34px; height: 34px; }
 					.workspace-sidebar .link-row { margin-top: 11px; }
+					.compact-subscription-grid .subscription-card { padding: 12px; }
+					.compact-subscription-grid .subscription-head { gap: 8px; min-height: 34px; }
+					.compact-subscription-grid .format-icon { width: 32px; height: 32px; }
+					.compact-subscription-grid .format-icon svg { width: 17px; height: 17px; }
+					.compact-subscription-grid .subscription-head h3 { margin-top: 0; font-size: 13px; }
+					.compact-subscription-grid .subscription-head p, .compact-subscription-grid .link-row code { display: none; }
+					.compact-subscription-grid .link-row { grid-template-columns: minmax(0, 1fr) 34px; }
+					.compact-subscription-grid .link-row .copy-button { grid-column: 1; grid-row: 1; }
+					.compact-subscription-grid .link-row .icon-button { grid-column: 2; grid-row: 1; }
 					.workspace-sidebar .settings-grid { grid-template-columns: 1fr; }
 					.workspace-sidebar .setting + .setting { border-top: 1px solid var(--line-soft); border-left: 0; }
 					.subscription-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -690,20 +727,21 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 980px) {
 						.workspace-grid { grid-template-columns: 1fr; }
-						.workspace-sidebar .subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 					}
 					@media (max-width: 760px) {
-						.header-inner, main { width: min(100% - 28px, 1280px); }
+						.header-inner, main { width: min(100% - 28px, 1440px); }
 						main { padding-top: 30px; }
 						.page-intro { display: block; }
 						.token-chip { max-width: none; margin-top: 18px; }
 						.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; }
+						.workspace-sidebar .compact-subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 						.subscription-grid, .settings-grid { grid-template-columns: 1fr; }
 						.setting + .setting { border-top: 1px solid var(--line-soft); border-left: 0; }
 						.page-footer { flex-direction: column; }
 					}
 					@media (max-width: 480px) {
 						h1 { font-size: 32px; }
+						.workspace-sidebar .compact-subscription-grid { grid-template-columns: 1fr; }
 						.online { width: 9px; height: 9px; padding: 0; border: 0; font-size: 0; background: #21a464; box-shadow: 0 0 0 4px rgba(33, 164, 100, .13); }
 						.online::before { display: none; }
 						.subscription-card { padding: 15px; }
@@ -757,7 +795,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						<aside class="workspace-sidebar" aria-label="订阅与转换配置">
 							<section class="section" aria-labelledby="owner-title">
 								<div class="section-heading"><div><h2 id="owner-title">我的订阅</h2><p>复制链接，或扫码导入客户端</p></div></div>
-								<div class="subscription-grid">${renderSubscriptions(false)}</div>
+								<div class="subscription-grid compact-subscription-grid">${renderSubscriptions(false)}</div>
 							</section>
 
 							<details class="guest-panel">
