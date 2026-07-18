@@ -112,6 +112,12 @@
 | SUBCONFIG | [https://raw.github.../ACL4SSR_Online_MultiCountry.ini](https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini) | ❌ | clash、singbox等 订阅转换配置文件 | 
 
 
+### 保存与版本恢复
+
+- 管理页输入内容只保存为浏览器本地草稿，点击“保存更改”或按 `Ctrl+S` 后才写入 KV；
+- 每次写入 `LINK.txt` 前，旧内容会保存到 `LINK.backup.txt`，管理页可通过“上次版本”载入；
+- `LINK.backup.txt` 只保留最近一版，不是完整的历史版本记录。
+
 ## ⚠️ 注意事项
 项目中，TGTOKEN和TGID在使用时需要先到Telegram注册并获取。其中，TGTOKEN是telegram bot的凭证，TGID是用来接收通知的telegram用户或者组的id。
 

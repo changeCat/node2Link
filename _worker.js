@@ -523,20 +523,60 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
 async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 	const url = new URL(request.url);
 	const metaKey = txt + '.meta.json';
+	const backupKey = txt.endsWith('.txt') ? txt.slice(0, -4) + '.backup.txt' : txt + '.backup';
+	const backupMetaKey = txt.endsWith('.txt') ? txt.slice(0, -4) + '.backup.meta.json' : txt + '.backup.meta.json';
 	try {
 		if (request.method === "POST") {
 			if (!env.KV) return new Response("未绑定 KV 命名空间", { status: 400 });
 			try {
+				if (request.headers.get('X-Node2Link-Action') === 'get-backup') {
+					const [backupContent, backupMetadataText] = await Promise.all([
+						env.KV.get(backupKey),
+						env.KV.get(backupMetaKey)
+					]);
+					if (backupContent === null || backupContent === undefined) {
+						return new Response(JSON.stringify({ ok: false, message: '暂无上次保存版本' }), {
+							status: 404,
+							headers: { "Content-Type": "application/json;charset=utf-8" }
+						});
+					}
+					let backupMetadata = null;
+					try { backupMetadata = backupMetadataText ? JSON.parse(backupMetadataText) : null; }
+					catch (error) { console.error('读取备份元数据时发生错误:', error); }
+					return new Response(JSON.stringify({ ok: true, content: backupContent, metadata: backupMetadata }), {
+						headers: { "Content-Type": "application/json;charset=utf-8" }
+					});
+				}
+
 				const content = await request.text();
+				const [previousContent, previousMetadataText] = await Promise.all([
+					env.KV.get(txt),
+					env.KV.get(metaKey)
+				]);
 				const metadata = {
 					savedAt: new Date().toISOString(),
 					bytes: new TextEncoder().encode(content).length,
 					lines: content ? content.split(/\r?\n/).length : 0
 				};
-				await Promise.all([
+				const writes = [
 					env.KV.put(txt, content),
 					env.KV.put(metaKey, JSON.stringify(metadata))
-				]);
+				];
+				if (previousContent !== null && previousContent !== undefined) {
+					let previousMetadata = null;
+					try { previousMetadata = previousMetadataText ? JSON.parse(previousMetadataText) : null; }
+					catch (error) { console.error('读取上一版元数据时发生错误:', error); }
+					if (!previousMetadata) {
+						previousMetadata = {
+							savedAt: '',
+							bytes: new TextEncoder().encode(previousContent).length,
+							lines: previousContent ? previousContent.split(/\r?\n/).length : 0
+						};
+					}
+					writes.push(env.KV.put(backupKey, previousContent));
+					writes.push(env.KV.put(backupMetaKey, JSON.stringify(previousMetadata)));
+				}
+				await Promise.all(writes);
 				return new Response(JSON.stringify({ ok: true, metadata }), {
 					headers: { "Content-Type": "application/json;charset=utf-8" }
 				});
@@ -842,8 +882,9 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 									<div class="editor-actions">
 										<button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
 										<button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
+										<button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
 										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份</span></button>
-										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>恢复</span></button>
+										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
 										<input id="restoreInput" type="file" accept=".txt,.conf,.list,text/plain" hidden>
 										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()"><i data-lucide="save"></i><span>保存更改</span></button>
 									</div>
@@ -910,11 +951,11 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 
 				<script>
 					var toastTimer;
-					var saveTimer;
 					var originalContent = "";
 					var undoStack = [];
 					var pendingDedupeContent = "";
 					var savedMetadata = ${JSON.stringify(savedMetadata)};
+					var draftStorageKey = "node2link:draft:" + window.location.host + window.location.pathname;
 
 					function initializeIcons() {
 						if (window.lucide) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } });
@@ -1062,11 +1103,37 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						document.getElementById("undoButton").disabled = undoStack.length === 0;
 					}
 
+					function storeLocalDraft(value) {
+						try { window.localStorage.setItem(draftStorageKey, value); }
+						catch (error) { console.warn("无法保存本地草稿:", error); }
+					}
+
+					function clearLocalDraft() {
+						try { window.localStorage.removeItem(draftStorageKey); }
+						catch (error) { console.warn("无法清除本地草稿:", error); }
+					}
+
+					function restoreLocalDraft(textarea) {
+						try {
+							var draft = window.localStorage.getItem(draftStorageKey);
+							if (draft === null || draft === originalContent) return;
+							if (window.confirm("发现尚未保存的本地草稿，是否恢复到编辑器？")) {
+								textarea.value = draft;
+								updateEditorInsights();
+								setSaveState("已恢复本地草稿，尚未保存", "dirty");
+							} else {
+								clearLocalDraft();
+							}
+						} catch (error) {
+							console.warn("无法读取本地草稿:", error);
+						}
+					}
+
 					function markEditorDirty(message) {
 						updateEditorInsights();
 						setSaveState(message || "有未保存更改", "dirty");
-						clearTimeout(saveTimer);
-						saveTimer = setTimeout(saveContent, 5000);
+						var textarea = document.getElementById("content");
+						if (textarea) storeLocalDraft(textarea.value);
 					}
 
 					function applyDedupe() {
@@ -1113,6 +1180,31 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						}).catch(function () { showToast("无法读取备份文件"); });
 					}
 
+					function loadLastSavedVersion() {
+						var textarea = document.getElementById("content");
+						if (!textarea) return;
+						fetch(window.location.href, {
+							method: "POST",
+							headers: { "X-Node2Link-Action": "get-backup" },
+							cache: "no-cache"
+						})
+							.then(function (response) {
+								return response.json().then(function (result) {
+									if (!response.ok) throw new Error(result.message || "无法读取上次版本");
+									return result;
+								});
+							})
+							.then(function (result) {
+								var savedAt = result.metadata && result.metadata.savedAt ? new Date(result.metadata.savedAt).toLocaleString() : "时间未知";
+								if (!window.confirm("将上次保存版本（" + savedAt + "）载入编辑器？当前内容可通过撤销恢复。")) return;
+								pushUndoSnapshot(textarea.value);
+								textarea.value = result.content;
+								markEditorDirty("上次版本已载入，尚未保存");
+								showToast("已载入上次保存版本");
+							})
+							.catch(function (error) { showToast(error.message); });
+					}
+
 					function formatBytes(bytes) {
 						if (bytes < 1024) return bytes + " B";
 						return (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + " KB";
@@ -1138,17 +1230,25 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						var button = document.getElementById("saveButton");
 						if (!textarea || !button || button.disabled) return Promise.resolve();
 						if (textarea.value === originalContent) { setSaveState("已同步", ""); return Promise.resolve(); }
-						clearTimeout(saveTimer);
+						var contentToSave = textarea.value;
 						button.disabled = true;
 						button.querySelector("span").textContent = "保存中";
 						setSaveState("正在保存…", "");
-						return fetch(window.location.href, { method: "POST", body: textarea.value, headers: { "Content-Type": "text/plain;charset=UTF-8" }, cache: "no-cache" })
+						return fetch(window.location.href, { method: "POST", body: contentToSave, headers: { "Content-Type": "text/plain;charset=UTF-8" }, cache: "no-cache" })
 							.then(function (response) { if (!response.ok) throw new Error("HTTP " + response.status); return response.json(); })
 							.then(function (result) {
-								originalContent = textarea.value;
+								originalContent = contentToSave;
 								updateSavedMetadata(result.metadata);
-								setSaveState("刚刚已保存", "");
-								showToast("节点与订阅源已保存");
+								if (textarea.value === contentToSave) {
+									clearLocalDraft();
+									setSaveState("刚刚已保存", "");
+									showToast("节点与订阅源已保存");
+								} else {
+									storeLocalDraft(textarea.value);
+									updateEditorInsights();
+									setSaveState("保存期间有新修改，请再次保存", "dirty");
+									showToast("旧内容已保存，新修改尚未保存");
+								}
 							})
 							.catch(function (error) { setSaveState("保存失败：" + error.message, "error"); showToast("保存失败，请稍后重试"); })
 							.finally(function () { button.disabled = false; button.querySelector("span").textContent = "保存更改"; });
@@ -1162,10 +1262,10 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							originalContent = textarea.value;
 							updateEditorInsights();
 							updateSavedMetadata(savedMetadata);
+							restoreLocalDraft(textarea);
 							textarea.addEventListener("input", function () {
 								markEditorDirty("有未保存更改");
 							});
-							textarea.addEventListener("blur", function () { if (textarea.value !== originalContent) saveContent(); });
 							document.getElementById("restoreInput").addEventListener("change", function (event) {
 								restoreBackup(event.target.files[0]);
 								event.target.value = "";
@@ -1181,6 +1281,14 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); saveContent(); }
 						if (event.key === "Escape" && document.getElementById("qrDialog").open) closeQR();
 						if (event.key === "Escape" && document.getElementById("toolDialog").open) closeToolDialog();
+					});
+
+					window.addEventListener("beforeunload", function (event) {
+						var textarea = document.getElementById("content");
+						if (textarea && textarea.value !== originalContent) {
+							event.preventDefault();
+							event.returnValue = "";
+						}
 					});
 				</script>
 			</body>
