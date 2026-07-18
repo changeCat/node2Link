@@ -593,7 +593,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					button { letter-spacing: 0; }
 					button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
-					.header-inner { width: min(1180px, calc(100% - 40px)); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+					.header-inner { width: min(1280px, calc(100% - 40px)); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
 					.brand-mark { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; background: #143f32; color: #fff; }
 					.brand-mark svg { width: 20px; height: 20px; }
@@ -602,7 +602,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
-					main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 64px; }
+					main { width: min(1280px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 64px; }
 					.page-intro { display: flex; align-items: end; justify-content: space-between; gap: 32px; margin-bottom: 30px; }
 					.eyebrow { margin: 0 0 8px; color: var(--green); font-size: 12px; font-weight: 800; text-transform: uppercase; }
 					h1 { margin: 0; font-size: 42px; line-height: 1.13; letter-spacing: 0; }
@@ -614,6 +614,17 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 					.section-heading h2 { margin: 0; font-size: 19px; }
 					.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 26px; align-items: start; }
+					.workspace-main, .workspace-sidebar { min-width: 0; }
+					.workspace-grid .section { margin-top: 0; }
+					.workspace-sidebar { display: flex; flex-direction: column; gap: 26px; }
+					.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; gap: 10px; }
+					.workspace-sidebar .subscription-card { padding: 14px; }
+					.workspace-sidebar .subscription-head { min-height: 42px; }
+					.workspace-sidebar .format-icon { width: 34px; height: 34px; }
+					.workspace-sidebar .link-row { margin-top: 11px; }
+					.workspace-sidebar .settings-grid { grid-template-columns: 1fr; }
+					.workspace-sidebar .setting + .setting { border-top: 1px solid var(--line-soft); border-left: 0; }
 					.subscription-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 					.subscription-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 3px 12px rgba(26, 46, 35, .025); }
 					.subscription-head { display: flex; gap: 12px; min-height: 48px; }
@@ -659,7 +670,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.save-state.error { color: var(--danger); }
 					.primary-button { min-height: 36px; padding: 0 15px; }
 					.primary-button:disabled { cursor: wait; opacity: .64; }
-					.editor { width: 100%; height: min(52vh, 520px); min-height: 340px; display: block; resize: vertical; margin: 0; padding: 18px; border: 0; background: #fbfcfa; color: #25312b; font: 13px/1.75 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+					.editor { width: 100%; height: calc(100vh - 300px); min-height: 560px; max-height: 760px; display: block; resize: vertical; margin: 0; padding: 18px; border: 0; background: #fbfcfa; color: #25312b; font: 13px/1.75 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
 					.empty-state { padding: 34px; border: 1px dashed #ccd3cc; border-radius: 8px; background: rgba(255,255,255,.6); text-align: center; }
 					.empty-state svg { width: 30px; height: 30px; margin-bottom: 8px; color: var(--amber); }
 					.empty-state h3 { margin: 0 0 7px; font-size: 15px; }
@@ -677,11 +688,16 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.toast { position: fixed; z-index: 10; left: 50%; bottom: 24px; max-width: calc(100vw - 32px); display: flex; align-items: center; gap: 9px; padding: 10px 14px; border-radius: 6px; background: #17211d; color: #fff; box-shadow: 0 10px 28px rgba(20, 35, 27, .22); font-size: 13px; opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .2s ease, transform .2s ease; }
 					.toast.show { opacity: 1; transform: translate(-50%, 0); }
 					.toast svg { width: 16px; color: #62d297; }
+					@media (max-width: 980px) {
+						.workspace-grid { grid-template-columns: 1fr; }
+						.workspace-sidebar .subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+					}
 					@media (max-width: 760px) {
-						.header-inner, main { width: min(100% - 28px, 1180px); }
+						.header-inner, main { width: min(100% - 28px, 1280px); }
 						main { padding-top: 30px; }
 						.page-intro { display: block; }
 						.token-chip { max-width: none; margin-top: 18px; }
+						.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; }
 						.subscription-grid, .settings-grid { grid-template-columns: 1fr; }
 						.setting + .setting { border-top: 1px solid var(--line-soft); border-left: 0; }
 						.page-footer { flex-direction: column; }
@@ -697,7 +713,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						.summary-meta span { display: none; }
 						.editor-toolbar { align-items: flex-start; }
 						.editor-meta { flex-direction: column; align-items: flex-start; gap: 5px; }
-						.editor { min-height: 390px; padding: 14px; }
+						.editor { height: 56vh; min-height: 430px; padding: 14px; }
 					}
 					@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
 				</style>
@@ -724,42 +740,46 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						<div class="token-chip"><i data-lucide="shield-check"></i><span>当前入口</span><code>/${escapeHTML(mytoken)}</code></div>
 					</section>
 
-					<section class="section" aria-labelledby="owner-title">
-						<div class="section-heading"><div><h2 id="owner-title">我的订阅</h2><p>复制链接，或扫码导入到对应客户端</p></div></div>
-						<div class="subscription-grid">${renderSubscriptions(false)}</div>
-					</section>
+					<div class="workspace-grid">
+						<section class="section workspace-main" aria-labelledby="editor-title">
+							<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
+							${hasKV ? `
+							<div class="editor-shell">
+								<div class="editor-toolbar">
+									<div class="editor-meta"><span><i data-lucide="list"></i><b id="lineCount">0</b> 行</span><span id="saveStatus" class="save-state">已同步</span></div>
+									<button class="primary-button" id="saveButton" type="button" onclick="saveContent()"><i data-lucide="save"></i><span>保存更改</span></button>
+								</div>
+								<textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
+							</div>` : `
+							<div class="empty-state"><i data-lucide="database-zap"></i><h3>尚未绑定 KV 命名空间</h3><p>请在 Cloudflare 中绑定变量名为 KV 的命名空间后再编辑订阅源。</p></div>`}
+						</section>
 
-					<details class="guest-panel">
-						<summary>
-							<span class="summary-label"><i data-lucide="users"></i>访客订阅</span>
-							<span class="summary-meta"><span>仅允许获取订阅</span><i data-lucide="chevron-down"></i></span>
-						</summary>
-						<div class="guest-body">
-							<div class="guest-note"><i data-lucide="shield-alert"></i><span>访客链接无法进入本管理页，适合分享给其他设备或用户。访客 Token：<strong>${escapeHTML(guest)}</strong></span></div>
-							<div class="subscription-grid">${renderSubscriptions(true)}</div>
-						</div>
-					</details>
+						<aside class="workspace-sidebar" aria-label="订阅与转换配置">
+							<section class="section" aria-labelledby="owner-title">
+								<div class="section-heading"><div><h2 id="owner-title">我的订阅</h2><p>复制链接，或扫码导入客户端</p></div></div>
+								<div class="subscription-grid">${renderSubscriptions(false)}</div>
+							</section>
 
-					<section class="section" aria-labelledby="settings-title">
-						<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>当前订阅转换服务与规则文件</p></div></div>
-						<div class="settings-grid">
-							<div class="setting"><span class="setting-label"><i data-lucide="server"></i>转换后端</span><code title="${escapeHTML(subProtocol + "://" + subConverter)}">${escapeHTML(subProtocol + "://" + subConverter)}</code></div>
-							<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(subConfig)}">${escapeHTML(subConfig)}</code></div>
-						</div>
-					</section>
+							<details class="guest-panel">
+								<summary>
+									<span class="summary-label"><i data-lucide="users"></i>访客订阅</span>
+									<span class="summary-meta"><span>仅允许获取订阅</span><i data-lucide="chevron-down"></i></span>
+								</summary>
+								<div class="guest-body">
+									<div class="guest-note"><i data-lucide="shield-alert"></i><span>访客链接无法进入本管理页，适合分享给其他设备或用户。访客 Token：<strong>${escapeHTML(guest)}</strong></span></div>
+									<div class="subscription-grid">${renderSubscriptions(true)}</div>
+								</div>
+							</details>
 
-					<section class="section" aria-labelledby="editor-title">
-						<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
-						${hasKV ? `
-						<div class="editor-shell">
-							<div class="editor-toolbar">
-								<div class="editor-meta"><span><i data-lucide="list"></i><b id="lineCount">0</b> 行</span><span id="saveStatus" class="save-state">已同步</span></div>
-								<button class="primary-button" id="saveButton" type="button" onclick="saveContent()"><i data-lucide="save"></i><span>保存更改</span></button>
-							</div>
-							<textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
-						</div>` : `
-						<div class="empty-state"><i data-lucide="database-zap"></i><h3>尚未绑定 KV 命名空间</h3><p>请在 Cloudflare 中绑定变量名为 KV 的命名空间后再编辑订阅源。</p></div>`}
-					</section>
+							<section class="section" aria-labelledby="settings-title">
+								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>当前转换服务与规则文件</p></div></div>
+								<div class="settings-grid">
+									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>转换后端</span><code title="${escapeHTML(subProtocol + "://" + subConverter)}">${escapeHTML(subProtocol + "://" + subConverter)}</code></div>
+									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(subConfig)}">${escapeHTML(subConfig)}</code></div>
+								</div>
+							</section>
+						</aside>
+					</div>
 
 					<footer class="page-footer"><span>${escapeHTML(FileName)} · Powered by Cloudflare Workers</span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
 				</main>
