@@ -620,7 +620,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					button { letter-spacing: 0; }
 					button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
-					.header-inner { width: min(1440px, calc(100% - 40px)); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+					.header-inner { width: calc(100% - 32px); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
 					.brand-mark { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; background: #143f32; color: #fff; }
 					.brand-mark svg { width: 20px; height: 20px; }
@@ -629,7 +629,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
-					main { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 64px; }
+					main { width: calc(100% - 32px); margin: 0 auto; padding: 44px 0 64px; }
 					.page-intro { display: flex; align-items: end; justify-content: space-between; gap: 32px; margin-bottom: 30px; }
 					.eyebrow { margin: 0 0 8px; color: var(--green); font-size: 12px; font-weight: 800; text-transform: uppercase; }
 					h1 { margin: 0; font-size: 42px; line-height: 1.13; letter-spacing: 0; }
@@ -641,7 +641,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 					.section-heading h2 { margin: 0; font-size: 19px; }
 					.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 26px; align-items: start; }
+					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; align-items: start; }
 					.workspace-main, .workspace-sidebar { min-width: 0; }
 					.workspace-grid .section { margin-top: 0; }
 					.workspace-sidebar { display: flex; flex-direction: column; gap: 26px; }
