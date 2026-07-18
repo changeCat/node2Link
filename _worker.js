@@ -1,226 +1,215 @@
 
 // 部署完成后在网址后面加上这个，获取自建节点和机场聚合节点，/?token=auto或/auto或
 
-let mytoken = 'auto';
-let guestToken = ''; //可以随便取，或者uuid生成，https://1024tools.com/uuid
-let BotToken = ''; //可以为空，或者@BotFather中输入/start，/newbot，并关注机器人
-let ChatID = ''; //可以为空，或者@userinfobot中获取，/start
-let TG = 0; //小白勿动， 开发者专用，1 为推送所有的访问信息，0 为不推送订阅转换后端的访问信息与异常访问
-let FileName = 'CF-Workers-SUB';
-let SUBUpdateTime = 6; //自定义订阅更新时间，单位小时
-let total = 99;//TB
-let timestamp = 4102329600000;//2099-12-31
-
-//节点链接 + 订阅链接
-let MainData = `
+const DEFAULT_TOKEN = 'auto';
+const DEFAULT_GUEST_TOKEN = '';
+const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
+const DEFAULT_SUB_UPDATE_TIME = 6;
+const DEFAULT_MAIN_DATA = `
 https://cfxr.eu.org/getSub
 `;
-
-let urls = [];
-let subConverter = "SUBAPI.cmliussss.net"; //在线订阅转换后端，目前使用CM的订阅转换功能。支持自建psub 可自行搭建https://github.com/bulianglin/psub
-let subConfig = "https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini"; //订阅配置文件
-let subProtocol = 'https';
+const DEFAULT_SUB_CONVERTER = 'https://SUBAPI.cmliussss.net';
+const DEFAULT_SUB_CONFIG = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini';
 const subscriptionNotificationCache = new Map();
 const subscriptionNotificationCooldown = 10 * 1000;
 
 export default {
-	async fetch(request, env) {
+	async fetch(request, env, ctx) {
+		const runtime = await createRuntimeConfig(env);
 		const userAgentHeader = request.headers.get('User-Agent');
-		const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : "null";
+		const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : 'null';
 		const url = new URL(request.url);
 		const token = url.searchParams.get('token');
-		mytoken = env.TOKEN || mytoken;
-		BotToken = env.TGTOKEN || BotToken;
-		ChatID = env.TGID || ChatID;
-		TG = env.TG || TG;
-		subConverter = env.SUBAPI || subConverter;
-		if (subConverter.includes("http://")) {
-			subConverter = subConverter.split("//")[1];
-			subProtocol = 'http';
-		} else {
-			subConverter = subConverter.split("//")[1] || subConverter;
-		}
-		subConfig = env.SUBCONFIG || subConfig;
-		FileName = env.SUBNAME || FileName;
-
 		const currentDate = new Date();
 		currentDate.setHours(0, 0, 0, 0);
 		const timeTemp = Math.ceil(currentDate.getTime() / 1000);
-		const fakeToken = await MD5MD5(`${mytoken}${timeTemp}`);
-		guestToken = env.GUESTTOKEN || env.GUEST || guestToken;
-		if (!guestToken) guestToken = await MD5MD5(mytoken);
-		const 访客订阅 = guestToken;
-		//console.log(`${fakeUserID}\n${fakeHostName}`); // 打印fakeID
+		const fakeToken = await MD5MD5(`${runtime.mytoken}${timeTemp}`);
+		const visitorToken = runtime.guestToken || await MD5MD5(runtime.mytoken);
+		const isAuthorized = [runtime.mytoken, fakeToken, visitorToken].includes(token)
+			|| url.pathname === '/' + runtime.mytoken
+			|| url.pathname.includes('/' + runtime.mytoken + '?');
 
-		let UD = Math.floor(((timestamp - Date.now()) / timestamp * total * 1099511627776) / 2);
-		total = total * 1099511627776;
-		let expire = Math.floor(timestamp / 1000);
-		SUBUpdateTime = env.SUBUPTIME || SUBUpdateTime;
-
-		if (!([mytoken, fakeToken, 访客订阅].includes(token) || url.pathname == ("/" + mytoken) || url.pathname.includes("/" + mytoken + "?"))) {
-			if (TG == 1 && url.pathname !== "/" && url.pathname !== "/favicon.ico") await sendMessage(`#异常访问 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgent}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
+		if (!isAuthorized) {
+			if (runtime.TG === 1 && url.pathname !== '/' && url.pathname !== '/favicon.ico') {
+				queueTelegram(ctx, sendMessage(runtime, `#异常访问 ${runtime.FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgent}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
+			}
 			if (env.URL302) return Response.redirect(env.URL302, 302);
-			else if (env.URL) return await proxyURL(env.URL, url);
-			else return new Response(await nginx(), {
-				status: 200,
-				headers: {
-					'Content-Type': 'text/html; charset=UTF-8',
-				},
-			});
+			if (env.URL) return proxyURL(env.URL, url);
+			return new Response(await nginx(), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
+		}
+
+		let mainData = DEFAULT_MAIN_DATA;
+		let urls = [];
+		if (env.KV) {
+			await 迁移地址列表(env, 'LINK.txt');
+			if (userAgent.includes('mozilla') && !url.search) {
+				queueTelegram(ctx, sendMessage(runtime, `#编辑订阅 ${runtime.FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
+				return KV(request, env, 'LINK.txt', visitorToken, runtime);
+			}
+			mainData = await env.KV.get('LINK.txt') || DEFAULT_MAIN_DATA;
 		} else {
-			if (env.KV) {
-				await 迁移地址列表(env, 'LINK.txt');
-				if (userAgent.includes('mozilla') && !url.search) {
-					await sendMessage(`#编辑订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-					return await KV(request, env, 'LINK.txt', 访客订阅);
-				} else {
-					MainData = await env.KV.get('LINK.txt') || MainData;
-				}
-			} else {
-				MainData = env.LINK || MainData;
-				if (env.LINKSUB) urls = await ADD(env.LINKSUB);
-			}
-			let 重新汇总所有链接 = await ADD(MainData + '\n' + urls.join('\n'));
-			let 自建节点 = "";
-			let 订阅链接 = "";
-			for (let x of 重新汇总所有链接) {
-				if (x.toLowerCase().startsWith('http')) {
-					订阅链接 += x + '\n';
-				} else {
-					自建节点 += x + '\n';
-				}
-			}
-			MainData = 自建节点;
-			urls = await ADD(订阅链接);
-			const isSubConverterRequest = request.headers.get('subconverter-request') || request.headers.get('subconverter-version') || userAgent.includes('subconverter');
-			const isInternalSubscriptionRequest = token === fakeToken || isSubConverterRequest;
-			if (!isInternalSubscriptionRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request)) {
-				await sendMessage(`#获取订阅 ${FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`);
-			}
-			let 订阅格式 = 'base64';
-			if (!(userAgent.includes('null') || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes(('CF-Workers-SUB').toLowerCase()))) {
-				if (userAgent.includes('sing-box') || userAgent.includes('singbox') || url.searchParams.has('sb') || url.searchParams.has('singbox')) {
-					订阅格式 = 'singbox';
-				} else if (userAgent.includes('surge') || url.searchParams.has('surge')) {
-					订阅格式 = 'surge';
-				} else if (userAgent.includes('quantumult') || url.searchParams.has('quanx')) {
-					订阅格式 = 'quanx';
-				} else if (userAgent.includes('loon') || url.searchParams.has('loon')) {
-					订阅格式 = 'loon';
-				} else if (userAgent.includes('clash') || userAgent.includes('meta') || userAgent.includes('mihomo') || url.searchParams.has('clash')) {
-					订阅格式 = 'clash';
-				}
-			}
+			mainData = env.LINK || DEFAULT_MAIN_DATA;
+			if (env.LINKSUB) urls = await ADD(env.LINKSUB);
+		}
 
-			let subConverterUrl;
-			let 订阅转换URL = `${url.origin}/${await MD5MD5(fakeToken)}?token=${fakeToken}`;
-			//console.log(订阅转换URL);
-			let req_data = MainData;
+		const allLinks = await ADD(mainData + '\n' + urls.join('\n'));
+		let selfBuiltNodes = '';
+		let subscriptionLinks = '';
+		for (const link of allLinks) {
+			if (link.toLowerCase().startsWith('http')) subscriptionLinks += link + '\n';
+			else selfBuiltNodes += link + '\n';
+		}
+		mainData = selfBuiltNodes;
+		urls = await ADD(subscriptionLinks);
 
-			let 追加UA = 'v2rayn';
-			if (url.searchParams.has('b64') || url.searchParams.has('base64')) 订阅格式 = 'base64';
-			else if (url.searchParams.has('clash')) 追加UA = 'clash';
-			else if (url.searchParams.has('singbox')) 追加UA = 'singbox';
-			else if (url.searchParams.has('surge')) 追加UA = 'surge';
-			else if (url.searchParams.has('quanx')) 追加UA = 'Quantumult%20X';
-			else if (url.searchParams.has('loon')) 追加UA = 'Loon';
+		const isSubConverterRequest = request.headers.get('subconverter-request')
+			|| request.headers.get('subconverter-version')
+			|| userAgent.includes('subconverter');
+		const isInternalSubscriptionRequest = token === fakeToken || isSubConverterRequest;
+		if (!isInternalSubscriptionRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request)) {
+			queueTelegram(ctx, sendMessage(runtime, `#获取订阅 ${runtime.FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
+		}
 
-			const 订阅链接数组 = [...new Set(urls)].filter(item => item?.trim?.()); // 去重
-			if (订阅链接数组.length > 0) {
-				const 请求订阅响应内容 = await getSUB(订阅链接数组, request, 追加UA, userAgentHeader);
-				console.log(请求订阅响应内容);
-				req_data += 请求订阅响应内容[0].join('\n');
-				订阅转换URL += "|" + 请求订阅响应内容[1];
-				if (订阅格式 == 'base64' && !isSubConverterRequest && 请求订阅响应内容[1].includes('://')) {
-					subConverterUrl = `${subProtocol}://${subConverter}/sub?target=mixed&url=${encodeURIComponent(请求订阅响应内容[1])}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
+		let subscriptionFormat = 'base64';
+		if (!(userAgent.includes('null') || isSubConverterRequest || userAgent.includes('nekobox') || userAgent.includes('cf-workers-sub'))) {
+			if (userAgent.includes('sing-box') || userAgent.includes('singbox') || url.searchParams.has('sb') || url.searchParams.has('singbox')) subscriptionFormat = 'singbox';
+			else if (userAgent.includes('surge') || url.searchParams.has('surge')) subscriptionFormat = 'surge';
+			else if (userAgent.includes('quantumult') || url.searchParams.has('quanx')) subscriptionFormat = 'quanx';
+			else if (userAgent.includes('loon') || url.searchParams.has('loon')) subscriptionFormat = 'loon';
+			else if (userAgent.includes('clash') || userAgent.includes('meta') || userAgent.includes('mihomo') || url.searchParams.has('clash')) subscriptionFormat = 'clash';
+		}
+
+		let converterSourceURL = `${url.origin}/${await MD5MD5(fakeToken)}?token=${fakeToken}`;
+		let requestData = mainData;
+		let appendUA = 'v2rayn';
+		let usedConverter = '';
+		if (url.searchParams.has('b64') || url.searchParams.has('base64')) subscriptionFormat = 'base64';
+		else if (url.searchParams.has('clash')) appendUA = 'clash';
+		else if (url.searchParams.has('singbox')) appendUA = 'singbox';
+		else if (url.searchParams.has('surge')) appendUA = 'surge';
+		else if (url.searchParams.has('quanx')) appendUA = 'Quantumult%20X';
+		else if (url.searchParams.has('loon')) appendUA = 'Loon';
+
+		const uniqueSubscriptionLinks = [...new Set(urls)].filter(item => item?.trim?.());
+		if (uniqueSubscriptionLinks.length > 0) {
+			const subscriptionResponses = await getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader);
+			requestData += subscriptionResponses[0].join('\n');
+			converterSourceURL += '|' + subscriptionResponses[1];
+			if (subscriptionFormat === 'base64' && !isSubConverterRequest && subscriptionResponses[1].includes('://')) {
+				const mixedResult = await fetchConvertedSubscription(runtime.subConverters, 'mixed', subscriptionResponses[1], runtime.subConfig, {
+					headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB (https://github.com/cmliu/CF-Workers-SUB)' }
+				});
+				if (mixedResult) {
 					try {
-						const subConverterResponse = await fetch(subConverterUrl, { headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB  (https://github.com/cmliu/CF-Workers-SUB)' } });
-						if (subConverterResponse.ok) {
-							const subConverterContent = await subConverterResponse.text();
-							req_data += '\n' + atob(subConverterContent);
-						}
+						requestData += '\n' + atob(await mixedResult.response.text());
+						usedConverter = mixedResult.converter;
 					} catch (error) {
-						console.log('订阅转换请回base64失败，检查订阅转换后端是否正常运行');
+						console.log('订阅转换返回的 Base64 内容无效:', error.message);
 					}
 				}
-			}
-
-			if (env.WARP) 订阅转换URL += "|" + (await ADD(env.WARP)).join("|");
-			//修复中文错误
-			const utf8Encoder = new TextEncoder();
-			const encodedData = utf8Encoder.encode(req_data);
-			//const text = String.fromCharCode.apply(null, encodedData);
-			const utf8Decoder = new TextDecoder();
-			const text = utf8Decoder.decode(encodedData);
-
-			//去重
-			const uniqueLines = new Set(text.split('\n'));
-			const result = [...uniqueLines].join('\n');
-			//console.log(result);
-
-			let base64Data;
-			try {
-				base64Data = btoa(result);
-			} catch (e) {
-				function encodeBase64(data) {
-					const binary = new TextEncoder().encode(data);
-					let base64 = '';
-					const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-
-					for (let i = 0; i < binary.length; i += 3) {
-						const byte1 = binary[i];
-						const byte2 = binary[i + 1] || 0;
-						const byte3 = binary[i + 2] || 0;
-
-						base64 += chars[byte1 >> 2];
-						base64 += chars[((byte1 & 3) << 4) | (byte2 >> 4)];
-						base64 += chars[((byte2 & 15) << 2) | (byte3 >> 6)];
-						base64 += chars[byte3 & 63];
-					}
-
-					const padding = 3 - (binary.length % 3 || 3);
-					return base64.slice(0, base64.length - padding) + '=='.slice(0, padding);
-				}
-
-				base64Data = encodeBase64(result)
-			}
-
-			// 构建响应头对象
-			const responseHeaders = {
-				"content-type": "text/plain; charset=utf-8",
-				"Profile-Update-Interval": `${SUBUpdateTime}`,
-				"Profile-web-page-url": request.url.includes('?') ? request.url.split('?')[0] : request.url,
-				//"Subscription-Userinfo": `upload=${UD}; download=${UD}; total=${total}; expire=${expire}`,
-			};
-
-			if (订阅格式 == 'base64' || token == fakeToken) {
-				return new Response(base64Data, { headers: responseHeaders });
-			} else if (订阅格式 == 'clash') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=clash&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-			} else if (订阅格式 == 'singbox') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=singbox&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-			} else if (订阅格式 == 'surge') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=surge&ver=4&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
-			} else if (订阅格式 == 'quanx') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=quanx&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&udp=true`;
-			} else if (订阅格式 == 'loon') {
-				subConverterUrl = `${subProtocol}://${subConverter}/sub?target=loon&url=${encodeURIComponent(订阅转换URL)}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false`;
-			}
-			//console.log(订阅转换URL);
-			try {
-				const subConverterResponse = await fetch(subConverterUrl, { headers: { 'User-Agent': userAgentHeader } });//订阅转换
-				if (!subConverterResponse.ok) return new Response(base64Data, { headers: responseHeaders });
-				let subConverterContent = await subConverterResponse.text();
-				if (订阅格式 == 'clash') subConverterContent = await clashFix(subConverterContent);
-				// 只有非浏览器订阅才会返回SUBNAME
-				if (!userAgent.includes('mozilla')) responseHeaders["Content-Disposition"] = `attachment; filename*=utf-8''${encodeURIComponent(FileName)}`;
-				return new Response(subConverterContent, { headers: responseHeaders });
-			} catch (error) {
-				return new Response(base64Data, { headers: responseHeaders });
 			}
 		}
+
+		if (env.WARP) converterSourceURL += '|' + (await ADD(env.WARP)).join('|');
+		const text = new TextDecoder().decode(new TextEncoder().encode(requestData));
+		const result = [...new Set(text.split('\n'))].join('\n');
+		let base64Data;
+		try { base64Data = btoa(result); }
+		catch (error) { base64Data = encodeBase64(result); }
+
+		const responseHeaders = {
+			'content-type': 'text/plain; charset=utf-8',
+			'Profile-Update-Interval': `${runtime.SUBUpdateTime}`,
+			'Profile-web-page-url': request.url.includes('?') ? request.url.split('?')[0] : request.url
+		};
+		if (usedConverter) responseHeaders['X-Subconverter-Used'] = usedConverter;
+		if (subscriptionFormat === 'base64' || token === fakeToken) return new Response(base64Data, { headers: responseHeaders });
+
+		const conversionResult = await fetchConvertedSubscription(runtime.subConverters, subscriptionFormat, converterSourceURL, runtime.subConfig, {
+			headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' }
+		});
+		if (!conversionResult) return new Response(base64Data, { headers: responseHeaders });
+
+		responseHeaders['X-Subconverter-Used'] = conversionResult.converter;
+		let convertedContent = await conversionResult.response.text();
+		if (subscriptionFormat === 'clash') convertedContent = await clashFix(convertedContent);
+		if (!userAgent.includes('mozilla')) responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(runtime.FileName)}`;
+		return new Response(convertedContent, { headers: responseHeaders });
 	}
 };
+
+async function createRuntimeConfig(env) {
+	const updateTime = Number(env.SUBUPTIME);
+	return {
+		mytoken: env.TOKEN || DEFAULT_TOKEN,
+		guestToken: env.GUESTTOKEN || env.GUEST || DEFAULT_GUEST_TOKEN,
+		BotToken: env.TGTOKEN || '',
+		ChatID: env.TGID || '',
+		TG: Number(env.TG || 0),
+		FileName: env.SUBNAME || DEFAULT_FILE_NAME,
+		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
+		subConfig: env.SUBCONFIG || DEFAULT_SUB_CONFIG,
+		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER)
+	};
+}
+
+function parseSubConverters(value) {
+	const converters = String(value || DEFAULT_SUB_CONVERTER)
+		.split(/[\n,;]+/)
+		.map(item => item.trim())
+		.filter(Boolean)
+		.map(item => /^https?:\/\//i.test(item) ? item : 'https://' + item)
+		.map(item => item.replace(/\/+$/, ''));
+	return [...new Set(converters.length ? converters : [DEFAULT_SUB_CONVERTER])];
+}
+
+function queueTelegram(ctx, task) {
+	const safeTask = Promise.resolve(task).catch(error => console.error('TG 推送失败:', error));
+	if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(safeTask);
+	return safeTask;
+}
+
+function createSubConverterURL(converter, target, sourceURL, configURL) {
+	const params = new URLSearchParams({
+		target, url: sourceURL, insert: 'false', config: configURL, emoji: 'true', list: 'false',
+		tfo: 'false', scv: 'true', fdn: 'false', sort: 'false'
+	});
+	if (target === 'surge') params.set('ver', '4');
+	if (target === 'quanx') params.set('udp', 'true');
+	if (target !== 'loon' && target !== 'quanx') params.set('new_name', 'true');
+	return converter + '/sub?' + params.toString();
+}
+
+async function fetchConvertedSubscription(converters, target, sourceURL, configURL, init) {
+	for (const converter of converters) {
+		try {
+			const response = await fetch(createSubConverterURL(converter, target, sourceURL, configURL), init);
+			if (response.ok) return { response, converter };
+			console.log(`订阅转换后端 ${converter} 返回 ${response.status}`);
+		} catch (error) {
+			console.log(`订阅转换后端 ${converter} 请求失败:`, error.message);
+		}
+	}
+	return null;
+}
+
+function encodeBase64(data) {
+	const binary = new TextEncoder().encode(data);
+	let base64 = '';
+	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+	for (let i = 0; i < binary.length; i += 3) {
+		const byte1 = binary[i];
+		const byte2 = binary[i + 1] || 0;
+		const byte3 = binary[i + 2] || 0;
+		base64 += chars[byte1 >> 2];
+		base64 += chars[((byte1 & 3) << 4) | (byte2 >> 4)];
+		base64 += chars[((byte2 & 15) << 2) | (byte3 >> 6)];
+		base64 += chars[byte3 & 63];
+	}
+	const padding = 3 - (binary.length % 3 || 3);
+	return base64.slice(0, base64.length - padding) + '=='.slice(0, padding);
+}
+
 
 async function ADD(envadd) {
 	var addtext = envadd.replace(/[	"'|\r\n]+/g, '\n').replace(/\n+/g, '\n');	// 替换为换行
@@ -292,8 +281,8 @@ function shouldSendSubscriptionNotification(request) {
 	return true;
 }
 
-async function sendMessage(type, ip, add_data = "") {
-	if (BotToken !== '' && ChatID !== '') {
+async function sendMessage(runtime, type, ip, add_data = "") {
+	if (runtime.BotToken !== '' && runtime.ChatID !== '') {
 		let msg = "";
 		const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
 		if (response.status == 200) {
@@ -303,7 +292,7 @@ async function sendMessage(type, ip, add_data = "") {
 			msg = `${type}\nIP: ${ip}\n<tg-spoiler>${add_data}`;
 		}
 
-		let url = "https://api.telegram.org/bot" + BotToken + "/sendMessage?chat_id=" + ChatID + "&parse_mode=HTML&text=" + encodeURIComponent(msg);
+		let url = "https://api.telegram.org/bot" + runtime.BotToken + "/sendMessage?chat_id=" + runtime.ChatID + "&parse_mode=HTML&text=" + encodeURIComponent(msg);
 		return fetch(url, {
 			method: 'get',
 			headers: {
@@ -531,16 +520,25 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
 }
 
 
-async function KV(request, env, txt = 'ADD.txt', guest) {
+async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 	const url = new URL(request.url);
+	const metaKey = txt + '.meta.json';
 	try {
 		if (request.method === "POST") {
 			if (!env.KV) return new Response("未绑定 KV 命名空间", { status: 400 });
 			try {
 				const content = await request.text();
-				await env.KV.put(txt, content);
-				return new Response("保存成功", {
-					headers: { "Content-Type": "text/plain;charset=utf-8" }
+				const metadata = {
+					savedAt: new Date().toISOString(),
+					bytes: new TextEncoder().encode(content).length,
+					lines: content ? content.split(/\r?\n/).length : 0
+				};
+				await Promise.all([
+					env.KV.put(txt, content),
+					env.KV.put(metaKey, JSON.stringify(metadata))
+				]);
+				return new Response(JSON.stringify({ ok: true, metadata }), {
+					headers: { "Content-Type": "application/json;charset=utf-8" }
 				});
 			} catch (error) {
 				console.error("保存 KV 时发生错误:", error);
@@ -549,14 +547,30 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 		}
 
 		let content = "";
+		let savedMetadata = null;
 		const hasKV = !!env.KV;
 		if (hasKV) {
 			try {
-				content = await env.KV.get(txt) || "";
+				const [storedContent, storedMetadata] = await Promise.all([
+					env.KV.get(txt),
+					env.KV.get(metaKey)
+				]);
+				content = storedContent || "";
+				if (storedMetadata) {
+					try { savedMetadata = JSON.parse(storedMetadata); }
+					catch (metadataError) { console.error("读取 KV 元数据时发生错误:", metadataError); }
+				}
 			} catch (error) {
 				console.error("读取 KV 时发生错误:", error);
 				content = "读取数据时发生错误: " + error.message;
 			}
+		}
+		if (!savedMetadata) {
+			savedMetadata = {
+				savedAt: "",
+				bytes: new TextEncoder().encode(content).length,
+				lines: content ? content.split(/\r?\n/).length : 0
+			};
 		}
 
 		const escapeHTML = (value) => String(value ?? "")
@@ -566,8 +580,11 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&#039;");
 		const origin = url.origin;
-		const ownerBase = origin + "/" + encodeURIComponent(mytoken);
+		const ownerBase = origin + "/" + encodeURIComponent(runtime.mytoken);
 		const guestBase = origin + "/sub?token=" + encodeURIComponent(guest);
+		const converterListHTML = runtime.subConverters.map((converter, index) =>
+			`<span class="converter-entry"><b>${index === 0 ? "主" : "备" + index}</b><code title="${escapeHTML(converter)}">${escapeHTML(converter)}</code></span>`
+		).join("");
 		const formats = [
 			{ name: "智能适配", key: "sub", icon: "sparkles", description: "自动识别客户端并返回合适格式", recommended: true },
 			{ name: "Base64", key: "b64", icon: "binary", description: "通用 Base64 编码订阅" },
@@ -603,7 +620,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 				<meta name="viewport" content="width=device-width, initial-scale=1">
 				<meta name="color-scheme" content="light">
 				<meta name="theme-color" content="#f5f6f3">
-				<title>${escapeHTML(FileName)} · 订阅控制台</title>
+				<title>${escapeHTML(runtime.FileName)} · 订阅控制台</title>
 				<style>
 					:root {
 						color-scheme: light;
@@ -697,16 +714,35 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.setting-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
 					.setting-label svg { width: 15px; color: var(--green); }
 					.setting code { display: block; overflow: hidden; color: var(--text); font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+					.converter-list { display: flex; flex-direction: column; gap: 7px; }
+					.converter-entry { min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; }
+					.converter-entry b { padding: 2px 4px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: 10px; text-align: center; }
 					.editor-shell { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
-					.editor-toolbar { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
-					.editor-meta { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 12px; }
+					.editor-toolbar { min-height: 54px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
+					.editor-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--muted); font-size: 12px; }
 					.editor-meta span { display: inline-flex; align-items: center; gap: 6px; }
 					.editor-meta svg { width: 14px; }
+					.editor-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
 					.save-state { color: var(--muted); }
 					.save-state.dirty { color: var(--amber); }
 					.save-state.error { color: var(--danger); }
+					.tool-button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 700; }
+					.tool-button:hover { background: var(--surface-soft); color: var(--green); }
+					.tool-button:disabled { cursor: not-allowed; opacity: .45; }
+					.tool-button svg { width: 15px; height: 15px; }
 					.primary-button { min-height: 36px; padding: 0 15px; }
 					.primary-button:disabled { cursor: wait; opacity: .64; }
+					.editor-insights { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line-soft); background: var(--surface); }
+					.metric { min-width: 0; padding: 11px 14px; }
+					.metric + .metric { border-left: 1px solid var(--line-soft); }
+					.metric span { display: block; color: var(--muted); font-size: 11px; }
+					.metric strong { display: block; margin-top: 3px; font-size: 16px; }
+					.validation-panel { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); background: var(--surface-soft); }
+					.validation-status { display: flex; align-items: center; gap: 8px; color: var(--green); font-size: 12px; font-weight: 700; }
+					.validation-status.has-issues { color: var(--danger); }
+					.validation-status svg { width: 15px; height: 15px; }
+					.protocol-breakdown { flex: 1; color: var(--muted); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; text-align: center; }
+					.validation-issues { max-width: 65%; color: var(--danger); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; text-align: right; }
 					.editor { width: 100%; height: calc(100vh - 300px); min-height: 560px; max-height: 760px; display: block; resize: vertical; margin: 0; padding: 18px; border: 0; background: #fbfcfa; color: #25312b; font: 13px/1.75 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
 					.empty-state { padding: 34px; border: 1px dashed #ccd3cc; border-radius: 8px; background: rgba(255,255,255,.6); text-align: center; }
 					.empty-state svg { width: 30px; height: 30px; margin-bottom: 8px; color: var(--amber); }
@@ -716,9 +752,15 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					.page-footer a { color: var(--green); text-decoration: none; }
 					dialog { width: min(92vw, 360px); padding: 0; border: 0; border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 28px 80px rgba(14, 34, 24, .25); }
 					dialog::backdrop { background: rgba(15, 28, 21, .48); backdrop-filter: blur(3px); }
+					dialog.tool-dialog { width: min(92vw, 480px); }
 					.dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 16px; border-bottom: 1px solid var(--line-soft); }
 					.dialog-head strong { font-size: 14px; }
 					.dialog-body { padding: 22px; text-align: center; }
+					.tool-dialog .dialog-body { text-align: left; }
+					.preview-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+					.preview-summary span { padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); color: var(--muted); font-size: 11px; }
+					.preview-summary strong { display: block; margin-top: 3px; color: var(--text); font-size: 18px; }
+					.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 					#qrcode { min-height: 220px; display: grid; place-items: center; }
 					#qrcode img, #qrcode canvas { max-width: 100%; height: auto; padding: 8px; border: 1px solid var(--line-soft); border-radius: 6px; }
 					.qr-url { margin: 14px 0 0; overflow-wrap: anywhere; color: var(--muted); font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
@@ -737,6 +779,12 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						.workspace-sidebar .compact-subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 						.subscription-grid, .settings-grid { grid-template-columns: 1fr; }
 						.setting + .setting { border-top: 1px solid var(--line-soft); border-left: 0; }
+						.editor-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+						.metric:nth-child(3) { border-top: 1px solid var(--line-soft); border-left: 0; }
+						.metric:nth-child(4) { border-top: 1px solid var(--line-soft); }
+						.validation-panel { display: block; }
+						.protocol-breakdown { display: block; margin-top: 6px; text-align: left; }
+						.validation-issues { max-width: none; margin-top: 6px; text-align: left; }
 						.page-footer { flex-direction: column; }
 					}
 					@media (max-width: 480px) {
@@ -751,6 +799,8 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						.summary-meta span { display: none; }
 						.editor-toolbar { align-items: flex-start; }
 						.editor-meta { flex-direction: column; align-items: flex-start; gap: 5px; }
+						.editor-actions { width: 100%; justify-content: flex-start; }
+						.editor-actions .primary-button { margin-left: auto; }
 						.editor { height: 56vh; min-height: 430px; padding: 14px; }
 					}
 					@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
@@ -763,7 +813,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					<div class="header-inner">
 						<div class="brand">
 							<span class="brand-mark"><i data-lucide="route"></i></span>
-							<div class="brand-copy"><strong>${escapeHTML(FileName)}</strong><span>Subscription Console</span></div>
+							<div class="brand-copy"><strong>${escapeHTML(runtime.FileName)}</strong><span>Subscription Console</span></div>
 						</div>
 						<span class="online">服务正常</span>
 					</div>
@@ -775,7 +825,7 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 							<h1>订阅控制台</h1>
 							<p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p>
 						</div>
-						<div class="token-chip"><i data-lucide="shield-check"></i><span>当前入口</span><code>/${escapeHTML(mytoken)}</code></div>
+						<div class="token-chip"><i data-lucide="shield-check"></i><span>当前入口</span><code>/${escapeHTML(runtime.mytoken)}</code></div>
 					</section>
 
 					<div class="workspace-grid">
@@ -784,8 +834,30 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 							${hasKV ? `
 							<div class="editor-shell">
 								<div class="editor-toolbar">
-									<div class="editor-meta"><span><i data-lucide="list"></i><b id="lineCount">0</b> 行</span><span id="saveStatus" class="save-state">已同步</span></div>
-									<button class="primary-button" id="saveButton" type="button" onclick="saveContent()"><i data-lucide="save"></i><span>保存更改</span></button>
+									<div class="editor-meta">
+										<span><i data-lucide="list"></i><b id="lineCount">0</b> 行</span>
+										<span id="saveStatus" class="save-state">已同步</span>
+										<span><i data-lucide="clock-3"></i><span id="lastSaved" data-saved-at="${escapeHTML(savedMetadata.savedAt || "")}">读取中</span></span>
+									</div>
+									<div class="editor-actions">
+										<button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
+										<button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
+										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份</span></button>
+										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>恢复</span></button>
+										<input id="restoreInput" type="file" accept=".txt,.conf,.list,text/plain" hidden>
+										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()"><i data-lucide="save"></i><span>保存更改</span></button>
+									</div>
+								</div>
+								<div class="editor-insights" aria-label="内容统计">
+									<div class="metric"><span>节点</span><strong id="nodeCount">0</strong></div>
+									<div class="metric"><span>订阅源</span><strong id="sourceCount">0</strong></div>
+									<div class="metric"><span>重复</span><strong id="duplicateCount">0</strong></div>
+									<div class="metric"><span>格式问题</span><strong id="issueCount">0</strong></div>
+								</div>
+								<div class="validation-panel">
+									<span class="validation-status" id="validationStatus"><i data-lucide="circle-check"></i><span>格式检查通过</span></span>
+									<span class="protocol-breakdown" id="protocolBreakdown">暂无节点协议</span>
+									<span class="validation-issues" id="validationIssues"></span>
 								</div>
 								<textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
 							</div>` : `
@@ -812,19 +884,27 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 							<section class="section" aria-labelledby="settings-title">
 								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>当前转换服务与规则文件</p></div></div>
 								<div class="settings-grid">
-									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>转换后端</span><code title="${escapeHTML(subProtocol + "://" + subConverter)}">${escapeHTML(subProtocol + "://" + subConverter)}</code></div>
-									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(subConfig)}">${escapeHTML(subConfig)}</code></div>
+									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>转换后端</span><div class="converter-list">${converterListHTML}</div></div>
+									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
 								</div>
 							</section>
 						</aside>
 					</div>
 
-					<footer class="page-footer"><span>${escapeHTML(FileName)} · Powered by Cloudflare Workers</span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
+					<footer class="page-footer"><span>${escapeHTML(runtime.FileName)} · Powered by Cloudflare Workers</span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
 				</main>
 
 				<dialog id="qrDialog" aria-labelledby="qrTitle">
 					<div class="dialog-head"><strong id="qrTitle">扫描二维码导入</strong><button class="icon-button" type="button" onclick="closeQR()" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
 					<div class="dialog-body"><div id="qrcode"></div><p class="qr-url" id="qrUrl"></p></div>
+				</dialog>
+				<dialog id="toolDialog" class="tool-dialog" aria-labelledby="toolDialogTitle">
+					<div class="dialog-head"><strong id="toolDialogTitle">整理节点与订阅源</strong><button class="icon-button" type="button" onclick="closeToolDialog()" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
+					<div class="dialog-body">
+						<p id="dedupeDescription">将删除空行并合并完全重复的链接，原内容不会立即写入 KV。</p>
+						<div class="preview-summary"><span>原始行数<strong id="previewBefore">0</strong></span><span>重复行<strong id="previewDuplicates">0</strong></span><span>整理后<strong id="previewAfter">0</strong></span></div>
+						<div class="dialog-actions"><button class="tool-button" type="button" onclick="closeToolDialog()">取消</button><button class="primary-button" id="applyDedupeButton" type="button" onclick="applyDedupe()"><i data-lucide="list-checks"></i><span>应用整理</span></button></div>
+					</div>
 				</dialog>
 				<div class="toast" id="toast" role="status" aria-live="polite"><i data-lucide="circle-check"></i><span id="toastText">已复制</span></div>
 
@@ -832,6 +912,9 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 					var toastTimer;
 					var saveTimer;
 					var originalContent = "";
+					var undoStack = [];
+					var pendingDedupeContent = "";
+					var savedMetadata = ${JSON.stringify(savedMetadata)};
 
 					function initializeIcons() {
 						if (window.lucide) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } });
@@ -880,13 +963,167 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
 					}
 
-					function closeQR() { document.getElementById("qrDialog").close(); }
+					function closeQR() {
+						var dialog = document.getElementById("qrDialog");
+						if (typeof dialog.close === "function") dialog.close(); else dialog.removeAttribute("open");
+					}
 
-					function updateLineCount() {
+					function escapeClientHTML(value) {
+						return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+					}
+
+					function analyzeContent(value) {
+						var lines = value ? value.split(/\\r?\\n/) : [];
+						var supportedProtocols = ["vless", "vmess", "trojan", "ss", "ssr", "hysteria", "hysteria2", "hy2", "tuic", "wireguard", "socks", "socks5"];
+						var seen = new Set();
+						var protocols = {};
+						var result = { lines: lines.length, nodes: 0, sources: 0, duplicates: 0, blank: 0, issues: [], protocols: protocols };
+						lines.forEach(function (line, index) {
+							var trimmed = line.trim();
+							if (!trimmed) { result.blank += 1; return; }
+							if (seen.has(trimmed)) result.duplicates += 1;
+							else seen.add(trimmed);
+							if (/^https?:\\/\\//i.test(trimmed)) { result.sources += 1; return; }
+							var match = trimmed.match(/^([a-z0-9+.-]+):\\/\\//i);
+							var protocol = match ? match[1].toLowerCase() : "";
+							if (supportedProtocols.includes(protocol)) {
+								result.nodes += 1;
+								protocols[protocol] = (protocols[protocol] || 0) + 1;
+							} else {
+								result.issues.push({ line: index + 1, value: trimmed, reason: match ? "不支持的协议 " + protocol : "无法识别链接格式" });
+							}
+						});
+						return result;
+					}
+
+					function updateEditorInsights() {
 						var textarea = document.getElementById("content");
 						if (!textarea) return;
-						var count = textarea.value ? textarea.value.split(/\\r?\\n/).length : 0;
-						document.getElementById("lineCount").textContent = count;
+						var analysis = analyzeContent(textarea.value);
+						document.getElementById("lineCount").textContent = analysis.lines;
+						document.getElementById("nodeCount").textContent = analysis.nodes;
+						document.getElementById("sourceCount").textContent = analysis.sources;
+						document.getElementById("duplicateCount").textContent = analysis.duplicates;
+						document.getElementById("issueCount").textContent = analysis.issues.length;
+						var protocolText = Object.keys(analysis.protocols).sort().map(function (protocol) { return protocol.toUpperCase() + " " + analysis.protocols[protocol]; }).join(" · ");
+						document.getElementById("protocolBreakdown").textContent = protocolText || "暂无节点协议";
+						var status = document.getElementById("validationStatus");
+						var issues = document.getElementById("validationIssues");
+						if (analysis.issues.length) {
+							status.classList.add("has-issues");
+							status.querySelector("span").textContent = "发现 " + analysis.issues.length + " 个格式问题";
+							issues.innerHTML = analysis.issues.slice(0, 4).map(function (issue) { return "第 " + issue.line + " 行：" + escapeClientHTML(issue.reason); }).join("<br>");
+							if (analysis.issues.length > 4) issues.innerHTML += "<br>另有 " + (analysis.issues.length - 4) + " 项";
+						} else {
+							status.classList.remove("has-issues");
+							status.querySelector("span").textContent = "格式检查通过";
+							issues.textContent = "";
+						}
+					}
+
+					function updateLineCount() { updateEditorInsights(); }
+
+					function buildDedupeContent(value) {
+						var lines = value ? value.split(/\\r?\\n/) : [];
+						var seen = new Set();
+						var unique = [];
+						var duplicates = 0;
+						lines.forEach(function (line) {
+							var trimmed = line.trim();
+							if (!trimmed) return;
+							if (seen.has(trimmed)) { duplicates += 1; return; }
+							seen.add(trimmed);
+							unique.push(trimmed);
+						});
+						return { content: unique.join("\\n"), before: lines.length, duplicates: duplicates, after: unique.length };
+					}
+
+					function openDedupePreview() {
+						var textarea = document.getElementById("content");
+						if (!textarea) return;
+						var preview = buildDedupeContent(textarea.value);
+						pendingDedupeContent = preview.content;
+						document.getElementById("previewBefore").textContent = preview.before;
+						document.getElementById("previewDuplicates").textContent = preview.duplicates;
+						document.getElementById("previewAfter").textContent = preview.after;
+						document.getElementById("applyDedupeButton").disabled = preview.content === textarea.value;
+						var dialog = document.getElementById("toolDialog");
+						if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
+					}
+
+					function closeToolDialog() {
+						var dialog = document.getElementById("toolDialog");
+						if (typeof dialog.close === "function") dialog.close(); else dialog.removeAttribute("open");
+					}
+
+					function pushUndoSnapshot(value) {
+						if (undoStack[undoStack.length - 1] !== value) undoStack.push(value);
+						if (undoStack.length > 10) undoStack.shift();
+						document.getElementById("undoButton").disabled = undoStack.length === 0;
+					}
+
+					function markEditorDirty(message) {
+						updateEditorInsights();
+						setSaveState(message || "有未保存更改", "dirty");
+						clearTimeout(saveTimer);
+						saveTimer = setTimeout(saveContent, 5000);
+					}
+
+					function applyDedupe() {
+						var textarea = document.getElementById("content");
+						if (!textarea || pendingDedupeContent === textarea.value) { closeToolDialog(); return; }
+						pushUndoSnapshot(textarea.value);
+						textarea.value = pendingDedupeContent;
+						markEditorDirty("整理结果尚未保存");
+						closeToolDialog();
+						showToast("已整理，可撤销或保存");
+					}
+
+					function undoLastChange() {
+						var textarea = document.getElementById("content");
+						if (!textarea || !undoStack.length) return;
+						textarea.value = undoStack.pop();
+						document.getElementById("undoButton").disabled = undoStack.length === 0;
+						markEditorDirty("已撤销，尚未保存");
+						showToast("已恢复上一个版本");
+					}
+
+					function downloadBackup() {
+						var textarea = document.getElementById("content");
+						if (!textarea) return;
+						var blob = new Blob([textarea.value], { type: "text/plain;charset=utf-8" });
+						var href = URL.createObjectURL(blob);
+						var anchor = document.createElement("a");
+						anchor.href = href;
+						anchor.download = "node2link-backup-" + new Date().toISOString().slice(0, 10) + ".txt";
+						anchor.click();
+						setTimeout(function () { URL.revokeObjectURL(href); }, 0);
+						showToast("备份已下载");
+					}
+
+					function restoreBackup(file) {
+						var textarea = document.getElementById("content");
+						if (!file || !textarea) return;
+						file.text().then(function (restoredContent) {
+							if (!window.confirm("将备份内容载入编辑器？当前内容可通过撤销恢复。")) return;
+							pushUndoSnapshot(textarea.value);
+							textarea.value = restoredContent;
+							markEditorDirty("备份已载入，尚未保存");
+							showToast("备份已载入编辑器");
+						}).catch(function () { showToast("无法读取备份文件"); });
+					}
+
+					function formatBytes(bytes) {
+						if (bytes < 1024) return bytes + " B";
+						return (bytes / 1024).toFixed(bytes < 10240 ? 1 : 0) + " KB";
+					}
+
+					function updateSavedMetadata(metadata) {
+						savedMetadata = metadata || savedMetadata;
+						var element = document.getElementById("lastSaved");
+						if (!element) return;
+						if (!savedMetadata.savedAt) element.textContent = "尚无保存记录 · " + formatBytes(savedMetadata.bytes || 0);
+						else element.textContent = new Date(savedMetadata.savedAt).toLocaleString() + " · " + formatBytes(savedMetadata.bytes || 0) + " · " + (savedMetadata.lines || 0) + " 行";
 					}
 
 					function setSaveState(message, state) {
@@ -906,9 +1143,10 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						button.querySelector("span").textContent = "保存中";
 						setSaveState("正在保存…", "");
 						return fetch(window.location.href, { method: "POST", body: textarea.value, headers: { "Content-Type": "text/plain;charset=UTF-8" }, cache: "no-cache" })
-							.then(function (response) { if (!response.ok) throw new Error("HTTP " + response.status); return response.text(); })
-							.then(function () {
+							.then(function (response) { if (!response.ok) throw new Error("HTTP " + response.status); return response.json(); })
+							.then(function (result) {
 								originalContent = textarea.value;
+								updateSavedMetadata(result.metadata);
 								setSaveState("刚刚已保存", "");
 								showToast("节点与订阅源已保存");
 							})
@@ -922,22 +1160,27 @@ async function KV(request, env, txt = 'ADD.txt', guest) {
 						var textarea = document.getElementById("content");
 						if (textarea) {
 							originalContent = textarea.value;
-							updateLineCount();
+							updateEditorInsights();
+							updateSavedMetadata(savedMetadata);
 							textarea.addEventListener("input", function () {
-								updateLineCount();
-								setSaveState("有未保存更改", "dirty");
-								clearTimeout(saveTimer);
-								saveTimer = setTimeout(saveContent, 5000);
+								markEditorDirty("有未保存更改");
 							});
 							textarea.addEventListener("blur", function () { if (textarea.value !== originalContent) saveContent(); });
+							document.getElementById("restoreInput").addEventListener("change", function (event) {
+								restoreBackup(event.target.files[0]);
+								event.target.value = "";
+							});
 						}
-						var dialog = document.getElementById("qrDialog");
-						dialog.addEventListener("click", function (event) { if (event.target === dialog) closeQR(); });
+						var qrDialog = document.getElementById("qrDialog");
+						var toolDialog = document.getElementById("toolDialog");
+						qrDialog.addEventListener("click", function (event) { if (event.target === qrDialog) closeQR(); });
+						toolDialog.addEventListener("click", function (event) { if (event.target === toolDialog) closeToolDialog(); });
 					});
 
 					document.addEventListener("keydown", function (event) {
 						if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); saveContent(); }
 						if (event.key === "Escape" && document.getElementById("qrDialog").open) closeQR();
+						if (event.key === "Escape" && document.getElementById("toolDialog").open) closeToolDialog();
 					});
 				</script>
 			</body>

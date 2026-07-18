@@ -17,7 +17,10 @@
 2. **将多个base64订阅汇聚成一个订阅链接：** 可以将多个订阅（例如不同的机场）合并成一个订阅，只需使用一个订阅地址即可获取所有节点；
 3. **自动适配不同梯子的格式订阅链接：** 依托[订阅转换](https://sub.cmliussss.com/)服务，自动将订阅转换为不同梯子所需的格式，实现一条订阅适配多种梯子；
 4. **专属代理分流规则：** 自定义分流规则，实现个性化的分流模式；
-5. **更多功能等待发掘...**
+5. **管理页内容检查：** 实时统计节点、订阅源、重复行与格式问题；
+6. **安全整理与备份：** 支持去重预览、撤销、配置下载与本地文件恢复；
+7. **订阅转换容错：** 可配置多个转换后端，主后端不可用时自动尝试备用地址；
+8. **更多功能等待发掘...**
 
 ## 🎬 视频教程
 - **[自建订阅！CF-Workers-SUB 教你如何将多节点多订阅汇聚合并为一个订阅！](https://youtu.be/w6rRY4FDd58)**
@@ -105,7 +108,7 @@
 | TGTOKEN | `6894123456:XXXXXXXXXX0qExVsBPUhHDAbXXXXXqWXgBA` | ❌ | 发送TG通知的机器人token | 
 | TGID | `6946912345` | ❌ | 接收TG通知的账户数字ID | 
 | SUBNAME | `CF-Workers-SUB` | ❌ | 订阅名称 |
-| SUBAPI | `SUBAPI.cmliussss.net` | ❌ | clash、singbox等 订阅转换后端 | 
+| SUBAPI | `SUBAPI.cmliussss.net,backup.example.com` | ❌ | clash、singbox等订阅转换后端；多个地址使用逗号、分号或换行分隔，按顺序自动回退 |
 | SUBCONFIG | [https://raw.github.../ACL4SSR_Online_MultiCountry.ini](https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini) | ❌ | clash、singbox等 订阅转换配置文件 | 
 
 
