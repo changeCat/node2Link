@@ -880,11 +880,11 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
-					main { width: calc(100% - 48px); margin: 0 auto; padding: 44px 0 64px; }
-					.page-intro { display: flex; align-items: end; justify-content: space-between; gap: 32px; margin-bottom: 30px; }
-					.eyebrow { margin: 0 0 8px; color: var(--green); font-size: 12px; font-weight: 800; text-transform: uppercase; }
-					h1 { margin: 0; font-size: 42px; line-height: 1.13; letter-spacing: 0; }
-					.intro-copy { max-width: 580px; margin: 12px 0 0; color: var(--muted); line-height: 1.7; }
+					main { width: calc(100% - 48px); margin: 0 auto; padding: 24px 0 48px; }
+					.page-intro { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin-bottom: 18px; }
+					.eyebrow { margin: 0 0 4px; color: var(--green); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+					h1 { margin: 0; font-size: 34px; line-height: 1.12; letter-spacing: 0; }
+					.intro-copy { max-width: 580px; margin: 6px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 					.token-chip { max-width: 360px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 12px; }
 					.token-chip svg { flex: 0 0 auto; width: 16px; height: 16px; color: var(--green); }
 					.token-chip code { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
@@ -1043,9 +1043,9 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					}
 					@media (max-width: 760px) {
 						.header-inner, main { width: min(100% - 28px, 1440px); }
-						main { padding-top: 30px; }
+						main { padding-top: 20px; }
 						.page-intro { display: block; }
-						.token-chip { max-width: none; margin-top: 18px; }
+						.token-chip { max-width: none; margin-top: 12px; }
 						.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; }
 						.workspace-sidebar .compact-subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 						.subscription-grid, .settings-grid { grid-template-columns: 1fr; }
