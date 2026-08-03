@@ -871,20 +871,21 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					button { letter-spacing: 0; }
 					button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
-					.header-inner { width: calc(100% - 48px); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+					.header-inner { width: calc(100% - 48px); min-height: 82px; margin: 0 auto; display: flex; align-items: center; gap: 22px; }
 					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
 					.brand-mark { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; background: #143f32; color: #fff; }
 					.brand-mark svg { width: 20px; height: 20px; }
 					.brand-copy { min-width: 0; }
 					.brand-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
 					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+					.header-overview { min-width: 0; flex: 1; padding-left: 22px; border-left: 1px solid var(--line); }
+					.header-overview .eyebrow { margin: 0 0 2px; color: var(--green); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+					.header-overview h1 { margin: 0; font-size: 23px; line-height: 1.12; letter-spacing: 0; }
+					.header-overview .intro-copy { max-width: 620px; margin: 3px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+					.header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
-					main { width: calc(100% - 48px); margin: 0 auto; padding: 24px 0 48px; }
-					.page-intro { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin-bottom: 18px; }
-					.eyebrow { margin: 0 0 4px; color: var(--green); font-size: 11px; font-weight: 800; text-transform: uppercase; }
-					h1 { margin: 0; font-size: 34px; line-height: 1.12; letter-spacing: 0; }
-					.intro-copy { max-width: 580px; margin: 6px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+					main { width: calc(100% - 48px); margin: 0 auto; padding: 18px 0 48px; }
 					.token-chip { max-width: 360px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 12px; }
 					.token-chip svg { flex: 0 0 auto; width: 16px; height: 16px; color: var(--green); }
 					.token-chip code { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }
@@ -1033,6 +1034,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.toast.show { opacity: 1; transform: translate(-50%, 0); }
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 1180px) {
+						.header-overview .intro-copy { display: none; }
 						.workspace-grid { grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
 						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 						.workspace-sidebar > .guest-panel { grid-column: 1 / -1; }
@@ -1043,9 +1045,14 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					}
 					@media (max-width: 760px) {
 						.header-inner, main { width: min(100% - 28px, 1440px); }
-						main { padding-top: 20px; }
-						.page-intro { display: block; }
-						.token-chip { max-width: none; margin-top: 12px; }
+						.header-inner { flex-wrap: wrap; gap: 8px 12px; padding: 9px 0; }
+						.header-overview { order: 3; flex: 0 0 100%; padding: 7px 0 0; border-top: 1px solid var(--line-soft); border-left: 0; }
+						.header-overview .eyebrow, .header-overview .intro-copy { display: none; }
+						.header-overview h1 { font-size: 20px; }
+						.header-actions { margin-left: auto; }
+						.header-actions .token-chip { max-width: 180px; padding: 7px 9px; }
+						.header-actions .token-chip span { display: none; }
+						main { padding-top: 14px; }
 						.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; }
 						.workspace-sidebar .compact-subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 						.subscription-grid, .settings-grid { grid-template-columns: 1fr; }
@@ -1059,7 +1066,6 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						.page-footer { flex-direction: column; }
 					}
 					@media (max-width: 480px) {
-						h1 { font-size: 32px; }
 						.workspace-sidebar .compact-subscription-grid { grid-template-columns: 1fr; }
 						.online { width: 9px; height: 9px; padding: 0; border: 0; font-size: 0; background: #21a464; box-shadow: 0 0 0 4px rgba(33, 164, 100, .13); }
 						.online::before { display: none; }
@@ -1086,19 +1092,18 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							<span class="brand-mark"><i data-lucide="route"></i></span>
 							<div class="brand-copy"><strong>${escapeHTML(runtime.FileName)}</strong><span>Subscription Console</span></div>
 						</div>
-						<span class="online">服务正常</span>
+						<section class="header-overview" aria-labelledby="page-title">
+							<p class="eyebrow">Overview</p>
+							<h1 id="page-title">订阅控制台</h1>
+							<p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p>
+						</section>
+						<div class="header-actions">
+							<div class="token-chip"><i data-lucide="shield-check"></i><span>当前入口</span><code>/${escapeHTML(runtime.mytoken)}</code></div>
+							<span class="online">服务正常</span>
+						</div>
 					</div>
 				</header>
 				<main>
-					<section class="page-intro">
-						<div>
-							<p class="eyebrow">Overview</p>
-							<h1>订阅控制台</h1>
-							<p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p>
-						</div>
-						<div class="token-chip"><i data-lucide="shield-check"></i><span>当前入口</span><code>/${escapeHTML(runtime.mytoken)}</code></div>
-					</section>
-
 					<div class="workspace-grid">
 						<aside class="workspace-config" aria-label="转换配置">
 							<section class="section" aria-labelledby="settings-title">
