@@ -895,7 +895,9 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; align-items: start; }
 					.workspace-main, .workspace-sidebar { min-width: 0; }
 					.workspace-grid .section { margin-top: 0; }
+					.workspace-main { display: flex; flex-direction: column; gap: 26px; }
 					.workspace-sidebar { display: flex; flex-direction: column; gap: 26px; }
+					.workspace-sidebar > .guest-panel { margin-top: 0; }
 					.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; gap: 10px; }
 					.workspace-sidebar .compact-subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 					.workspace-sidebar .subscription-card { padding: 14px; }
@@ -911,8 +913,6 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.compact-subscription-grid .link-row { grid-template-columns: minmax(0, 1fr) 34px; }
 					.compact-subscription-grid .link-row .copy-button { grid-column: 1; grid-row: 1; }
 					.compact-subscription-grid .link-row .icon-button { grid-column: 2; grid-row: 1; }
-					.workspace-sidebar .settings-grid { grid-template-columns: 1fr; }
-					.workspace-sidebar .setting + .setting { border-top: 1px solid var(--line-soft); border-left: 0; }
 					.subscription-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 					.subscription-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 3px 12px rgba(26, 46, 35, .025); }
 					.subscription-head { display: flex; gap: 12px; min-height: 48px; }
@@ -1088,8 +1088,9 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					</section>
 
 					<div class="workspace-grid">
-						<section class="section workspace-main" aria-labelledby="editor-title">
-							<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
+						<div class="workspace-main" aria-label="订阅管理配置">
+							<section class="section" aria-labelledby="editor-title">
+								<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
 							${hasKV ? `
 							<div class="editor-shell">
 								<div class="editor-toolbar">
@@ -1122,9 +1123,29 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 								<textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
 							</div>` : `
 							<div class="empty-state"><i data-lucide="database-zap"></i><h3>尚未绑定 KV 命名空间</h3><p>请在 Cloudflare 中绑定变量名为 KV 的命名空间后再编辑订阅源。</p></div>`}
-						</section>
+							</section>
 
-						<aside class="workspace-sidebar" aria-label="订阅与转换配置">
+							<section class="section" aria-labelledby="settings-title">
+								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>选择默认服务，或接入自建 Sublink Worker</p></div></div>
+								<div class="converter-picker">
+									<div class="converter-options" role="radiogroup" aria-label="订阅转换服务">
+										<label class="converter-option"><input type="radio" name="converterMode" value="default" checked><span><strong>默认服务</strong><small>使用内置 Subconverter</small></span></label>
+										<label class="converter-option"><input type="radio" name="converterMode" value="custom"><span><strong>自建服务</strong><small>7Sageer/sublink-worker</small></span></label>
+									</div>
+									<div class="custom-converter-row">
+										<input id="customConverterUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://sub.example.com" aria-label="自建 Sublink Worker 地址">
+										<button class="tool-button" id="applyConverterButton" type="button" onclick="applyConverterSelection()">应用</button>
+									</div>
+									<p class="converter-help" id="converterHelp">当前使用：<strong>默认服务</strong>。选择会持久化到 KV，并对所有设备生效。</p>
+								</div>
+								<div class="settings-grid">
+									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>默认后端</span><div class="converter-list">${converterListHTML}</div></div>
+									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
+								</div>
+							</section>
+						</div>
+
+						<aside class="workspace-sidebar" aria-label="订阅入口与请求统计">
 							<section class="section" aria-labelledby="owner-title">
 								<div class="section-heading"><div><h2 id="owner-title">我的订阅</h2><p>复制链接，或扫码导入客户端</p></div></div>
 								<div class="subscription-grid compact-subscription-grid">${renderSubscriptions(false)}</div>
@@ -1145,25 +1166,6 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 									<div class="subscription-grid">${renderSubscriptions(true)}</div>
 								</div>
 							</details>
-
-							<section class="section" aria-labelledby="settings-title">
-								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>选择默认服务，或接入自建 Sublink Worker</p></div></div>
-								<div class="converter-picker">
-									<div class="converter-options" role="radiogroup" aria-label="订阅转换服务">
-										<label class="converter-option"><input type="radio" name="converterMode" value="default" checked><span><strong>默认服务</strong><small>使用内置 Subconverter</small></span></label>
-										<label class="converter-option"><input type="radio" name="converterMode" value="custom"><span><strong>自建服务</strong><small>7Sageer/sublink-worker</small></span></label>
-									</div>
-									<div class="custom-converter-row">
-										<input id="customConverterUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://sub.example.com" aria-label="自建 Sublink Worker 地址">
-										<button class="tool-button" id="applyConverterButton" type="button" onclick="applyConverterSelection()">应用</button>
-									</div>
-									<p class="converter-help" id="converterHelp">当前使用：<strong>默认服务</strong>。选择会持久化到 KV，并对所有设备生效。</p>
-								</div>
-								<div class="settings-grid">
-									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>默认后端</span><div class="converter-list">${converterListHTML}</div></div>
-									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
-								</div>
-							</section>
 						</aside>
 					</div>
 
