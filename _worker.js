@@ -871,7 +871,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					button { letter-spacing: 0; }
 					button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
-					.header-inner { width: 80%; min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+					.header-inner { width: min(90%, 1680px); min-height: 70px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
 					.brand-mark { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; background: #143f32; color: #fff; }
 					.brand-mark svg { width: 20px; height: 20px; }
@@ -880,7 +880,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
-					main { width: 80%; margin: 0 auto; padding: 44px 0 64px; }
+					main { width: min(90%, 1680px); margin: 0 auto; padding: 44px 0 64px; }
 					.page-intro { display: flex; align-items: end; justify-content: space-between; gap: 32px; margin-bottom: 30px; }
 					.eyebrow { margin: 0 0 8px; color: var(--green); font-size: 12px; font-weight: 800; text-transform: uppercase; }
 					h1 { margin: 0; font-size: 42px; line-height: 1.13; letter-spacing: 0; }
@@ -892,10 +892,12 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 					.section-heading h2 { margin: 0; font-size: 19px; }
 					.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 20px; align-items: start; }
-					.workspace-main, .workspace-sidebar { min-width: 0; }
+					.workspace-grid { display: grid; grid-template-columns: 260px minmax(0, 1fr) 350px; grid-template-areas: "config main sidebar"; gap: 20px; align-items: start; }
+					.workspace-config, .workspace-main, .workspace-sidebar { min-width: 0; }
+					.workspace-config { grid-area: config; }
+					.workspace-main { grid-area: main; }
+					.workspace-sidebar { grid-area: sidebar; }
 					.workspace-grid .section { margin-top: 0; }
-					.workspace-main { display: flex; flex-direction: column; gap: 26px; }
 					.workspace-sidebar { display: flex; flex-direction: column; gap: 26px; }
 					.workspace-sidebar > .guest-panel { margin-top: 0; }
 					.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; gap: 10px; }
@@ -964,6 +966,10 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.custom-converter-row input:focus { border-color: #72ad90; outline: 3px solid rgba(23, 107, 73, .12); }
 					.converter-help { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
 					.converter-help strong { color: var(--green); }
+					.converter-picker + .settings-grid { margin-top: 10px; }
+					.workspace-config .converter-options, .workspace-config .custom-converter-row, .workspace-config .settings-grid { grid-template-columns: 1fr; }
+					.workspace-config .custom-converter-row .tool-button { width: 100%; }
+					.workspace-config .setting + .setting { border-top: 1px solid var(--line-soft); border-left: 0; }
 					.request-list { max-height: 360px; border: 1px solid var(--line); border-radius: 8px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; background: var(--surface); }
 					.request-client { min-width: 0; padding: 12px 14px; }
 					.request-client + .request-client { border-top: 1px solid var(--line-soft); }
@@ -1026,8 +1032,14 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.toast { position: fixed; z-index: 10; left: 50%; bottom: 24px; max-width: calc(100vw - 32px); display: flex; align-items: center; gap: 9px; padding: 10px 14px; border-radius: 6px; background: #17211d; color: #fff; box-shadow: 0 10px 28px rgba(20, 35, 27, .22); font-size: 13px; opacity: 0; pointer-events: none; transform: translate(-50%, 12px); transition: opacity .2s ease, transform .2s ease; }
 					.toast.show { opacity: 1; transform: translate(-50%, 0); }
 					.toast svg { width: 16px; color: #62d297; }
+					@media (max-width: 1180px) {
+						.workspace-grid { grid-template-columns: 260px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
+						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+						.workspace-sidebar > .guest-panel { grid-column: 1 / -1; }
+					}
 					@media (max-width: 980px) {
-						.workspace-grid { grid-template-columns: 1fr; }
+						.workspace-grid { grid-template-columns: 1fr; grid-template-areas: "main" "config" "sidebar"; }
+						.workspace-sidebar { display: flex; }
 					}
 					@media (max-width: 760px) {
 						.header-inner, main { width: min(100% - 28px, 1440px); }
@@ -1088,9 +1100,29 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					</section>
 
 					<div class="workspace-grid">
-						<div class="workspace-main" aria-label="订阅管理配置">
-							<section class="section" aria-labelledby="editor-title">
-								<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
+						<aside class="workspace-config" aria-label="转换配置">
+							<section class="section" aria-labelledby="settings-title">
+								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>选择默认服务，或接入自建 Sublink Worker</p></div></div>
+								<div class="converter-picker">
+									<div class="converter-options" role="radiogroup" aria-label="订阅转换服务">
+										<label class="converter-option"><input type="radio" name="converterMode" value="default" checked><span><strong>默认服务</strong><small>使用内置 Subconverter</small></span></label>
+										<label class="converter-option"><input type="radio" name="converterMode" value="custom"><span><strong>自建服务</strong><small>7Sageer/sublink-worker</small></span></label>
+									</div>
+									<div class="custom-converter-row">
+										<input id="customConverterUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://sub.example.com" aria-label="自建 Sublink Worker 地址">
+										<button class="tool-button" id="applyConverterButton" type="button" onclick="applyConverterSelection()">应用</button>
+									</div>
+									<p class="converter-help" id="converterHelp">当前使用：<strong>默认服务</strong>。选择会持久化到 KV，并对所有设备生效。</p>
+								</div>
+								<div class="settings-grid">
+									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>默认后端</span><div class="converter-list">${converterListHTML}</div></div>
+									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
+								</div>
+							</section>
+						</aside>
+
+						<section class="section workspace-main" aria-labelledby="editor-title">
+							<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
 							${hasKV ? `
 							<div class="editor-shell">
 								<div class="editor-toolbar">
@@ -1123,27 +1155,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 								<textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
 							</div>` : `
 							<div class="empty-state"><i data-lucide="database-zap"></i><h3>尚未绑定 KV 命名空间</h3><p>请在 Cloudflare 中绑定变量名为 KV 的命名空间后再编辑订阅源。</p></div>`}
-							</section>
-
-							<section class="section" aria-labelledby="settings-title">
-								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>选择默认服务，或接入自建 Sublink Worker</p></div></div>
-								<div class="converter-picker">
-									<div class="converter-options" role="radiogroup" aria-label="订阅转换服务">
-										<label class="converter-option"><input type="radio" name="converterMode" value="default" checked><span><strong>默认服务</strong><small>使用内置 Subconverter</small></span></label>
-										<label class="converter-option"><input type="radio" name="converterMode" value="custom"><span><strong>自建服务</strong><small>7Sageer/sublink-worker</small></span></label>
-									</div>
-									<div class="custom-converter-row">
-										<input id="customConverterUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://sub.example.com" aria-label="自建 Sublink Worker 地址">
-										<button class="tool-button" id="applyConverterButton" type="button" onclick="applyConverterSelection()">应用</button>
-									</div>
-									<p class="converter-help" id="converterHelp">当前使用：<strong>默认服务</strong>。选择会持久化到 KV，并对所有设备生效。</p>
-								</div>
-								<div class="settings-grid">
-									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>默认后端</span><div class="converter-list">${converterListHTML}</div></div>
-									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
-								</div>
-							</section>
-						</div>
+						</section>
 
 						<aside class="workspace-sidebar" aria-label="订阅入口与请求统计">
 							<section class="section" aria-labelledby="owner-title">
