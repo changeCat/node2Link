@@ -10,6 +10,10 @@ https://cfxr.eu.org/getSub
 `;
 const DEFAULT_SUB_CONVERTER = 'https://SUBAPI.cmliussss.net';
 const DEFAULT_SUB_CONFIG = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini';
+const SETTINGS_KEY = 'NODE2LINK.settings.json';
+const REQUEST_LOG_PREFIX = 'NODE2LINK.request.';
+const REQUEST_LOG_TTL = 30 * 24 * 60 * 60;
+const REQUEST_LOG_LIMIT = 5000;
 const subscriptionNotificationCache = new Map();
 const subscriptionNotificationCooldown = 10 * 1000;
 
@@ -37,6 +41,14 @@ export default {
 			if (env.URL) return proxyURL(env.URL, url);
 			return new Response(await nginx(), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
 		}
+
+		const persistedSettings = await readPersistedSettings(env);
+		const persistedCustomConverterURL = normalizeSublinkConverter(persistedSettings.customConverterURL);
+		runtime.converterMode = persistedSettings.converterMode === 'custom' && persistedCustomConverterURL ? 'custom' : 'default';
+		runtime.customConverterURL = persistedCustomConverterURL;
+		const customSublinkConverter = runtime.converterMode === 'custom'
+			? runtime.customConverterURL
+			: (!env.KV ? normalizeSublinkConverter(url.searchParams.get('converter')) : '');
 
 		let mainData = DEFAULT_MAIN_DATA;
 		let urls = [];
@@ -90,6 +102,15 @@ export default {
 		else if (url.searchParams.has('quanx')) appendUA = 'Quantumult%20X';
 		else if (url.searchParams.has('loon')) appendUA = 'Loon';
 
+		if (!isInternalSubscriptionRequest && request.method === 'GET' && runtime.requestLogEnabled) {
+			queueSubscriptionRequestLog(ctx, env, {
+				client: detectSubscriptionClient(userAgentHeader),
+				userAgent: userAgentHeader || 'Unknown',
+				format: subscriptionFormat,
+				access: token === visitorToken ? 'guest' : 'owner'
+			});
+		}
+
 		const uniqueSubscriptionLinks = [...new Set(urls)].filter(item => item?.trim?.());
 		if (uniqueSubscriptionLinks.length > 0) {
 			const subscriptionResponses = await getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader);
@@ -125,9 +146,10 @@ export default {
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = usedConverter;
 		if (subscriptionFormat === 'base64' || token === fakeToken) return new Response(base64Data, { headers: responseHeaders });
 
-		const conversionResult = await fetchConvertedSubscription(runtime.subConverters, subscriptionFormat, converterSourceURL, runtime.subConfig, {
-			headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' }
-		});
+		const conversionInit = { headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' } };
+		const conversionResult = customSublinkConverter && supportsSublinkTarget(subscriptionFormat)
+			? await fetchSublinkSubscription(customSublinkConverter, subscriptionFormat, converterSourceURL, conversionInit)
+			: await fetchConvertedSubscription(runtime.subConverters, subscriptionFormat, converterSourceURL, runtime.subConfig, conversionInit);
 		if (!conversionResult) return new Response(base64Data, { headers: responseHeaders });
 
 		responseHeaders['X-Subconverter-Used'] = conversionResult.converter;
@@ -149,8 +171,23 @@ async function createRuntimeConfig(env) {
 		FileName: env.SUBNAME || DEFAULT_FILE_NAME,
 		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
 		subConfig: env.SUBCONFIG || DEFAULT_SUB_CONFIG,
-		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER)
+		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER),
+		converterMode: 'default',
+		customConverterURL: '',
+		requestLogEnabled: String(env.REQUESTLOG ?? '1') !== '0'
 	};
+}
+
+async function readPersistedSettings(env) {
+	if (!env.KV) return {};
+	try {
+		const value = await env.KV.get(SETTINGS_KEY);
+		const parsed = value ? JSON.parse(value) : {};
+		return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+	} catch (error) {
+		console.error('读取持久化设置时发生错误:', error);
+		return {};
+	}
 }
 
 function parseSubConverters(value) {
@@ -163,10 +200,135 @@ function parseSubConverters(value) {
 	return [...new Set(converters.length ? converters : [DEFAULT_SUB_CONVERTER])];
 }
 
+function normalizeSublinkConverter(value) {
+	if (!value || String(value).length > 2048) return '';
+	try {
+		const url = new URL(String(value).trim());
+		if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+		url.search = '';
+		url.hash = '';
+		return url.toString().replace(/\/+$/, '');
+	} catch (error) {
+		return '';
+	}
+}
+
+function supportsSublinkTarget(target) {
+	return ['clash', 'singbox', 'surge'].includes(target);
+}
+
+function createSublinkURL(converter, target, sourceURL) {
+	const sources = String(sourceURL || '').split('|').map(item => item.trim()).filter(Boolean).join('\n');
+	const params = new URLSearchParams({ config: sources });
+	return converter + '/' + target + '?' + params.toString();
+}
+
+async function fetchSublinkSubscription(converter, target, sourceURL, init) {
+	try {
+		const response = await fetch(createSublinkURL(converter, target, sourceURL), init);
+		if (response.ok) return { response, converter };
+		console.log(`Sublink Worker ${converter} 返回 ${response.status}`);
+	} catch (error) {
+		console.log(`Sublink Worker ${converter} 请求失败:`, error.message);
+	}
+	return null;
+}
+
 function queueTelegram(ctx, task) {
 	const safeTask = Promise.resolve(task).catch(error => console.error('TG 推送失败:', error));
 	if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(safeTask);
 	return safeTask;
+}
+
+function detectSubscriptionClient(userAgentHeader) {
+	const ua = String(userAgentHeader || '').toLowerCase();
+	if (ua.includes('mihomo')) return 'Mihomo';
+	if (ua.includes('clash')) return 'Clash';
+	if (ua.includes('sing-box') || ua.includes('singbox')) return 'Sing-box';
+	if (ua.includes('shadowrocket')) return 'Shadowrocket';
+	if (ua.includes('quantumult')) return 'Quantumult X';
+	if (ua.includes('surge')) return 'Surge';
+	if (ua.includes('loon')) return 'Loon';
+	if (ua.includes('nekobox')) return 'NekoBox';
+	if (ua.includes('v2rayng')) return 'v2rayNG';
+	if (ua.includes('v2rayn')) return 'v2rayN';
+	if (ua.includes('stash')) return 'Stash';
+	if (ua.includes('mozilla')) return '浏览器';
+	return '其他客户端';
+}
+
+function queueSubscriptionRequestLog(ctx, env, details) {
+	if (!env.KV || typeof env.KV.put !== 'function') return;
+	const task = recordSubscriptionRequest(env.KV, details)
+		.catch(error => console.error('记录订阅请求时发生错误:', error));
+	if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(task);
+}
+
+async function recordSubscriptionRequest(kv, details) {
+	const now = Date.now();
+	const reverseTimestamp = String(9999999999999 - now).padStart(13, '0');
+	const randomID = typeof crypto.randomUUID === 'function'
+		? crypto.randomUUID()
+		: Math.random().toString(36).slice(2) + now.toString(36);
+	const metadata = {
+		client: String(details.client || '其他客户端').slice(0, 40),
+		userAgent: String(details.userAgent || 'Unknown').slice(0, 240),
+		format: String(details.format || 'base64').slice(0, 20),
+		access: details.access === 'guest' ? 'guest' : 'owner',
+		requestedAt: new Date(now).toISOString()
+	};
+	await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
+		metadata,
+		expirationTtl: REQUEST_LOG_TTL
+	});
+}
+
+async function readSubscriptionRequestStats(kv) {
+	if (!kv || typeof kv.list !== 'function') return { total: 0, clients: [], truncated: false };
+	const events = [];
+	let cursor;
+	let truncated = false;
+	try {
+		do {
+			const options = { prefix: REQUEST_LOG_PREFIX, limit: Math.min(1000, REQUEST_LOG_LIMIT - events.length) };
+			if (cursor) options.cursor = cursor;
+			const page = await kv.list(options);
+			for (const key of page.keys || []) {
+				if (key.metadata) events.push(key.metadata);
+				if (events.length >= REQUEST_LOG_LIMIT) break;
+			}
+			cursor = page.list_complete ? undefined : page.cursor;
+			if (events.length >= REQUEST_LOG_LIMIT && !page.list_complete) truncated = true;
+		} while (cursor && events.length < REQUEST_LOG_LIMIT);
+	} catch (error) {
+		console.error('读取订阅请求统计时发生错误:', error);
+		return { total: 0, clients: [], truncated: false };
+	}
+
+	const clients = new Map();
+	for (const event of events) {
+		const clientName = String(event.client || '其他客户端');
+		let item = clients.get(clientName);
+		if (!item) {
+			item = { name: clientName, count: 0, lastRequestedAt: '', lastUserAgent: '', formats: {}, owner: 0, guest: 0 };
+			clients.set(clientName, item);
+		}
+		item.count += 1;
+		const format = String(event.format || 'base64');
+		item.formats[format] = (item.formats[format] || 0) + 1;
+		if (event.access === 'guest') item.guest += 1;
+		else item.owner += 1;
+		if (!item.lastRequestedAt || String(event.requestedAt || '') > item.lastRequestedAt) {
+			item.lastRequestedAt = String(event.requestedAt || '');
+			item.lastUserAgent = String(event.userAgent || 'Unknown');
+		}
+	}
+
+	return {
+		total: events.length,
+		truncated,
+		clients: [...clients.values()].sort((a, b) => b.count - a.count || b.lastRequestedAt.localeCompare(a.lastRequestedAt))
+	};
 }
 
 function createSubConverterURL(converter, target, sourceURL, configURL) {
@@ -529,6 +691,23 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 		if (request.method === "POST") {
 			if (!env.KV) return new Response("未绑定 KV 命名空间", { status: 400 });
 			try {
+				if (request.headers.get('X-Node2Link-Action') === 'save-converter') {
+					const payload = await request.json();
+					const mode = payload && payload.mode === 'custom' ? 'custom' : 'default';
+					const customConverterURL = normalizeSublinkConverter(payload && payload.url);
+					if (mode === 'custom' && !customConverterURL) {
+						return new Response(JSON.stringify({ ok: false, message: '自建 Sublink Worker 地址无效' }), {
+							status: 400,
+							headers: { "Content-Type": "application/json;charset=utf-8" }
+						});
+					}
+					const settings = { converterMode: mode, customConverterURL, savedAt: new Date().toISOString() };
+					await env.KV.put(SETTINGS_KEY, JSON.stringify(settings));
+					return new Response(JSON.stringify({ ok: true, settings }), {
+						headers: { "Content-Type": "application/json;charset=utf-8" }
+					});
+				}
+
 				if (request.headers.get('X-Node2Link-Action') === 'get-backup') {
 					const [backupContent, backupMetadataText] = await Promise.all([
 						env.KV.get(backupKey),
@@ -588,14 +767,17 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 
 		let content = "";
 		let savedMetadata = null;
+		let requestStats = { total: 0, clients: [], truncated: false };
 		const hasKV = !!env.KV;
 		if (hasKV) {
 			try {
-				const [storedContent, storedMetadata] = await Promise.all([
+				const [storedContent, storedMetadata, storedRequestStats] = await Promise.all([
 					env.KV.get(txt),
-					env.KV.get(metaKey)
+					env.KV.get(metaKey),
+					readSubscriptionRequestStats(env.KV)
 				]);
 				content = storedContent || "";
+				requestStats = storedRequestStats;
 				if (storedMetadata) {
 					try { savedMetadata = JSON.parse(storedMetadata); }
 					catch (metadataError) { console.error("读取 KV 元数据时发生错误:", metadataError); }
@@ -625,6 +807,20 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 		const converterListHTML = runtime.subConverters.map((converter, index) =>
 			`<span class="converter-entry"><b>${index === 0 ? "主" : "备" + index}</b><code title="${escapeHTML(converter)}">${escapeHTML(converter)}</code></span>`
 		).join("");
+		const formatNames = { base64: 'Base64', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX', loon: 'Loon' };
+		const requestStatsHTML = requestStats.clients.slice(0, 10).map((client) => {
+			const formats = Object.entries(client.formats)
+				.sort((a, b) => b[1] - a[1])
+				.map(([format, count]) => `${formatNames[format] || format} ${count}`)
+				.join(' · ');
+			return `
+				<div class="request-client">
+					<div class="request-client-head"><strong>${escapeHTML(client.name)}</strong><span>${client.count} 次</span></div>
+					<div class="request-client-meta"><span>${escapeHTML(formats || '未知格式')}</span><time data-request-time="${escapeHTML(client.lastRequestedAt)}">${escapeHTML(client.lastRequestedAt || '时间未知')}</time></div>
+					<code title="${escapeHTML(client.lastUserAgent)}">${escapeHTML(client.lastUserAgent)}</code>
+					<div class="request-access"><span>管理 ${client.owner}</span><span>访客 ${client.guest}</span></div>
+				</div>`;
+		}).join('');
 		const formats = [
 			{ name: "智能适配", key: "sub", icon: "sparkles", description: "自动识别客户端并返回合适格式", recommended: true },
 			{ name: "Base64", key: "b64", icon: "binary", description: "通用 Base64 编码订阅" },
@@ -639,13 +835,13 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 				? guestBase + (format.key === "sub" ? "" : "&" + format.key)
 				: ownerBase + "?" + format.key;
 			return `
-				<article class="subscription-card">
+				<article class="subscription-card" data-default-url="${escapeHTML(subscriptionURL)}">
 					<div class="subscription-head">
 						<span class="format-icon"><i data-lucide="${format.icon}"></i></span>
 						<div><h3>${format.name}${format.recommended ? '<span class="badge">推荐</span>' : ""}</h3><p>${format.description}</p></div>
 					</div>
 					<div class="link-row">
-						<code title="${escapeHTML(subscriptionURL)}">${escapeHTML(subscriptionURL)}</code>
+						<code class="subscription-url" title="${escapeHTML(subscriptionURL)}">${escapeHTML(subscriptionURL)}</code>
 						<button class="icon-button" type="button" data-url="${escapeHTML(subscriptionURL)}" onclick="showQRCode(this)" aria-label="显示二维码" title="显示二维码"><i data-lucide="qr-code"></i></button>
 						<button class="copy-button" type="button" data-url="${escapeHTML(subscriptionURL)}" onclick="copySubscription(this)"><i data-lucide="copy"></i><span>复制</span></button>
 					</div>
@@ -757,6 +953,31 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.converter-list { display: flex; flex-direction: column; gap: 7px; }
 					.converter-entry { min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; }
 					.converter-entry b { padding: 2px 4px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: 10px; text-align: center; }
+					.converter-picker { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+					.converter-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+					.converter-option { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+					.converter-option:has(input:checked) { border-color: #8bc5a7; background: var(--green-soft); }
+					.converter-option input { margin: 3px 0 0; accent-color: var(--green); }
+					.converter-option strong, .converter-option small { display: block; }
+					.converter-option strong { font-size: 12px; }
+					.converter-option small { margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+					.custom-converter-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 10px; }
+					.custom-converter-row input { min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
+					.custom-converter-row input:focus { border-color: #72ad90; outline: 3px solid rgba(23, 107, 73, .12); }
+					.converter-help { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+					.converter-help strong { color: var(--green); }
+					.request-list { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+					.request-client { min-width: 0; padding: 12px 14px; }
+					.request-client + .request-client { border-top: 1px solid var(--line-soft); }
+					.request-client-head, .request-client-meta, .request-access { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+					.request-client-head strong { font-size: 13px; }
+					.request-client-head > span { flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 10px; font-weight: 800; }
+					.request-client-meta { margin-top: 5px; color: var(--muted); font-size: 10px; }
+					.request-client-meta span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+					.request-client-meta time { flex: 0 0 auto; }
+					.request-client code { display: block; margin-top: 7px; overflow: hidden; color: #53605a; font: 10px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+					.request-access { justify-content: flex-start; margin-top: 6px; color: var(--muted); font-size: 9px; }
+					.request-empty { padding: 22px 14px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; text-align: center; }
 					.editor-shell { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
 					.editor-toolbar { min-height: 54px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
 					.editor-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--muted); font-size: 12px; }
@@ -911,6 +1132,11 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 								<div class="subscription-grid compact-subscription-grid">${renderSubscriptions(false)}</div>
 							</section>
 
+							<section class="section" aria-labelledby="requests-title">
+								<div class="section-heading"><div><h2 id="requests-title">订阅请求</h2><p>近 30 天 · ${requestStats.total}${requestStats.truncated ? '+' : ''} 次，按请求次数排序</p></div></div>
+								${requestStatsHTML ? `<div class="request-list">${requestStatsHTML}</div>` : '<div class="request-empty">暂无客户端请求记录</div>'}
+							</section>
+
 							<details class="guest-panel">
 								<summary>
 									<span class="summary-label"><i data-lucide="users"></i>访客订阅</span>
@@ -923,9 +1149,20 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							</details>
 
 							<section class="section" aria-labelledby="settings-title">
-								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>当前转换服务与规则文件</p></div></div>
+								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>选择默认服务，或接入自建 Sublink Worker</p></div></div>
+								<div class="converter-picker">
+									<div class="converter-options" role="radiogroup" aria-label="订阅转换服务">
+										<label class="converter-option"><input type="radio" name="converterMode" value="default" checked><span><strong>默认服务</strong><small>使用内置 Subconverter</small></span></label>
+										<label class="converter-option"><input type="radio" name="converterMode" value="custom"><span><strong>自建服务</strong><small>7Sageer/sublink-worker</small></span></label>
+									</div>
+									<div class="custom-converter-row">
+										<input id="customConverterUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://sub.example.com" aria-label="自建 Sublink Worker 地址">
+										<button class="tool-button" id="applyConverterButton" type="button" onclick="applyConverterSelection()">应用</button>
+									</div>
+									<p class="converter-help" id="converterHelp">当前使用：<strong>默认服务</strong>。选择会持久化到 KV，并对所有设备生效。</p>
+								</div>
 								<div class="settings-grid">
-									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>转换后端</span><div class="converter-list">${converterListHTML}</div></div>
+									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>默认后端</span><div class="converter-list">${converterListHTML}</div></div>
 									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
 								</div>
 							</section>
@@ -956,6 +1193,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					var pendingDedupeContent = "";
 					var savedMetadata = ${JSON.stringify(savedMetadata)};
 					var draftStorageKey = "node2link:draft:" + window.location.host + window.location.pathname;
+					var initialConverterSettings = ${JSON.stringify({ mode: runtime.converterMode, url: runtime.customConverterURL })};
 
 					function initializeIcons() {
 						if (window.lucide) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } });
@@ -967,6 +1205,74 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						toast.classList.add("show");
 						clearTimeout(toastTimer);
 						toastTimer = setTimeout(function () { toast.classList.remove("show"); }, 2200);
+					}
+
+					function normalizeCustomConverter(value) {
+						try {
+							var parsed = new URL(String(value || "").trim());
+							if (!/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password) return "";
+							parsed.search = "";
+							parsed.hash = "";
+							return parsed.toString().replace(/\\/+$/, "");
+						} catch (error) { return ""; }
+					}
+
+					function setConverterForm(mode, customConverter) {
+						var selectedMode = mode === "custom" ? "custom" : "default";
+						document.querySelector('input[name="converterMode"][value="' + selectedMode + '"]').checked = true;
+						var input = document.getElementById("customConverterUrl");
+						input.value = customConverter || "";
+						input.disabled = selectedMode !== "custom";
+						var help = document.getElementById("converterHelp");
+						help.innerHTML = selectedMode === "custom"
+							? "当前使用：<strong>自建 Sublink Worker</strong>。已持久化到 KV；支持 Clash、Sing-box、Surge，其他格式仍使用默认服务。"
+							: "当前使用：<strong>默认服务</strong>。选择已持久化到 KV，并对所有设备生效。";
+					}
+
+					function restoreConverterSelection() {
+						var customConverter = normalizeCustomConverter(initialConverterSettings.url);
+						var mode = initialConverterSettings.mode === "custom" && customConverter ? "custom" : "default";
+						setConverterForm(mode, customConverter);
+					}
+
+					function localizeRequestTimes() {
+						document.querySelectorAll("[data-request-time]").forEach(function (element) {
+							var value = element.dataset.requestTime;
+							if (value) element.textContent = new Date(value).toLocaleString();
+						});
+					}
+
+					function applyConverterSelection() {
+						var checked = document.querySelector('input[name="converterMode"]:checked');
+						var mode = checked ? checked.value : "default";
+						var customConverter = normalizeCustomConverter(document.getElementById("customConverterUrl").value);
+						if (mode === "custom" && !customConverter) {
+							showToast("请输入有效的 http/https 自建地址");
+							document.getElementById("customConverterUrl").focus();
+							return;
+						}
+						var button = document.getElementById("applyConverterButton");
+						button.disabled = true;
+						button.textContent = "保存中";
+						return fetch(window.location.href, {
+							method: "POST",
+							headers: { "Content-Type": "application/json", "X-Node2Link-Action": "save-converter" },
+							body: JSON.stringify({ mode: mode, url: customConverter }),
+							cache: "no-cache"
+						})
+							.then(function (response) {
+								return response.json().then(function (result) {
+									if (!response.ok) throw new Error(result.message || "保存失败");
+									return result;
+								});
+							})
+							.then(function (result) {
+								initialConverterSettings = { mode: result.settings.converterMode, url: result.settings.customConverterURL };
+								setConverterForm(initialConverterSettings.mode, initialConverterSettings.url);
+								showToast(mode === "custom" ? "自建转换服务已保存到 KV" : "默认转换服务已保存到 KV");
+							})
+							.catch(function (error) { showToast("转换服务保存失败：" + error.message); })
+							.finally(function () { button.disabled = false; button.textContent = "应用"; });
 					}
 
 					function copyText(text) {
@@ -1257,6 +1563,14 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					document.addEventListener("DOMContentLoaded", function () {
 						initializeIcons();
 						setTimeout(initializeIcons, 500);
+						restoreConverterSelection();
+						localizeRequestTimes();
+						document.querySelectorAll('input[name="converterMode"]').forEach(function (radio) {
+							radio.addEventListener("change", function () {
+								document.getElementById("customConverterUrl").disabled = radio.value !== "custom";
+								if (radio.value === "custom") document.getElementById("customConverterUrl").focus();
+							});
+						});
 						var textarea = document.getElementById("content");
 						if (textarea) {
 							originalContent = textarea.value;
