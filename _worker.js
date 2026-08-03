@@ -825,8 +825,6 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 			{ name: "智能适配", key: "sub", icon: "sparkles", description: "自动识别客户端并返回合适格式", recommended: true },
 			{ name: "Base64", key: "b64", icon: "binary", description: "通用 Base64 编码订阅" },
 			{ name: "Clash", key: "clash", icon: "layers-3", description: "适用于 Clash 与 Mihomo" },
-			{ name: "Sing-box", key: "sb", icon: "box", description: "适用于 Sing-box 客户端" },
-			{ name: "Surge", key: "surge", icon: "activity", description: "适用于 Surge 客户端" },
 			{ name: "Loon", key: "loon", icon: "orbit", description: "适用于 Loon 客户端" }
 		];
 
@@ -966,7 +964,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.custom-converter-row input:focus { border-color: #72ad90; outline: 3px solid rgba(23, 107, 73, .12); }
 					.converter-help { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
 					.converter-help strong { color: var(--green); }
-					.request-list { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+					.request-list { max-height: 360px; border: 1px solid var(--line); border-radius: 8px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; background: var(--surface); }
 					.request-client { min-width: 0; padding: 12px 14px; }
 					.request-client + .request-client { border-top: 1px solid var(--line-soft); }
 					.request-client-head, .request-client-meta, .request-access { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -1133,7 +1131,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							</section>
 
 							<section class="section" aria-labelledby="requests-title">
-								<div class="section-heading"><div><h2 id="requests-title">订阅请求</h2><p>近 30 天 · ${requestStats.total}${requestStats.truncated ? '+' : ''} 次，按请求次数排序</p></div></div>
+								<div class="section-heading"><div><h2 id="requests-title">订阅请求</h2><p>近 30 天 · ${requestStats.total}${requestStats.truncated ? '+' : ''} 次，按次数排序 · 滚动查看</p></div></div>
 								${requestStatsHTML ? `<div class="request-list">${requestStatsHTML}</div>` : '<div class="request-empty">暂无客户端请求记录</div>'}
 							</section>
 
