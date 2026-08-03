@@ -20,7 +20,9 @@
 5. **管理页内容检查：** 实时统计节点、订阅源、重复行与格式问题；
 6. **安全整理与备份：** 支持去重预览、撤销、配置下载与本地文件恢复；
 7. **订阅转换容错：** 可配置多个转换后端，主后端不可用时自动尝试备用地址；
-8. **更多功能等待发掘...**
+8. **自建转换服务：** 管理页可在默认服务与自建 [Sublink Worker](https://github.com/7Sageer/sublink-worker) 之间切换，选择会持久化到 KV 并对所有设备生效；
+9. **订阅请求统计：** 记录近 30 天的客户端、User-Agent、请求格式、入口类型和次数，并在管理页按请求次数展示；
+10. **更多功能等待发掘...**
 
 ## 🎬 视频教程
 - **[自建订阅！CF-Workers-SUB 教你如何将多节点多订阅汇聚合并为一个订阅！](https://youtu.be/w6rRY4FDd58)**
@@ -110,6 +112,17 @@
 | SUBNAME | `CF-Workers-SUB` | ❌ | 订阅名称 |
 | SUBAPI | `SUBAPI.cmliussss.net,backup.example.com` | ❌ | clash、singbox等订阅转换后端；多个地址使用逗号、分号或换行分隔，按顺序自动回退 |
 | SUBCONFIG | [https://raw.github.../ACL4SSR_Online_MultiCountry.ini](https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini) | ❌ | clash、singbox等 订阅转换配置文件 | 
+| REQUESTLOG | `1` | ❌ | 是否记录订阅请求统计；默认开启，设置为 `0` 可关闭 |
+
+### 使用自建 Sublink Worker
+
+进入管理页的“转换配置”，选择“自建服务”，填写部署好的 Sublink Worker 根地址并点击“应用”。选择会写入绑定的 KV 命名空间，同一部署下的浏览器、设备和已有订阅链接都会统一使用当前选择。
+
+Sublink Worker 当前用于 Clash、Sing-box 和 Surge 格式；Base64 不需要转换，Loon 与 QuanX 会继续使用默认 Subconverter，以保留原有格式支持。
+
+### 订阅请求统计
+
+绑定 KV 后，每次外部订阅请求会写入一条轻量记录，并在 30 天后自动过期。管理页按客户端聚合最近最多 5000 条记录，优先按请求次数降序排列；转换器内部回源请求不会计入统计，也不会保存访问 IP。若不需要此功能，可将环境变量 `REQUESTLOG` 设置为 `0`。
 
 
 ### 保存与版本恢复
