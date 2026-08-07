@@ -109,7 +109,7 @@
 | LINK | `vless://b7a39...`,`vmess://ew0K...`,`https://sub...` | ❌ | 可同时放入多个节点链接与多个订阅链接，链接之间用换行做间隔（添加**KV命名空间**后，变量将不会使用）|
 | TGTOKEN | `6894123456:XXXXXXXXXX0qExVsBPUhHDAbXXXXXqWXgBA` | ❌ | 发送TG通知的机器人token | 
 | TGID | `6946912345` | ❌ | 接收TG通知的账户数字ID | 
-| SUBNAME | `CF-Workers-SUB` | ❌ | 订阅名称 |
+| SUBNAME | `自建节点` | ❌ | 订阅名称的环境变量默认值；绑定 KV 后可在管理页顶部自定义，客户端下次拉取时自动显示 |
 | SUBAPI | `SUBAPI.cmliussss.net,backup.example.com` | ❌ | clash、singbox等订阅转换后端；多个地址使用逗号、分号或换行分隔，按顺序自动回退 |
 | SUBCONFIG | [https://raw.github.../ACL4SSR_Online_MultiCountry.ini](https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini) | ❌ | clash、singbox等 订阅转换配置文件 | 
 | REQUESTLOG | `1` | ❌ | 是否记录订阅请求统计；默认开启，设置为 `0` 可关闭 |
