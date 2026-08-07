@@ -4,6 +4,7 @@
 const DEFAULT_TOKEN = 'auto';
 const DEFAULT_GUEST_TOKEN = '';
 const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
+const DEFAULT_SUBSCRIPTION_NAME = '自建节点';
 const DEFAULT_SUB_UPDATE_TIME = 6;
 const DEFAULT_MAIN_DATA = `
 https://cfxr.eu.org/getSub
@@ -44,8 +45,10 @@ export default {
 
 		const persistedSettings = await readPersistedSettings(env);
 		const persistedCustomConverterURL = normalizeSublinkConverter(persistedSettings.customConverterURL);
+		const persistedSubscriptionName = normalizeSubscriptionName(persistedSettings.subscriptionName);
 		runtime.converterMode = persistedSettings.converterMode === 'custom' && persistedCustomConverterURL ? 'custom' : 'default';
 		runtime.customConverterURL = persistedCustomConverterURL;
+		runtime.subscriptionName = persistedSubscriptionName || runtime.subscriptionName;
 		const customSublinkConverter = runtime.converterMode === 'custom'
 			? runtime.customConverterURL
 			: (!env.KV ? normalizeSublinkConverter(url.searchParams.get('converter')) : '');
@@ -141,8 +144,12 @@ export default {
 		const responseHeaders = {
 			'content-type': 'text/plain; charset=utf-8',
 			'Profile-Update-Interval': `${runtime.SUBUpdateTime}`,
-			'Profile-web-page-url': request.url.includes('?') ? request.url.split('?')[0] : request.url
+			'Profile-web-page-url': request.url.includes('?') ? request.url.split('?')[0] : request.url,
+			'Profile-Title': `base64:${encodeBase64(runtime.subscriptionName)}`
 		};
+		if (!userAgent.includes('mozilla') && token !== fakeToken) {
+			responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(runtime.subscriptionName)}`;
+		}
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = usedConverter;
 		if (subscriptionFormat === 'base64' || token === fakeToken) return new Response(base64Data, { headers: responseHeaders });
 
@@ -155,7 +162,6 @@ export default {
 		responseHeaders['X-Subconverter-Used'] = conversionResult.converter;
 		let convertedContent = await conversionResult.response.text();
 		if (subscriptionFormat === 'clash') convertedContent = await clashFix(convertedContent);
-		if (!userAgent.includes('mozilla')) responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(runtime.FileName)}`;
 		return new Response(convertedContent, { headers: responseHeaders });
 	}
 };
@@ -169,6 +175,7 @@ async function createRuntimeConfig(env) {
 		ChatID: env.TGID || '',
 		TG: Number(env.TG || 0),
 		FileName: env.SUBNAME || DEFAULT_FILE_NAME,
+		subscriptionName: normalizeSubscriptionName(env.SUBNAME) || DEFAULT_SUBSCRIPTION_NAME,
 		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
 		subConfig: env.SUBCONFIG || DEFAULT_SUB_CONFIG,
 		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER),
@@ -211,6 +218,14 @@ function normalizeSublinkConverter(value) {
 	} catch (error) {
 		return '';
 	}
+}
+
+function normalizeSubscriptionName(value) {
+	return String(value || '')
+		.replace(/[\u0000-\u001f\u007f]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 64);
 }
 
 function supportsSublinkTarget(target) {
@@ -701,7 +716,25 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							headers: { "Content-Type": "application/json;charset=utf-8" }
 						});
 					}
-					const settings = { converterMode: mode, customConverterURL, savedAt: new Date().toISOString() };
+					const currentSettings = await readPersistedSettings(env);
+					const settings = { ...currentSettings, converterMode: mode, customConverterURL, savedAt: new Date().toISOString() };
+					await env.KV.put(SETTINGS_KEY, JSON.stringify(settings));
+					return new Response(JSON.stringify({ ok: true, settings }), {
+						headers: { "Content-Type": "application/json;charset=utf-8" }
+					});
+				}
+
+				if (request.headers.get('X-Node2Link-Action') === 'save-subscription-name') {
+					const payload = await request.json();
+					const subscriptionName = normalizeSubscriptionName(payload && payload.name);
+					if (!subscriptionName) {
+						return new Response(JSON.stringify({ ok: false, message: '订阅名称不能为空' }), {
+							status: 400,
+							headers: { "Content-Type": "application/json;charset=utf-8" }
+						});
+					}
+					const currentSettings = await readPersistedSettings(env);
+					const settings = { ...currentSettings, subscriptionName, savedAt: new Date().toISOString() };
 					await env.KV.put(SETTINGS_KEY, JSON.stringify(settings));
 					return new Response(JSON.stringify({ ok: true, settings }), {
 						headers: { "Content-Type": "application/json;charset=utf-8" }
@@ -867,9 +900,9 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					* { box-sizing: border-box; }
 					html { scroll-behavior: smooth; }
 					body { margin: 0; min-width: 320px; background: var(--bg); color: var(--text); }
-					button, textarea { font: inherit; }
+					button, input, textarea { font: inherit; }
 					button { letter-spacing: 0; }
-					button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
+					button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
 					.header-inner { width: calc(100% - 48px); min-height: 82px; margin: 0 auto; display: flex; align-items: center; gap: 22px; }
 					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
@@ -882,6 +915,13 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.header-overview .eyebrow { margin: 0 0 2px; color: var(--green); font-size: 9px; font-weight: 800; text-transform: uppercase; }
 					.header-overview h1 { margin: 0; font-size: 23px; line-height: 1.12; letter-spacing: 0; }
 					.header-overview .intro-copy { max-width: 620px; margin: 3px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+					.subscription-name-editor { flex: 0 1 340px; min-width: 230px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+					.subscription-name-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 5px; color: var(--muted); font-size: 10px; }
+					.subscription-name-label strong { color: var(--text); font-size: 11px; }
+					.subscription-name-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+					.subscription-name-row input { min-width: 0; height: 32px; padding: 0 9px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--surface-soft); color: var(--text); font-size: 12px; }
+					.subscription-name-row input:focus { border-color: #72ad90; background: var(--surface); outline: 3px solid rgba(23, 107, 73, .12); }
+					.subscription-name-row .tool-button { min-height: 32px; height: 32px; }
 					.header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
@@ -1035,6 +1075,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 1180px) {
 						.header-overview .intro-copy { display: none; }
+						.subscription-name-editor { flex-basis: 260px; }
 						.workspace-grid { grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
 						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 						.workspace-sidebar > .guest-panel { grid-column: 1 / -1; }
@@ -1049,6 +1090,8 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						.header-overview { order: 3; flex: 0 0 100%; padding: 7px 0 0; border-top: 1px solid var(--line-soft); border-left: 0; }
 						.header-overview .eyebrow, .header-overview .intro-copy { display: none; }
 						.header-overview h1 { font-size: 20px; }
+						.subscription-name-editor { order: 4; flex: 0 0 100%; }
+						.subscription-name-label span { display: none; }
 						.header-actions { margin-left: auto; }
 						.header-actions .token-chip { max-width: 180px; padding: 7px 9px; }
 						.header-actions .token-chip span { display: none; }
@@ -1097,6 +1140,13 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							<h1 id="page-title">订阅控制台</h1>
 							<p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p>
 						</section>
+						<div class="subscription-name-editor">
+							<label class="subscription-name-label" for="subscriptionName"><strong>订阅名称</strong><span>客户端拉取后自动显示</span></label>
+							<div class="subscription-name-row">
+								<input id="subscriptionName" type="text" maxlength="64" autocomplete="off" value="${escapeHTML(runtime.subscriptionName)}" placeholder="${DEFAULT_SUBSCRIPTION_NAME}">
+								<button class="tool-button" id="saveSubscriptionNameButton" type="button" onclick="saveSubscriptionName()"><i data-lucide="save"></i><span>保存</span></button>
+							</div>
+						</div>
 						<div class="header-actions">
 							<div class="token-chip"><i data-lucide="shield-check"></i><span>当前入口</span><code>/${escapeHTML(runtime.mytoken)}</code></div>
 							<span class="online">服务正常</span>
@@ -1211,6 +1261,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					var savedMetadata = ${JSON.stringify(savedMetadata)};
 					var draftStorageKey = "node2link:draft:" + window.location.host + window.location.pathname;
 					var initialConverterSettings = ${JSON.stringify({ mode: runtime.converterMode, url: runtime.customConverterURL })};
+					var initialSubscriptionName = ${JSON.stringify(runtime.subscriptionName)};
 
 					function initializeIcons() {
 						if (window.lucide) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } });
@@ -1290,6 +1341,43 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							})
 							.catch(function (error) { showToast("转换服务保存失败：" + error.message); })
 							.finally(function () { button.disabled = false; button.textContent = "应用"; });
+					}
+
+					function saveSubscriptionName() {
+						var input = document.getElementById("subscriptionName");
+						var button = document.getElementById("saveSubscriptionNameButton");
+						var name = input.value.replace(/[\\u0000-\\u001f\\u007f]/g, " ").replace(/\\s+/g, " ").trim().slice(0, 64);
+						if (!name) {
+							showToast("订阅名称不能为空");
+							input.focus();
+							return;
+						}
+						if (name === initialSubscriptionName) {
+							input.value = name;
+							showToast("订阅名称未变更");
+							return;
+						}
+						button.disabled = true;
+						button.querySelector("span").textContent = "保存中";
+						return fetch(window.location.href, {
+							method: "POST",
+							headers: { "Content-Type": "application/json", "X-Node2Link-Action": "save-subscription-name" },
+							body: JSON.stringify({ name: name }),
+							cache: "no-cache"
+						})
+							.then(function (response) {
+								return response.json().then(function (result) {
+									if (!response.ok) throw new Error(result.message || "保存失败");
+									return result;
+								});
+							})
+							.then(function (result) {
+								initialSubscriptionName = result.settings.subscriptionName;
+								input.value = initialSubscriptionName;
+								showToast("订阅名称已保存，下次拉取自动生效");
+							})
+							.catch(function (error) { showToast("订阅名称保存失败：" + error.message); })
+							.finally(function () { button.disabled = false; button.querySelector("span").textContent = "保存"; });
 					}
 
 					function copyText(text) {
@@ -1582,6 +1670,9 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						setTimeout(initializeIcons, 500);
 						restoreConverterSelection();
 						localizeRequestTimes();
+						document.getElementById("subscriptionName").addEventListener("keydown", function (event) {
+							if (event.key === "Enter") { event.preventDefault(); saveSubscriptionName(); }
+						});
 						document.querySelectorAll('input[name="converterMode"]').forEach(function (radio) {
 							radio.addEventListener("change", function () {
 								document.getElementById("customConverterUrl").disabled = radio.value !== "custom";
