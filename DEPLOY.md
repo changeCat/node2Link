@@ -11,11 +11,10 @@ push main
   → npm run pages:build
   → 语法检查
   → 生成 dist/_worker.js 和 dist/assets/*
-  → 自动测试
   → 全部通过后发布 dist
 ```
 
-构建或测试失败时，本次部署会失败，当前线上成功版本不会被替换。
+检查或构建失败时，本次部署会失败，当前线上成功版本不会被替换。
 
 ## 二、首次升级前的一次性 Cloudflare 设置
 
@@ -63,7 +62,7 @@ push main
 - 其他 `TOKEN`、`SUBAPI`、`SUBCONFIG`、`TGTOKEN`、`TGID` 等变量保持原值；
 - 不需要因为本次重构重新填写或删除任何变量。
 
-不要把密码、Token、KV ID 等生产配置写进仓库的 `wrangler.toml` 或普通代码文件。
+不要把密码、Token、KV ID 等生产配置写进仓库普通代码文件。
 
 ## 四、本地验证
 
@@ -74,14 +73,13 @@ npm ci
 npm run pages:build
 ```
 
-成功时应完成语法检查、生成 `dist` 并运行全部测试。`dist` 是构建产物，已被 `.gitignore` 排除，不需要提交到 GitHub。
+成功时应完成语法检查并生成 `dist`。`dist` 是构建产物，已被 `.gitignore` 排除，不需要提交到 GitHub。
 
 也可以分别执行：
 
 ```bash
 npm run check
 npm run build
-npm test
 ```
 
 需要在浏览器中预览时执行：
@@ -125,6 +123,7 @@ GitHub 的 `Verify` Action 也会执行相同检查。它用于额外记录代�
 9. 在浏览器开发者工具 Network 中确认不再请求 `unpkg.com` 或 `cdn.jsdelivr.net`。
 10. 确认 `/assets/*` 响应包含静态缓存头，而管理页面和订阅响应仍为 `no-store`。
 11. 查看管理页面响应的 `Server-Timing`，确认能看到 `app;dur=...`。
+12. 确认设置按钮附近显示形如 `v2026.08.11.231530` 的北京时间构建版本。
 
 已有分享索引会在第一次打开分享管理页时自动补充摘要。因此第一次打开可能比后续访问多一些 KV 读取，这是一次性操作。节点内容、分享 ID 和订阅链接不会改变。
 
@@ -159,7 +158,7 @@ push 后 GitHub Verify 和 Cloudflare Pages 都会自动运行。Pages 成功后
 ### Pages 构建失败
 
 1. 打开失败部署的 Build log。
-2. 查找 `npm ci`、`check`、`build` 或测试失败位置。
+2. 查找 `npm ci`、`check` 或 `build` 失败位置。
 3. 本地修复后重新执行 `npm run pages:build`。
 4. push 新提交，Pages 会自动重新部署。
 
