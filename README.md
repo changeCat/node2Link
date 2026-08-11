@@ -1,12 +1,12 @@
 # Node2Link 订阅管理
 
-这是一个运行在 Cloudflare Workers / Pages 上的节点与订阅汇聚工具。管理端使用账号密码登录，不再使用 `域名/token` 或 `?token=` 进入管理页；为了让已有设备无需改订阅地址，旧 `TOKEN` 仍可作为主订阅的兼容入口。
+这是一个运行在 Cloudflare Workers / Pages 上的节点与订阅汇聚工具。管理端使用账号密码登录，不再使用 `域名/token` 或 `?token=` 进入管理页；`TOKEN` 只作为主订阅入口，确保已有设备无需修改订阅地址。
 
 ## 功能
 
 - 账号密码登录管理端，会话 Cookie 使用 `HttpOnly`、`Secure`、`SameSite=Strict`；
 - 汇聚多个节点或上游订阅，并输出 Base64、Clash、Sing-box、Surge、QuanX、Loon 等格式；
-- 独立设置页，可修改订阅名称及默认/自建转换服务；
+- 独立设置页，可修改订阅名称、标签页图标、订阅入口 Token、转换服务及规则配置；
 - 独立分享管理页，可为不同节点组生成不同订阅链接，并支持重复创建、修改和删除；
 - 主订阅与分享订阅统一使用 `/s/<随机ID>`，管理密码不会出现在订阅地址中；
 - 节点检查、去重、草稿、备份与最近一次版本恢复；
@@ -24,11 +24,11 @@
 | `ADMIN_PASSWORD` | 是 | `使用强随机密码` | 管理员登录密码；未配置时登录会被禁用 |
 | `ADMIN_USERNAME` | 否 | `admin` | 管理员用户名，默认 `admin` |
 | `SESSION_SECRET` | 建议 | `独立强随机字符串` | 会话签名密钥；未配置时使用 `ADMIN_PASSWORD`，修改后所有会话失效 |
-| `TOKEN` | 否 | `auto` | 兼容旧版 `/auto` 与 `/?token=auto` 主订阅地址，不再授予管理权限 |
+| `TOKEN` | 否 | `auto` | 初始订阅入口 Token，同时提供 `/auto` 与 `/?token=auto` 两种主订阅地址，不授予管理权限 |
 | `LINK` | 否 | `vless://...` | 未绑定 KV 时的只读节点来源；正式使用建议绑定 KV |
 | `SUBNAME` | 否 | `Node2Link` | 初始订阅名称；绑定 KV 后可在“设置”中修改 |
 | `SUBAPI` | 否 | `sub.example.com,backup.example.com` | 默认转换后端，多个地址用逗号、分号或换行分隔 |
-| `SUBCONFIG` | 否 | `https://.../config.ini` | Subconverter 规则配置 |
+| `SUBCONFIG` | 否 | `https://.../config.ini` | 初始 Subconverter 规则配置；绑定 KV 后可在“设置”中修改 |
 | `SUBUPTIME` | 否 | `6` | 客户端订阅更新间隔（小时） |
 | `REQUESTLOG` | 否 | `1` | `0` 关闭订阅请求统计，默认开启 |
 | `TGTOKEN` | 否 | `123:abc` | Telegram Bot Token |
@@ -36,7 +36,7 @@
 | `TG` | 否 | `1` | `1` 开启 Telegram 通知 |
 | `WARP` | 否 | `vless://...` | 附加到主订阅的 WARP 节点 |
 
-旧版 `GUEST`、`GUESTTOKEN` 已不再使用，可以删除。`TOKEN` 默认继续作为主订阅兼容地址；登录后可在“设置 → 旧版订阅入口”中覆盖，留空则禁用旧入口。
+旧版 `GUEST`、`GUESTTOKEN` 已不再使用，可以删除。`TOKEN` 默认作为主订阅入口；登录后可在“设置 → 订阅入口 Token”中覆盖。设置为 `TOKEN` 后，`/TOKEN` 与 `/?token=TOKEN` 均可订阅；留空则停用这两种 Token 入口，但系统生成的 `/s/<随机ID>` 主订阅链接仍然有效。
 
 `SESSION_SECRET` 只用于给登录会话 Cookie 签名，防止别人伪造登录状态。它不会参与节点加密，也不会改变主订阅或分享订阅地址；可以使用密码生成器创建一段独立的强随机字符串。不设置时系统会退回使用 `ADMIN_PASSWORD`。
 
@@ -75,7 +75,7 @@
 1. 打开部署域名根路径，例如 `https://sub.example.com/`；
 2. 使用 `ADMIN_USERNAME`（默认 `admin`）和 `ADMIN_PASSWORD` 登录；
 3. 在主页面保存汇聚节点与上游订阅，右侧复制“我的订阅”链接；
-4. 在“设置”中修改订阅名称或转换服务；
+4. 在“设置”中修改订阅名称、标签页图标、订阅入口 Token、转换服务或规则配置；
 5. 在“分享管理”中填写分享名称及一个或多个节点，保存后复制独立订阅链接；
 6. 分享内容修改后原链接保持不变；删除后该链接失效（Cloudflare KV 跨区域同步可能有短暂延迟）。
 

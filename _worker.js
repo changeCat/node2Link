@@ -8,6 +8,7 @@ https://cfxr.eu.org/getSub
 `;
 const DEFAULT_SUB_CONVERTER = 'https://SUBAPI.cmliussss.net';
 const DEFAULT_SUB_CONFIG = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini';
+const DEFAULT_BROWSER_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23143f32'/%3E%3Cpath d='M18 42V22h8l12 13V22h8v20h-8L26 29v13z' fill='white'/%3E%3C/svg%3E";
 const SETTINGS_KEY = 'NODE2LINK.settings.json';
 const SHARE_INDEX_KEY = 'NODE2LINK.shares.json';
 const SHARE_KEY_PREFIX = 'NODE2LINK.share.';
@@ -25,7 +26,7 @@ export default {
 		const persistedSettings = await readPersistedSettings(env);
 		const runtime = await createRuntimeConfig(env, persistedSettings);
 
-		if (request.method === 'GET' && isLegacySubscriptionRequest(url, runtime.legacySubscriptionToken)) {
+		if (request.method === 'GET' && isSubscriptionTokenRequest(url, runtime.subscriptionToken)) {
 			const mainData = env.KV ? (await env.KV.get('LINK.txt') || DEFAULT_MAIN_DATA) : (env.LINK || DEFAULT_MAIN_DATA);
 			return serveSubscription(request, env, ctx, runtime, mainData, 'main', true);
 		}
@@ -43,10 +44,10 @@ export default {
 			return serveSubscription(request, env, ctx, runtime, shared.content, 'share', false);
 		}
 
-		if (url.pathname === '/api/login' && request.method === 'POST') return handleLogin(request, env);
+		if (url.pathname === '/api/login' && request.method === 'POST') return handleLogin(request, env, runtime);
 		if (url.pathname === '/login' && request.method === 'GET') {
 			if (await isAuthenticated(request, env)) return Response.redirect(url.origin + '/', 303);
-			return renderLoginPage(env);
+			return renderLoginPage(env, runtime);
 		}
 
 		if (!(await isAuthenticated(request, env))) {
@@ -203,14 +204,17 @@ async function createRuntimeConfig(env, persistedSettings = {}) {
 		TG: Number(env.TG || 0),
 		FileName: sanitizeSubscriptionName(persistedSettings.subscriptionName || env.SUBNAME || DEFAULT_FILE_NAME),
 		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
-		subConfig: env.SUBCONFIG || DEFAULT_SUB_CONFIG,
+		subConfig: normalizeHTTPURL(persistedSettings.subConfig) || normalizeHTTPURL(env.SUBCONFIG) || DEFAULT_SUB_CONFIG,
 		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER),
 		converterMode: persistedSettings.converterMode === 'custom' && persistedCustomConverterURL ? 'custom' : 'default',
 		customConverterURL: persistedCustomConverterURL,
 		mainSubscriptionId,
-		legacySubscriptionToken: Object.prototype.hasOwnProperty.call(persistedSettings, 'legacySubscriptionToken')
-			? sanitizeLegacySubscriptionToken(persistedSettings.legacySubscriptionToken)
-			: sanitizeLegacySubscriptionToken(env.TOKEN || ''),
+		subscriptionToken: Object.prototype.hasOwnProperty.call(persistedSettings, 'subscriptionToken')
+			? sanitizeSubscriptionToken(persistedSettings.subscriptionToken)
+			: (Object.prototype.hasOwnProperty.call(persistedSettings, 'legacySubscriptionToken')
+				? sanitizeSubscriptionToken(persistedSettings.legacySubscriptionToken)
+				: sanitizeSubscriptionToken(env.TOKEN || '')),
+		browserIconURL: normalizeBrowserIconURL(persistedSettings.browserIconURL),
 		requestLogEnabled: String(env.REQUESTLOG ?? '1') !== '0'
 	};
 }
@@ -244,20 +248,42 @@ function sanitizeSubscriptionName(value) {
 	return name || DEFAULT_FILE_NAME;
 }
 
-function sanitizeLegacySubscriptionToken(value) {
+function sanitizeSubscriptionToken(value) {
 	const token = String(value || '').trim();
 	return token && token.length <= 128 && !/[\u0000-\u001f\u007f]/.test(token) ? token : '';
 }
 
-function isLegacySubscriptionRequest(url, legacyToken) {
-	if (!legacyToken) return false;
-	if (url.searchParams.get('token') === legacyToken) return url.pathname === '/';
+function isSubscriptionTokenRequest(url, subscriptionToken) {
+	if (!subscriptionToken) return false;
+	if (url.searchParams.get('token') === subscriptionToken) return url.pathname === '/';
 	if (url.pathname === '/') return false;
 	try {
-		return !url.pathname.slice(1).includes('/') && decodeURIComponent(url.pathname.slice(1)) === legacyToken;
+		return !url.pathname.slice(1).includes('/') && decodeURIComponent(url.pathname.slice(1)) === subscriptionToken;
 	} catch (error) {
 		return false;
 	}
+}
+
+function normalizeHTTPURL(value) {
+	const input = String(value || '').trim();
+	if (!input || input.length > 2048) return '';
+	try {
+		const parsed = new URL(input);
+		return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : '';
+	} catch (error) {
+		return '';
+	}
+}
+
+function normalizeBrowserIconURL(value) {
+	const input = String(value || '').trim();
+	if (!input || input.length > 65535) return '';
+	if (/^data:image\/(?:png|gif|webp|svg\+xml|x-icon|vnd\.microsoft\.icon)(?:;[^,]*)?,/i.test(input)) return input;
+	return normalizeHTTPURL(input);
+}
+
+function renderFavicon(browserIconURL = '') {
+	return `<link rel="icon" href="${escapeHTML(browserIconURL || DEFAULT_BROWSER_ICON)}">`;
 }
 
 function escapeHTML(value) {
@@ -354,10 +380,10 @@ async function isAuthenticated(request, env) {
 	return safeEqual(signature, await hmacBase64Url(payload, sessionSecret(env)));
 }
 
-async function handleLogin(request, env) {
+async function handleLogin(request, env, runtime) {
 	if (!requestHasSameOrigin(request)) return textResponse('Invalid origin', 403);
 	const configuredPassword = adminPassword(env);
-	if (!configuredPassword) return renderLoginPage(env, '尚未配置 ADMIN_PASSWORD，登录已禁用。');
+	if (!configuredPassword) return renderLoginPage(env, runtime, '尚未配置 ADMIN_PASSWORD，登录已禁用。');
 	let username = '';
 	let password = '';
 	const contentType = request.headers.get('Content-Type') || '';
@@ -371,7 +397,7 @@ async function handleLogin(request, env) {
 		password = form.get('password');
 	}
 	if (!safeEqual(username, adminUsername(env)) || !safeEqual(password, configuredPassword)) {
-		return renderLoginPage(env, '用户名或密码错误。', 401);
+		return renderLoginPage(env, runtime, '用户名或密码错误。', 401);
 	}
 	return new Response(null, {
 		status: 303,
@@ -383,22 +409,21 @@ function basePageStyles() {
 	return `
 		:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17211d;background:#f5f6f3;--green:#176b49;--green-dark:#105239;--green-soft:#e8f3ed;--muted:#68736d;--line:#dfe4de;--line-soft:#edf0ec;--surface:#fff;--danger:#b42318}
 		*{box-sizing:border-box}body{margin:0;min-width:320px;background:#f5f6f3;color:#17211d}button,input,textarea{font:inherit}a{color:inherit}
-		.app-header{border-bottom:1px solid var(--line);background:rgba(255,255,255,.92)}.header-inner{width:calc(100% - 48px);min-height:82px;margin:0 auto;display:flex;align-items:center;gap:22px}.header-overview{min-width:0;flex:0 1 420px;padding-right:22px;border-right:1px solid var(--line)}.header-overview .eyebrow{margin:0 0 2px;color:var(--green);font-size:9px;font-weight:800;text-transform:uppercase}.header-overview h1{margin:0;font-size:23px;line-height:1.12}.header-overview .intro-copy{margin:3px 0 0;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}.brand{min-width:0;display:flex;align-items:center;gap:12px}.brand-mark{flex:0 0 auto;width:38px;height:38px;display:grid;place-items:center;border-radius:7px;background:#143f32;color:#fff}.brand-mark svg{width:20px;height:20px}.brand-copy{min-width:0}.brand-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}.brand-copy span{display:block;margin-top:2px;color:var(--muted);font-size:12px}.header-actions{flex:0 0 auto;margin-left:auto;display:flex;align-items:center;gap:12px}.header-nav{display:flex;align-items:center;gap:4px}.header-nav a,.header-nav button{min-height:34px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}.header-nav a:hover,.header-nav a.active,.header-nav button:hover{background:var(--green-soft);color:var(--green)}.header-nav svg{width:14px;height:14px}.header-nav form{display:flex;margin:0}.online{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #cce4d6;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:700;white-space:nowrap}.online::before{content:"";width:7px;height:7px;border-radius:50%;background:#21a464;box-shadow:0 0 0 3px rgba(33,164,100,.13)}
+		.app-header{border-bottom:1px solid var(--line);background:rgba(255,255,255,.92)}.header-inner{width:calc(100% - 48px);min-height:82px;margin:0 auto;display:flex;align-items:center;gap:22px}.header-overview{min-width:0;flex:0 1 420px;padding-right:22px;border-right:1px solid var(--line)}.header-overview .eyebrow{margin:0 0 2px;color:var(--green);font-size:9px;font-weight:800;text-transform:uppercase}.header-overview h1{margin:0;font-size:23px;line-height:1.12}.header-overview .intro-copy{margin:3px 0 0;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}.header-actions{flex:0 0 auto;margin-left:auto;display:flex;align-items:center;gap:12px}.header-nav{display:flex;align-items:center;gap:4px}.header-nav a,.header-nav button{min-height:34px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}.header-nav a:hover,.header-nav a.active,.header-nav button:hover{background:var(--green-soft);color:var(--green)}.header-nav svg{width:14px;height:14px}.header-nav form{display:flex;margin:0}.online{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #cce4d6;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:700;white-space:nowrap}.online::before{content:"";width:7px;height:7px;border-radius:50%;background:#21a464;box-shadow:0 0 0 3px rgba(33,164,100,.13)}
 		main{width:calc(100% - 48px);max-width:1440px;margin:26px auto;padding:0}.page-head{margin-bottom:22px}.page-head h1{margin:0 0 7px;font-size:28px}.page-head p{margin:0;color:var(--muted)}.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.field{display:grid;gap:7px;margin-bottom:18px}.field label{font-size:13px;font-weight:700}.field small{color:var(--muted)}input[type=text],input[type=password],input[type=url],textarea{width:100%;border:1px solid #ccd6ce;border-radius:8px;background:#fff;padding:11px 12px;color:#17211d}textarea{min-height:190px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.55}input:focus,textarea:focus{outline:3px solid rgba(23,107,73,.12);border-color:#72ad90}.button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 15px;cursor:pointer}.button.primary{background:var(--green);border-color:var(--green);color:#fff}.button.danger{color:var(--danger);border-color:#f2c6c2}.button:disabled{opacity:.55;cursor:wait}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.message{padding:11px 13px;border-radius:8px;margin-bottom:18px;background:#fff2f0;color:#9b2319;border:1px solid #facdc8}.success{color:var(--green)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.muted{color:var(--muted)}
 		@media(max-width:1040px){.header-overview .intro-copy{display:none}.header-inner{gap:14px}.header-nav a,.header-nav button{padding:0 7px}}
-		@media(max-width:760px){.header-inner,main{width:calc(100% - 28px)}.header-inner{flex-wrap:wrap;gap:8px 12px;padding:9px 0}.brand{order:1}.header-actions{order:2}.header-overview{order:3;flex:0 0 100%;padding:7px 0 0;border-top:1px solid var(--line-soft);border-right:0}.header-overview .eyebrow,.header-overview .intro-copy{display:none}.header-overview h1{font-size:20px}.header-nav{max-width:calc(100vw - 90px);overflow-x:auto}.online{width:9px;height:9px;padding:0;border:0;font-size:0;background:#21a464;box-shadow:0 0 0 4px rgba(33,164,100,.13)}.online::before{display:none}main{margin-top:18px}.panel{padding:17px}}`;
+		@media(max-width:760px){.header-inner,main{width:calc(100% - 28px)}.header-inner{flex-wrap:wrap;gap:8px 12px;padding:9px 0}.header-overview{order:1;flex:0 0 100%;padding:0 0 7px;border-right:0;border-bottom:1px solid var(--line-soft)}.header-actions{order:2;margin-left:0;width:100%;justify-content:space-between}.header-overview .eyebrow,.header-overview .intro-copy{display:none}.header-overview h1{font-size:20px}.header-nav{max-width:calc(100vw - 62px);overflow-x:auto}.online{width:9px;height:9px;padding:0;border:0;font-size:0;background:#21a464;box-shadow:0 0 0 4px rgba(33,164,100,.13)}.online::before{display:none}main{margin-top:18px}.panel{padding:17px}}`;
 }
 
 function renderTopbar(active, fileName) {
 	const settingsIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.2 15a1.7 1.7 0 0 0-.6-1A1.7 1.7 0 0 0 2.5 13.6H2.4V9.6h.1A1.7 1.7 0 0 0 4.2 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.66 3.8l.06.06A1.7 1.7 0 0 0 8.6 4.2a1.7 1.7 0 0 0 1-.6A1.7 1.7 0 0 0 10 2.5v-.1h4v.1a1.7 1.7 0 0 0 1 1.7 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.6a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1a1.7 1.7 0 0 0-1.7 1Z"/></svg>`;
-	const routeIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M6 16V8a3 3 0 0 1 3-3h6M9 19h6a3 3 0 0 0 3-3V8"/></svg>`;
 	const link = (href, label, key, icon = '') => `<a href="${href}"${active === key ? ' class="active"' : ''}>${icon}${label}</a>`;
-	return `<header class="app-header"><div class="header-inner"><section class="header-overview" aria-label="订阅控制台"><p class="eyebrow">Overview</p><h1>订阅控制台</h1><p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p></section><div class="brand"><span class="brand-mark">${routeIcon}</span><div class="brand-copy"><strong>${escapeHTML(fileName || DEFAULT_FILE_NAME)}</strong><span>Subscription Console</span></div></div><div class="header-actions"><nav class="header-nav" aria-label="管理导航">${link('/', '主页面', 'home')}${link('/shares', '分享管理', 'shares')}${link('/settings', '设置', 'settings', settingsIcon)}<form action="/api/logout" method="post"><button type="submit">退出</button></form></nav><span class="online">服务正常</span></div></div></header>`;
+	return `<header class="app-header"><div class="header-inner"><section class="header-overview" aria-label="订阅控制台"><p class="eyebrow">Overview</p><h1>订阅控制台</h1><p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p></section><div class="header-actions"><nav class="header-nav" aria-label="管理导航">${link('/', '主页面', 'home')}${link('/shares', '分享管理', 'shares')}${link('/settings', '设置', 'settings', settingsIcon)}<form action="/api/logout" method="post"><button type="submit">退出</button></form></nav><span class="online">服务正常</span></div></div></header>`;
 }
 
-function renderLoginPage(env, error = '', status = 200) {
+function renderLoginPage(env, runtime, error = '', status = 200) {
 	const missing = !adminPassword(env);
-	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · Node2Link</title><style>${basePageStyles()}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(420px,100%)}.login-title{margin:0 0 7px}.login-copy{margin:0 0 24px;color:var(--muted)}</style></head><body><div class="login-wrap"><main class="login-card"><section class="panel"><h1 class="login-title">登录订阅控制台</h1><p class="login-copy">输入管理员账号后访问节点与分享管理。</p>${error ? `<div class="message">${escapeHTML(error)}</div>` : ''}${missing && !error ? '<div class="message">请先在 Cloudflare 中设置 ADMIN_PASSWORD 环境变量。</div>' : ''}<form action="/api/login" method="post"><div class="field"><label for="username">用户名</label><input id="username" name="username" type="text" autocomplete="username" required autofocus></div><div class="field"><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="button primary" type="submit"${missing ? ' disabled' : ''}>登录</button></form></section></main></div></body></html>`;
+	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · Node2Link</title>${renderFavicon(runtime?.browserIconURL)}<style>${basePageStyles()}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(420px,100%)}.login-title{margin:0 0 7px}.login-copy{margin:0 0 24px;color:var(--muted)}</style></head><body><div class="login-wrap"><main class="login-card"><section class="panel"><h1 class="login-title">登录订阅控制台</h1><p class="login-copy">输入管理员账号后访问节点与分享管理。</p>${error ? `<div class="message">${escapeHTML(error)}</div>` : ''}${missing && !error ? '<div class="message">请先在 Cloudflare 中设置 ADMIN_PASSWORD 环境变量。</div>' : ''}<form action="/api/login" method="post"><div class="field"><label for="username">用户名</label><input id="username" name="username" type="text" autocomplete="username" required autofocus></div><div class="field"><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="button primary" type="submit"${missing ? ' disabled' : ''}>登录</button></form></section></main></div></body></html>`;
 	return new Response(html, { status, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff' } });
 }
 
@@ -410,11 +435,18 @@ async function saveSettings(request, env, currentSettings) {
 		const subscriptionName = sanitizeSubscriptionName(payload.subscriptionName);
 		const converterMode = payload.converterMode === 'custom' ? 'custom' : 'default';
 		const customConverterURL = normalizeSublinkConverter(payload.customConverterURL);
-		const legacyTokenInput = String(payload.legacySubscriptionToken || '').trim();
-		const legacySubscriptionToken = sanitizeLegacySubscriptionToken(legacyTokenInput);
+		const tokenInput = String(payload.subscriptionToken ?? payload.legacySubscriptionToken ?? '').trim();
+		const subscriptionToken = sanitizeSubscriptionToken(tokenInput);
+		const subConfigInput = String(payload.subConfig ?? currentSettings.subConfig ?? env.SUBCONFIG ?? DEFAULT_SUB_CONFIG).trim();
+		const subConfig = normalizeHTTPURL(subConfigInput);
+		const browserIconInput = String(payload.browserIconURL ?? currentSettings.browserIconURL ?? '').trim();
+		const browserIconURL = normalizeBrowserIconURL(browserIconInput);
 		if (converterMode === 'custom' && !customConverterURL) return jsonResponse({ ok: false, message: '请输入有效的自建转换服务地址' }, 400);
-		if (legacyTokenInput && !legacySubscriptionToken) return jsonResponse({ ok: false, message: '旧版订阅入口不能包含控制字符，且不能超过 128 个字符' }, 400);
-		const settings = { ...currentSettings, subscriptionName, converterMode, customConverterURL, legacySubscriptionToken, savedAt: new Date().toISOString() };
+		if (tokenInput && !subscriptionToken) return jsonResponse({ ok: false, message: '订阅入口 Token 不能包含控制字符，且不能超过 128 个字符' }, 400);
+		if (!subConfig) return jsonResponse({ ok: false, message: '请输入有效的规则配置地址（HTTP 或 HTTPS）' }, 400);
+		if (browserIconInput && !browserIconURL) return jsonResponse({ ok: false, message: '请输入有效的标签页图标地址（HTTP、HTTPS 或 data:image）' }, 400);
+		const { legacySubscriptionToken: _legacySubscriptionToken, ...settingsBase } = currentSettings;
+		const settings = { ...settingsBase, subscriptionName, browserIconURL, subscriptionToken, converterMode, customConverterURL, subConfig, savedAt: new Date().toISOString() };
 		await env.KV.put(SETTINGS_KEY, JSON.stringify(settings));
 		return jsonResponse({ ok: true, settings });
 	} catch (error) {
@@ -424,19 +456,17 @@ async function saveSettings(request, env, currentSettings) {
 
 function renderSettingsPage(_request, runtime) {
 	const converters = runtime.subConverters.map((item, index) => `<li><b>${index ? '备用 ' + index : '默认'}</b> <code>${escapeHTML(item)}</code></li>`).join('');
-	const initial = JSON.stringify({ subscriptionName: runtime.FileName, converterMode: runtime.converterMode, customConverterURL: runtime.customConverterURL, legacySubscriptionToken: runtime.legacySubscriptionToken }).replace(/</g, '\\u003c');
-	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · ${escapeHTML(runtime.FileName)}</title><style>${basePageStyles()}.choice{display:flex;gap:18px;margin:4px 0 18px}.service-list{margin:12px 0 0;padding-left:20px;color:var(--muted)}.service-list li{margin:6px 0}.footer-note{font-size:12px;margin-top:12px}</style></head><body>${renderTopbar('settings', runtime.FileName)}<main><div class="page-head"><h1>设置</h1><p>统一修改订阅名称和转换服务，保存后对主订阅及所有分享链接生效。</p></div><section class="panel"><form id="settingsForm"><div class="field"><label for="subscriptionName">订阅名称</label><input id="subscriptionName" type="text" maxlength="80" required><small>显示在管理页面标题和客户端下载文件名中。</small></div><div class="field"><label>转换服务</label><div class="choice"><label><input type="radio" name="converterMode" value="default"> 默认服务</label><label><input type="radio" name="converterMode" value="custom"> 自建 Sublink Worker</label></div></div><div class="field"><label for="customConverterURL">自建服务地址</label><input id="customConverterURL" type="url" placeholder="https://sub.example.com"><small>自建服务用于 Clash、Sing-box、Surge；其他格式继续使用默认服务。</small></div><div class="row"><button class="button primary" id="saveSettings" type="submit">保存设置</button><span id="saveMessage" class="muted"></span></div></form><ul class="service-list">${converters}</ul><div class="footer-note muted">规则配置：<code>${escapeHTML(runtime.subConfig)}</code></div></section></main><script>var initial=${initial};var form=document.getElementById('settingsForm');var nameInput=document.getElementById('subscriptionName');var urlInput=document.getElementById('customConverterURL');nameInput.value=initial.subscriptionName;urlInput.value=initial.customConverterURL||'';document.querySelector('input[name="converterMode"][value="'+initial.converterMode+'"]').checked=true;function syncMode(){var mode=document.querySelector('input[name="converterMode"]:checked').value;urlInput.disabled=mode!=='custom';}document.querySelectorAll('input[name="converterMode"]').forEach(function(el){el.addEventListener('change',syncMode)});syncMode();form.addEventListener('submit',function(event){event.preventDefault();var button=document.getElementById('saveSettings');var message=document.getElementById('saveMessage');button.disabled=true;message.textContent='正在保存…';fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscriptionName:nameInput.value,converterMode:document.querySelector('input[name="converterMode"]:checked').value,customConverterURL:urlInput.value})}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'保存失败');return data})}).then(function(data){message.textContent='已保存';message.className='success';document.querySelector('.brand').textContent=data.settings.subscriptionName}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});</script></body></html>`;
-	const legacyField = `<div class="field"><label for="legacySubscriptionToken">旧版订阅入口</label><input id="legacySubscriptionToken" type="text" maxlength="128" placeholder="例如 auto"><small>兼容原来的 /TOKEN 和 /?token=TOKEN 订阅地址；包含特殊路径字符时请使用 ?token= 格式。修改后旧地址失效，留空可禁用。</small></div>`;
-	const settingsFavicon = `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23143f32'/%3E%3Ctext x='12' y='17' text-anchor='middle' font-size='14'%3E%E2%9A%99%3C/text%3E%3C/svg%3E">`;
-	const enhancedHTML = html
-		.replace('</title>', '</title>' + settingsFavicon)
-		.replace('</style>', '#settingsForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px}#settingsForm>.row{grid-column:1/-1}@media(max-width:760px){#settingsForm{grid-template-columns:1fr}}</style>')
-		.replace('<div class="field"><label>转换服务</label>', legacyField + '<div class="field"><label>转换服务</label>')
-		.replace("var urlInput=document.getElementById('customConverterURL');", "var urlInput=document.getElementById('customConverterURL');var legacyInput=document.getElementById('legacySubscriptionToken');")
-		.replace("urlInput.value=initial.customConverterURL||'';", "urlInput.value=initial.customConverterURL||'';legacyInput.value=initial.legacySubscriptionToken||'';")
-		.replace('customConverterURL:urlInput.value})', 'customConverterURL:urlInput.value,legacySubscriptionToken:legacyInput.value})')
-		.replace("document.querySelector('.brand').textContent=data.settings.subscriptionName", "document.querySelector('.brand-copy strong').textContent=data.settings.subscriptionName");
-	return new Response(enhancedHTML, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+	const initial = JSON.stringify({ subscriptionName: runtime.FileName, browserIconURL: runtime.browserIconURL, subscriptionToken: runtime.subscriptionToken, converterMode: runtime.converterMode, customConverterURL: runtime.customConverterURL, subConfig: runtime.subConfig }).replace(/</g, '\\u003c');
+	const defaultIcon = JSON.stringify(DEFAULT_BROWSER_ICON);
+	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · ${escapeHTML(runtime.FileName)}</title>${renderFavicon(runtime.browserIconURL)}<style>${basePageStyles()}
+		.settings-form{display:grid;gap:18px}.settings-section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.settings-section-head{margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}.settings-section-head h2{margin:0 0 5px;font-size:19px}.settings-section-head p{margin:0;color:var(--muted);font-size:13px}.settings-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px}.settings-fields .field{margin-bottom:20px}.field.full{grid-column:1/-1}.choice{display:flex;flex-wrap:wrap;gap:10px}.choice label{min-width:210px;display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;cursor:pointer}.choice label:has(input:checked){border-color:#8bc5a7;background:var(--green-soft)}.choice input{margin-top:3px;accent-color:var(--green)}.choice strong,.choice small{display:block}.choice small{margin-top:3px;font-weight:400;line-height:1.45}.icon-control{display:grid;grid-template-columns:48px minmax(0,1fr);gap:12px;align-items:center}.icon-preview{width:48px;height:48px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:#f8faf7}.icon-preview img{width:34px;height:34px;object-fit:contain}.service-list{margin:0;padding:12px 14px 12px 34px;border:1px solid var(--line-soft);border-radius:8px;background:#f8faf7;color:var(--muted);font-size:12px}.service-list li{margin:5px 0}.settings-actions{display:flex;align-items:center;gap:12px;padding:4px 2px 18px}.settings-actions .button{min-width:120px}@media(max-width:760px){.settings-section{padding:18px}.settings-fields{grid-template-columns:1fr}.field.full{grid-column:auto}.choice label{min-width:0;width:100%}}
+	</style></head><body>${renderTopbar('settings', runtime.FileName)}<main><div class="page-head"><h1>设置</h1><p>按用途管理界面、订阅入口和转换配置，保存后立即生效。</p></div><form id="settingsForm" class="settings-form">
+		<section class="settings-section" aria-labelledby="displaySettings"><div class="settings-section-head"><h2 id="displaySettings">1. 基本显示</h2><p>设置订阅名称和浏览器标签页图标。</p></div><div class="settings-fields"><div class="field"><label for="subscriptionName">订阅名称</label><input id="subscriptionName" type="text" maxlength="80" required><small>用于页面标题、订阅标题和客户端下载文件名。</small></div><div class="field"><label for="browserIconURL">浏览器标签页图标</label><div class="icon-control"><span class="icon-preview"><img id="iconPreview" alt="图标预览"></span><input id="browserIconURL" type="text" maxlength="65535" placeholder="https://example.com/favicon.png"></div><small>支持 HTTP、HTTPS 或 data:image 地址；留空恢复默认图标。</small></div></div></section>
+		<section class="settings-section" aria-labelledby="entrySettings"><div class="settings-section-head"><h2 id="entrySettings">2. 订阅入口</h2><p>管理主订阅的兼容访问 Token。</p></div><div class="settings-fields"><div class="field full"><label for="subscriptionToken">订阅入口 Token</label><input id="subscriptionToken" type="text" maxlength="128" placeholder="例如 auto"><small>设置为 TOKEN 后，<code>/TOKEN</code> 和 <code>/?token=TOKEN</code> 都能访问主订阅；修改后原 Token 地址失效，留空则只保留系统生成的订阅链接。</small></div></div></section>
+		<section class="settings-section" aria-labelledby="converterSettings"><div class="settings-section-head"><h2 id="converterSettings">3. 转换配置</h2><p>选择转换后端，并设置转换时使用的规则配置。</p></div><div class="settings-fields"><div class="field full"><label>转换服务</label><div class="choice"><label><input type="radio" name="converterMode" value="default"><span><strong>默认服务</strong><small>按顺序使用项目配置的 Subconverter 后端。</small></span></label><label><input type="radio" name="converterMode" value="custom"><span><strong>自建 Sublink Worker</strong><small>Clash、Sing-box、Surge 优先使用自建服务。</small></span></label></div></div><div class="field"><label for="customConverterURL">自建转换服务地址</label><input id="customConverterURL" type="url" placeholder="https://sub.example.com"><small>仅选择“自建 Sublink Worker”时启用。</small></div><div class="field"><label for="subConfig">规则配置地址</label><input id="subConfig" type="url" maxlength="2048" placeholder="https://example.com/config.ini" required><small>用于默认 Subconverter 转换 Clash 等格式。</small></div><div class="field full"><label>当前默认转换后端</label><ul class="service-list">${converters}</ul></div></div></section>
+		<div class="settings-actions"><button class="button primary" id="saveSettings" type="submit">保存全部设置</button><span id="saveMessage" class="muted" role="status"></span></div>
+	</form></main><script>var initial=${initial};var defaultIcon=${defaultIcon};var form=document.getElementById('settingsForm');var nameInput=document.getElementById('subscriptionName');var iconInput=document.getElementById('browserIconURL');var iconPreview=document.getElementById('iconPreview');var tokenInput=document.getElementById('subscriptionToken');var urlInput=document.getElementById('customConverterURL');var subConfigInput=document.getElementById('subConfig');nameInput.value=initial.subscriptionName;iconInput.value=initial.browserIconURL||'';tokenInput.value=initial.subscriptionToken||'';urlInput.value=initial.customConverterURL||'';subConfigInput.value=initial.subConfig||'';document.querySelector('input[name="converterMode"][value="'+initial.converterMode+'"]').checked=true;function refreshIcon(){iconPreview.src=iconInput.value.trim()||defaultIcon}function syncMode(){var mode=document.querySelector('input[name="converterMode"]:checked').value;urlInput.disabled=mode!=='custom';}iconPreview.addEventListener('error',function(){iconPreview.src=defaultIcon});iconInput.addEventListener('input',refreshIcon);document.querySelectorAll('input[name="converterMode"]').forEach(function(el){el.addEventListener('change',syncMode)});refreshIcon();syncMode();form.addEventListener('submit',function(event){event.preventDefault();var button=document.getElementById('saveSettings');var message=document.getElementById('saveMessage');button.disabled=true;message.textContent='正在保存…';message.className='muted';fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscriptionName:nameInput.value,browserIconURL:iconInput.value,subscriptionToken:tokenInput.value,converterMode:document.querySelector('input[name="converterMode"]:checked').value,customConverterURL:urlInput.value,subConfig:subConfigInput.value})}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'保存失败');return data})}).then(function(data){message.textContent='已保存，刷新其他页面后生效';message.className='success';document.title='设置 · '+data.settings.subscriptionName;document.querySelector('link[rel="icon"]').href=data.settings.browserIconURL||defaultIcon}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});</script></body></html>`;
+	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
 async function readShare(kv, id) {
@@ -530,11 +560,8 @@ async function handleSharesAPI(request, env) {
 async function renderSharesPage(_request, env, runtime) {
 	const shares = await listShares(env.KV);
 	const initial = JSON.stringify(shares).replace(/</g, '\\u003c');
-const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>分享管理 · ${escapeHTML(runtime.FileName)}</title><style>${basePageStyles()}.layout{display:grid;grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr);gap:18px;align-items:start}.share-list{display:grid;gap:12px}.share-card{border:1px solid var(--line);border-radius:10px;padding:15px;background:#fff}.share-card h3{margin:0 0 5px}.share-meta{font-size:12px;color:var(--muted);margin-bottom:10px}.share-link{display:flex;gap:8px;margin:10px 0}.share-link code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px;background:#f5f7f5;border-radius:6px;flex:1}.empty{text-align:center;padding:35px;color:var(--muted)}@media(max-width:820px){.layout{grid-template-columns:1fr}}</style></head><body>${renderTopbar('shares', runtime.FileName)}<main><div class="page-head"><h1>分享管理</h1><p>把一组或多组节点保存为独立订阅链接，可随时修改或删除。</p></div>${env.KV ? `<div class="layout"><section class="panel"><h2 id="formTitle">新建分享</h2><form id="shareForm"><input id="shareId" type="hidden"><div class="field"><label for="shareName">分享名称</label><input id="shareName" type="text" maxlength="80" placeholder="例如：给朋友的日本节点" required></div><div class="field"><label for="shareContent">节点内容</label><textarea id="shareContent" placeholder="每行一个节点，例如 vless://..." required></textarea><small>保存时会自动移除空行和完全重复的行。</small></div><div class="row"><button class="button primary" id="submitShare" type="submit">生成订阅链接</button><button class="button" id="cancelEdit" type="button" hidden>取消修改</button><span id="formMessage" class="muted"></span></div></form></section><section><div id="shareList" class="share-list"></div></section></div>` : '<section class="panel empty">请先绑定 KV 命名空间后使用分享管理。</section>'}</main>${env.KV ? `<script>var shares=${initial};var origin=window.location.origin;var form=document.getElementById('shareForm');var list=document.getElementById('shareList');function esc(value){return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}function linkOf(id){return origin+'/s/'+id}function render(){if(!shares.length){list.innerHTML='<div class="panel empty">还没有分享链接，请先创建一组。</div>';return}list.innerHTML=shares.map(function(item){return '<article class="share-card"><h3>'+esc(item.name)+'</h3><div class="share-meta">'+item.nodeCount+' 个节点 · 更新于 '+new Date(item.updatedAt).toLocaleString()+'</div><div class="share-link"><code title="'+esc(linkOf(item.id))+'">'+esc(linkOf(item.id))+'</code><button class="button" data-copy="'+esc(linkOf(item.id))+'">复制</button></div><div class="row"><button class="button" data-edit="'+item.id+'">修改</button><button class="button danger" data-delete="'+item.id+'">删除</button></div></article>'}).join('')}function reset(){form.reset();document.getElementById('shareId').value='';document.getElementById('formTitle').textContent='新建分享';document.getElementById('submitShare').textContent='生成订阅链接';document.getElementById('cancelEdit').hidden=true}function call(method,body){return fetch('/api/shares',{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'操作失败');return data})})}form.addEventListener('submit',function(event){event.preventDefault();var id=document.getElementById('shareId').value;var button=document.getElementById('submitShare');var message=document.getElementById('formMessage');button.disabled=true;message.textContent='正在保存…';call(id?'PUT':'POST',{id:id,name:document.getElementById('shareName').value,content:document.getElementById('shareContent').value}).then(function(data){var index=shares.findIndex(function(item){return item.id===data.share.id});if(index>=0)shares[index]=data.share;else shares.unshift(data.share);render();reset();message.textContent='已保存，订阅链接可直接使用';message.className='success'}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});list.addEventListener('click',function(event){var copy=event.target.dataset.copy;if(copy){navigator.clipboard.writeText(copy).then(function(){event.target.textContent='已复制';setTimeout(function(){event.target.textContent='复制'},1200)});return}var edit=event.target.dataset.edit;if(edit){var item=shares.find(function(value){return value.id===edit});document.getElementById('shareId').value=item.id;document.getElementById('shareName').value=item.name;document.getElementById('shareContent').value=item.content;document.getElementById('formTitle').textContent='修改分享';document.getElementById('submitShare').textContent='保存修改';document.getElementById('cancelEdit').hidden=false;window.scrollTo({top:0,behavior:'smooth'});return}var remove=event.target.dataset.delete;if(remove&&confirm('删除后，这个订阅链接将失效，KV 同步可能有短暂延迟。确定删除？')){call('DELETE',{id:remove}).then(function(){shares=shares.filter(function(item){return item.id!==remove});render()}).catch(function(error){alert(error.message)})}});document.getElementById('cancelEdit').addEventListener('click',reset);render();</script>` : ''}</body></html>`;
-	const widenedHTML = html
-		.replace('grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr)', 'grid-template-columns:minmax(360px,.56fr) minmax(0,1fr)')
-		.replace('.share-list{', '#shareContent{min-height:320px}.share-list{');
-	return new Response(widenedHTML, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>分享管理 · ${escapeHTML(runtime.FileName)}</title>${renderFavicon(runtime.browserIconURL)}<style>${basePageStyles()}.layout{display:grid;grid-template-columns:minmax(420px,.78fr) minmax(0,1fr);gap:18px;align-items:start}.share-list{display:grid;gap:12px}.share-card{border:1px solid var(--line);border-radius:10px;padding:15px;background:#fff}.share-card h3{margin:0 0 5px}.share-meta{font-size:12px;color:var(--muted);margin-bottom:10px}.share-link{display:flex;gap:8px;margin:10px 0}.share-link code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px;background:#f5f7f5;border-radius:6px;flex:1}.empty{text-align:center;padding:35px;color:var(--muted)}#shareContent{min-height:320px}@media(max-width:900px){.layout{grid-template-columns:1fr}}</style></head><body>${renderTopbar('shares', runtime.FileName)}<main><div class="page-head"><h1>分享管理</h1><p>把一组或多组节点保存为独立订阅链接，可随时修改或删除。</p></div>${env.KV ? `<div class="layout"><section class="panel"><h2 id="formTitle">新建分享</h2><form id="shareForm"><input id="shareId" type="hidden"><div class="field"><label for="shareName">分享名称</label><input id="shareName" type="text" maxlength="80" placeholder="例如：给朋友的日本节点" required></div><div class="field"><label for="shareContent">节点内容</label><textarea id="shareContent" placeholder="每行一个节点，例如 vless://..." required></textarea><small>保存时会自动移除空行和完全重复的行。</small></div><div class="row"><button class="button primary" id="submitShare" type="submit">生成订阅链接</button><button class="button" id="cancelEdit" type="button" hidden>取消修改</button><span id="formMessage" class="muted"></span></div></form></section><section><div id="shareList" class="share-list"></div></section></div>` : '<section class="panel empty">请先绑定 KV 命名空间后使用分享管理。</section>'}</main>${env.KV ? `<script>var shares=${initial};var origin=window.location.origin;var form=document.getElementById('shareForm');var list=document.getElementById('shareList');function esc(value){return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}function linkOf(id){return origin+'/s/'+id}function render(){if(!shares.length){list.innerHTML='<div class="panel empty">还没有分享链接，请先创建一组。</div>';return}list.innerHTML=shares.map(function(item){return '<article class="share-card"><h3>'+esc(item.name)+'</h3><div class="share-meta">'+item.nodeCount+' 个节点 · 更新于 '+new Date(item.updatedAt).toLocaleString()+'</div><div class="share-link"><code title="'+esc(linkOf(item.id))+'">'+esc(linkOf(item.id))+'</code><button class="button" data-copy="'+esc(linkOf(item.id))+'">复制</button></div><div class="row"><button class="button" data-edit="'+item.id+'">修改</button><button class="button danger" data-delete="'+item.id+'">删除</button></div></article>'}).join('')}function reset(){form.reset();document.getElementById('shareId').value='';document.getElementById('formTitle').textContent='新建分享';document.getElementById('submitShare').textContent='生成订阅链接';document.getElementById('cancelEdit').hidden=true}function call(method,body){return fetch('/api/shares',{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'操作失败');return data})})}form.addEventListener('submit',function(event){event.preventDefault();var id=document.getElementById('shareId').value;var button=document.getElementById('submitShare');var message=document.getElementById('formMessage');button.disabled=true;message.textContent='正在保存…';call(id?'PUT':'POST',{id:id,name:document.getElementById('shareName').value,content:document.getElementById('shareContent').value}).then(function(data){var index=shares.findIndex(function(item){return item.id===data.share.id});if(index>=0)shares[index]=data.share;else shares.unshift(data.share);render();reset();message.textContent='已保存，订阅链接可直接使用';message.className='success'}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});list.addEventListener('click',function(event){var copy=event.target.dataset.copy;if(copy){navigator.clipboard.writeText(copy).then(function(){event.target.textContent='已复制';setTimeout(function(){event.target.textContent='复制'},1200)});return}var edit=event.target.dataset.edit;if(edit){var item=shares.find(function(value){return value.id===edit});document.getElementById('shareId').value=item.id;document.getElementById('shareName').value=item.name;document.getElementById('shareContent').value=item.content;document.getElementById('formTitle').textContent='修改分享';document.getElementById('submitShare').textContent='保存修改';document.getElementById('cancelEdit').hidden=false;window.scrollTo({top:0,behavior:'smooth'});return}var remove=event.target.dataset.delete;if(remove&&confirm('删除后，这个订阅链接将失效，KV 同步可能有短暂延迟。确定删除？')){call('DELETE',{id:remove}).then(function(){shares=shares.filter(function(item){return item.id!==remove});render()}).catch(function(error){alert(error.message)})}});document.getElementById('cancelEdit').addEventListener('click',reset);render();</script>` : ''}</body></html>`;
+	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
 function parseSubConverters(value) {
@@ -1095,8 +1122,8 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&#039;");
 		const origin = url.origin;
-		const ownerBase = runtime.legacySubscriptionToken
-			? origin + "/" + encodeURIComponent(runtime.legacySubscriptionToken)
+		const ownerBase = runtime.subscriptionToken
+			? origin + "/" + encodeURIComponent(runtime.subscriptionToken)
 			: origin + "/s/" + encodeURIComponent(mainSubscriptionId);
 		const converterListHTML = runtime.subConverters.map((converter, index) =>
 			`<span class="converter-entry"><b>${index === 0 ? "主" : "备" + index}</b><code title="${escapeHTML(converter)}">${escapeHTML(converter)}</code></span>`
@@ -1150,6 +1177,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 				<meta name="color-scheme" content="light">
 				<meta name="theme-color" content="#f5f6f3">
 				<title>${escapeHTML(runtime.FileName)} · 订阅控制台</title>
+				${renderFavicon(runtime.browserIconURL)}
 				<style>
 					:root {
 						color-scheme: light;
@@ -1167,12 +1195,6 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
 					.header-inner { width: calc(100% - 48px); min-height: 82px; margin: 0 auto; display: flex; align-items: center; gap: 22px; }
-					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
-					.brand-mark { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; background: #143f32; color: #fff; }
-					.brand-mark svg { width: 20px; height: 20px; }
-					.brand-copy { min-width: 0; }
-					.brand-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
-					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 					.header-overview { min-width: 0; flex: 0 1 420px; padding-right: 22px; border-right: 1px solid var(--line); }
 					.header-overview .eyebrow { margin: 0 0 2px; color: var(--green); font-size: 9px; font-weight: 800; text-transform: uppercase; }
 					.header-overview h1 { margin: 0; font-size: 23px; line-height: 1.12; letter-spacing: 0; }
@@ -1345,10 +1367,10 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					@media (max-width: 760px) {
 						.header-inner, main { width: min(100% - 28px, 1440px); }
 						.header-inner { flex-wrap: wrap; gap: 8px 12px; padding: 9px 0; }
-						.header-overview { order: 3; flex: 0 0 100%; padding: 7px 0 0; border-top: 1px solid var(--line-soft); border-right: 0; }
+						.header-overview { order: 1; flex: 0 0 100%; padding: 0 0 7px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
 						.header-overview .eyebrow, .header-overview .intro-copy { display: none; }
 						.header-overview h1 { font-size: 20px; }
-						.header-actions { margin-left: auto; }
+						.header-actions { order: 2; width: 100%; margin-left: 0; justify-content: space-between; }
 						.header-actions .token-chip { max-width: 180px; padding: 7px 9px; }
 						.header-actions .token-chip span { display: none; }
 						main { padding-top: 14px; }
@@ -1446,10 +1468,6 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 								${requestStatsHTML ? `<div class="request-list">${requestStatsHTML}</div>` : '<div class="request-empty">暂无客户端请求记录</div>'}
 							</section>
 
-							<section class="section" aria-labelledby="share-title">
-								<div class="section-heading"><div><h2 id="share-title">节点分享</h2><p>按组生成独立订阅链接</p></div></div>
-								<a class="tool-button" href="/shares"><i data-lucide="share-2"></i><span>管理分享链接</span></a>
-							</section>
 						</aside>
 					</div>
 
