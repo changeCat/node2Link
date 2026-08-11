@@ -1,14 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker from '../_worker.js';
+import worker from '../dist/_worker.js';
 
 class MemoryKV {
 	constructor() {
 		this.values = new Map();
+		this.getCalls = [];
+		this.listCalls = [];
 	}
 
 	async get(key) {
+		this.getCalls.push(key);
 		return this.values.has(key) ? this.values.get(key).value : null;
 	}
 
@@ -21,11 +24,18 @@ class MemoryKV {
 	}
 
 	async list(options = {}) {
+		this.listCalls.push(options);
 		const prefix = options.prefix || '';
 		const keys = [...this.values.entries()]
 			.filter(([key]) => key.startsWith(prefix))
-			.map(([name, entry]) => ({ name, metadata: entry.metadata }));
-		return { keys, list_complete: true, cursor: '' };
+			.map(([name, entry]) => ({ name, metadata: entry.metadata }))
+			.slice(0, options.limit || 1000);
+		return { keys, list_complete: keys.length === [...this.values.keys()].filter(key => key.startsWith(prefix)).length, cursor: '' };
+	}
+
+	resetMetrics() {
+		this.getCalls = [];
+		this.listCalls = [];
 	}
 }
 
@@ -196,4 +206,128 @@ test('订阅转换请求和转换结果都禁止缓存', async () => {
 	const converterHeaders = new Headers(converterInit.headers);
 	assert.equal(converterHeaders.get('Cache-Control'), 'no-store, no-cache, max-age=0');
 	assert.equal(converterHeaders.get('Pragma'), 'no-cache');
+});
+
+test('分享摘要索引只读取一次，详情仅在编辑时按需加载', async () => {
+	const env = createEnv();
+	const cookie = await login(env);
+	const ids = [];
+	for (let index = 0; index < 100; index += 1) {
+		const id = `share_${String(index).padStart(12, '0')}`;
+		ids.push(id);
+		await env.KV.put(`NODE2LINK.share.${id}`, JSON.stringify({
+			id,
+			name: `分享 ${index}`,
+			content: `vless://00000000-0000-4000-8000-${String(index).padStart(12, '0')}@example.com:443?security=tls#test`,
+			nodeCount: 1,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z'
+		}));
+	}
+	await env.KV.put('NODE2LINK.shares.json', JSON.stringify(ids));
+
+	// 第一次读取兼容旧 ID 索引，并自动写回摘要。
+	let response = await worker.fetch(new Request('https://subscriptions.example/shares', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.equal(response.status, 200);
+	const firstPage = await response.text();
+	assert.doesNotMatch(firstPage, /@example\.com/);
+	const migratedIndex = JSON.parse(await env.KV.get('NODE2LINK.shares.json'));
+	assert.equal(typeof migratedIndex[0], 'string');
+	assert.equal(typeof migratedIndex[100], 'object');
+	assert.equal(migratedIndex.length, 200);
+
+	env.KV.resetMetrics();
+	response = await worker.fetch(new Request('https://subscriptions.example/shares', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.equal(response.status, 200);
+	assert.deepEqual(env.KV.getCalls.sort(), ['NODE2LINK.settings.json', 'NODE2LINK.shares.json'].sort());
+
+	env.KV.resetMetrics();
+	response = await worker.fetch(new Request(`https://subscriptions.example/api/shares?id=${ids[0]}`, {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.equal(response.status, 200);
+	assert.match((await response.json()).share.content, /^vless:\/\//);
+	assert.deepEqual(env.KV.getCalls.sort(), [`NODE2LINK.share.${ids[0]}`, 'NODE2LINK.settings.json'].sort());
+
+	env.KV.resetMetrics();
+	response = await worker.fetch(new Request('https://subscriptions.example/requests', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.equal(response.status, 200);
+	assert.deepEqual(env.KV.getCalls.sort(), ['NODE2LINK.settings.json', 'NODE2LINK.shares.json'].sort());
+	assert.equal(env.KV.listCalls.length, 1);
+});
+
+test('管理页面只引用项目自带的静态资源', async () => {
+	const env = createEnv();
+	const cookie = await login(env);
+	await env.KV.put('LINK.txt', '');
+
+	const homeResponse = await worker.fetch(new Request('https://subscriptions.example/', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.match(homeResponse.headers.get('Server-Timing') || '', /^app;dur=\d+$/);
+	const home = await homeResponse.text();
+	assert.match(home, /\/assets\/lucide\.js/);
+	assert.match(home, /\/assets\/qrcode-loader\.js/);
+	assert.doesNotMatch(home, /(?:unpkg\.com|cdn\.jsdelivr\.net)/);
+
+	const sharesResponse = await worker.fetch(new Request('https://subscriptions.example/shares', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	const shares = await sharesResponse.text();
+	assert.match(shares, /\/assets\/base\.css/);
+	assert.match(shares, /\/assets\/qrcode\.min\.js/);
+	assert.doesNotMatch(shares, /cdn\.jsdelivr\.net/);
+});
+
+test('首页只在新键缺失时读取并迁移旧 LINK 键', async () => {
+	const env = createEnv();
+	const cookie = await login(env);
+	await env.KV.put('/LINK.txt', 'vless://legacy.example');
+
+	env.KV.resetMetrics();
+	let response = await worker.fetch(new Request('https://subscriptions.example/', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.equal(response.status, 200);
+	assert.equal(await env.KV.get('LINK.txt'), 'vless://legacy.example');
+	assert.equal(await env.KV.get('/LINK.txt'), null);
+	assert.ok(env.KV.getCalls.includes('/LINK.txt'));
+
+	env.KV.resetMetrics();
+	response = await worker.fetch(new Request('https://subscriptions.example/', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.equal(response.status, 200);
+	assert.deepEqual(env.KV.getCalls.sort(), ['LINK.txt', 'LINK.txt.meta.json', 'NODE2LINK.settings.json'].sort());
+});
+
+test('请求统计最多扫描最近 500 条事件', async () => {
+	const env = createEnv({ REQUESTLOG: '1' });
+	const cookie = await login(env);
+	for (let index = 0; index < 600; index += 1) {
+		await env.KV.put(`NODE2LINK.request.${String(index).padStart(4, '0')}`, '1', {
+			metadata: {
+				client: 'Clash',
+				userAgent: 'Clash/1.0',
+				format: 'clash',
+				access: 'main',
+				subscriptionId: '',
+				requestedAt: new Date(2026, 0, 1, 0, 0, index).toISOString()
+			}
+		});
+	}
+
+	env.KV.resetMetrics();
+	const response = await worker.fetch(new Request('https://subscriptions.example/requests', {
+		headers: { Cookie: cookie }
+	}), env, createContext());
+	assert.equal(response.status, 200);
+	assert.equal(env.KV.listCalls[0].limit, 500);
+	assert.match(await response.text(), /记录较多，仅展示最近一部分/);
 });
