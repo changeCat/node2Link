@@ -33,6 +33,7 @@ const SUBSCRIPTION_FORMAT_CATALOG = [
 const DEFAULT_DISPLAY_FORMATS = ['sub', 'b64', 'clash', 'loon'];
 const subscriptionNotificationCache = new Map();
 const subscriptionNotificationCooldown = 10 * 1000;
+const APP_VERSION = globalThis.__NODE2LINK_VERSION__ || 'dev';
 
 import { createShareId, handleSharesAPI, isValidShareId, listShareSummaries, readShare } from './storage/shares.js';
 import { detectSubscriptionClient, queueSubscriptionRequestLog, readSubscriptionRequestStats } from './storage/request-logs.js';
@@ -465,7 +466,8 @@ async function handleLogin(request, env, runtime) {
 
 function renderTopbar(active) {
 	const settingsIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.2 15a1.7 1.7 0 0 0-.6-1A1.7 1.7 0 0 0 2.5 13.6H2.4V9.6h.1A1.7 1.7 0 0 0 4.2 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.66 3.8l.06.06A1.7 1.7 0 0 0 8.6 4.2a1.7 1.7 0 0 0 1-.6A1.7 1.7 0 0 0 10 2.5v-.1h4v.1a1.7 1.7 0 0 0 1 1.7 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.6a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1a1.7 1.7 0 0 0-1.7 1Z"/></svg>`;
-	const link = (href, label, key, icon = '') => `<a href="${href}"${active === key ? ' class="active"' : ''}>${icon}${label}</a>`;
+	const versionBadge = `<span class="app-version" title="北京时间构建版本" aria-label="当前版本 ${APP_VERSION}">${APP_VERSION}</span>`;
+	const link = (href, label, key, icon = '') => `<a href="${href}"${active === key ? ' class="active"' : ''}>${icon}${label}</a>${key === 'settings' ? versionBadge : ''}`;
 	return `<header class="app-header"><div class="header-inner"><section class="header-overview" aria-label="订阅控制台"><p class="eyebrow">Overview</p><h1>订阅控制台</h1><p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p></section><nav class="header-tabs" aria-label="订阅管理">${link('/', '主订阅', 'home')}${link('/shares', '分享管理', 'shares')}${link('/requests', '订阅请求', 'requests')}</nav><div class="header-actions"><nav class="header-nav" aria-label="管理导航">${link('/settings', '设置', 'settings', settingsIcon)}<form action="/api/logout" method="post"><button type="submit">退出</button></form></nav><span class="online">服务正常</span></div></div></header>`;
 }
 

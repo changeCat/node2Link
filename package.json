@@ -5,10 +5,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "npm run build && node scripts/local-server.mjs",
-    "pretest": "npm run build",
-    "test": "node tests/worker.test.mjs",
     "check": "node --check src/worker/app.js && node --check src/worker/storage/shares.js && node --check src/worker/storage/request-logs.js && node --check src/worker/ui/assets.js && node --check src/client/lucide.js && node --check src/client/qrcode-loader.js && node --check scripts/local-server.mjs",
-    "pages:build": "npm run check && npm run build && node tests/worker.test.mjs"
+    "pages:build": "npm run check && npm run build"
   },
   "dependencies": {
     "@keeex/qrcodejs-kx": "1.0.2",

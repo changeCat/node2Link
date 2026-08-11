@@ -45,7 +45,7 @@ const mimeTypes = {
 };
 
 function isStaticPath(pathname) {
-	return pathname.startsWith('/assets/') || pathname === '/sub.png' || pathname === '/build-info.json';
+	return pathname.startsWith('/assets/');
 }
 
 async function serveStatic(pathname, response) {

@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -11,7 +11,6 @@ const pathOf = url => fileURLToPath(url);
 await rm(dist, { recursive: true, force: true });
 await mkdir(assets, { recursive: true });
 await cp(new URL('public/', root), dist, { recursive: true });
-await cp(new URL('sub.png', root), new URL('sub.png', dist));
 await cp(
 	new URL('node_modules/@keeex/qrcodejs-kx/qrcode.min.js', root),
 	new URL('qrcode.min.js', assets)
@@ -35,7 +34,21 @@ const versionInputs = await Promise.all([
 	readFile(new URL('src/client/qrcode-loader.js', root))
 ]);
 const assetVersion = createHash('sha256').update(Buffer.concat(versionInputs)).digest('hex').slice(0, 12);
-const define = { 'globalThis.__NODE2LINK_ASSET_VERSION__': JSON.stringify(assetVersion) };
+const versionParts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
+	timeZone: 'Asia/Shanghai',
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit',
+	hour: '2-digit',
+	minute: '2-digit',
+	second: '2-digit',
+	hourCycle: 'h23'
+}).formatToParts(new Date()).map(part => [part.type, part.value]));
+const buildVersion = `v${versionParts.year}.${versionParts.month}.${versionParts.day}.${versionParts.hour}${versionParts.minute}${versionParts.second}`;
+const define = {
+	'globalThis.__NODE2LINK_ASSET_VERSION__': JSON.stringify(assetVersion),
+	'globalThis.__NODE2LINK_VERSION__': JSON.stringify(buildVersion)
+};
 
 await Promise.all([
 	build({
@@ -61,11 +74,3 @@ await Promise.all([
 		define
 	})
 ]);
-
-const worker = await readFile(new URL('_worker.js', dist));
-const sizes = {
-	workerBytes: worker.byteLength,
-	assetVersion,
-	generatedAt: new Date().toISOString()
-};
-await writeFile(new URL('build-info.json', dist), JSON.stringify(sizes, null, 2) + '\n');
