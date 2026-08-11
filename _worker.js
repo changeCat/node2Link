@@ -1,8 +1,6 @@
 
-// 部署完成后在网址后面加上这个，获取自建节点和机场聚合节点，/?token=auto或/auto或
+// 管理端使用账号密码登录；订阅通过不可猜测的 /s/<id> 链接访问。
 
-const DEFAULT_TOKEN = 'auto';
-const DEFAULT_GUEST_TOKEN = '';
 const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
 const DEFAULT_SUB_UPDATE_TIME = 6;
 const DEFAULT_MAIN_DATA = `
@@ -11,6 +9,10 @@ https://cfxr.eu.org/getSub
 const DEFAULT_SUB_CONVERTER = 'https://SUBAPI.cmliussss.net';
 const DEFAULT_SUB_CONFIG = 'https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini';
 const SETTINGS_KEY = 'NODE2LINK.settings.json';
+const SHARE_INDEX_KEY = 'NODE2LINK.shares.json';
+const SHARE_KEY_PREFIX = 'NODE2LINK.share.';
+const SESSION_COOKIE = 'node2link_session';
+const SESSION_TTL = 7 * 24 * 60 * 60;
 const REQUEST_LOG_PREFIX = 'NODE2LINK.request.';
 const REQUEST_LOG_TTL = 30 * 24 * 60 * 60;
 const REQUEST_LOG_LIMIT = 5000;
@@ -19,50 +21,69 @@ const subscriptionNotificationCooldown = 10 * 1000;
 
 export default {
 	async fetch(request, env, ctx) {
-		const runtime = await createRuntimeConfig(env);
+		const url = new URL(request.url);
+		const persistedSettings = await readPersistedSettings(env);
+		const runtime = await createRuntimeConfig(env, persistedSettings);
+
+		if (request.method === 'GET' && isLegacySubscriptionRequest(url, runtime.legacySubscriptionToken)) {
+			const mainData = env.KV ? (await env.KV.get('LINK.txt') || DEFAULT_MAIN_DATA) : (env.LINK || DEFAULT_MAIN_DATA);
+			return serveSubscription(request, env, ctx, runtime, mainData, 'main', true);
+		}
+
+		const shareMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{12,64})$/);
+		if (shareMatch && request.method === 'GET') {
+			const shareId = shareMatch[1];
+			if (shareId === runtime.mainSubscriptionId) {
+				const mainData = env.KV ? (await env.KV.get('LINK.txt') || DEFAULT_MAIN_DATA) : (env.LINK || DEFAULT_MAIN_DATA);
+				return serveSubscription(request, env, ctx, runtime, mainData, 'main', true);
+			}
+			if (!env.KV) return textResponse('分享链接不存在', 404);
+			const shared = await readShare(env.KV, shareId);
+			if (!shared) return textResponse('分享链接不存在或已被删除', 404);
+			return serveSubscription(request, env, ctx, runtime, shared.content, 'share', false);
+		}
+
+		if (url.pathname === '/api/login' && request.method === 'POST') return handleLogin(request, env);
+		if (url.pathname === '/login' && request.method === 'GET') {
+			if (await isAuthenticated(request, env)) return Response.redirect(url.origin + '/', 303);
+			return renderLoginPage(env);
+		}
+
+		if (!(await isAuthenticated(request, env))) {
+			if (url.pathname.startsWith('/api/')) return jsonResponse({ ok: false, message: '登录已失效' }, 401);
+			return Response.redirect(url.origin + '/login', 303);
+		}
+
+		if (url.pathname === '/api/logout' && request.method === 'POST') {
+			if (!requestHasSameOrigin(request)) return textResponse('请求来源无效', 403);
+			return new Response(null, { status: 303, headers: { Location: '/login', 'Set-Cookie': clearSessionCookie() } });
+		}
+		if (url.pathname === '/api/settings' && request.method === 'POST') return saveSettings(request, env, persistedSettings);
+		if (url.pathname === '/api/shares') return handleSharesAPI(request, env, url);
+		if (url.pathname === '/settings' && request.method === 'GET') return renderSettingsPage(request, runtime);
+		if (url.pathname === '/shares' && request.method === 'GET') return renderSharesPage(request, env, runtime);
+		if (url.pathname !== '/') return textResponse('页面不存在', 404);
+		if (!env.KV) return KV(request, env, 'LINK.txt', runtime.mainSubscriptionId, runtime);
+
+		await 迁移地址列表(env, 'LINK.txt');
+		if (request.method === 'GET' || request.method === 'POST') {
+			return KV(request, env, 'LINK.txt', runtime.mainSubscriptionId, runtime);
+		}
+		return textResponse('Method Not Allowed', 405);
+	}
+};
+
+async function serveSubscription(request, env, ctx, runtime, sourceData, access, includeWarp) {
 		const userAgentHeader = request.headers.get('User-Agent');
 		const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : 'null';
 		const url = new URL(request.url);
-		const token = url.searchParams.get('token');
-		const currentDate = new Date();
-		currentDate.setHours(0, 0, 0, 0);
-		const timeTemp = Math.ceil(currentDate.getTime() / 1000);
-		const fakeToken = await MD5MD5(`${runtime.mytoken}${timeTemp}`);
-		const visitorToken = runtime.guestToken || await MD5MD5(runtime.mytoken);
-		const isAuthorized = [runtime.mytoken, fakeToken, visitorToken].includes(token)
-			|| url.pathname === '/' + runtime.mytoken
-			|| url.pathname.includes('/' + runtime.mytoken + '?');
-
-		if (!isAuthorized) {
-			if (runtime.TG === 1 && url.pathname !== '/' && url.pathname !== '/favicon.ico') {
-				queueTelegram(ctx, sendMessage(runtime, `#异常访问 ${runtime.FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgent}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
-			}
-			if (env.URL302) return Response.redirect(env.URL302, 302);
-			if (env.URL) return proxyURL(env.URL, url);
-			return new Response(await nginx(), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
-		}
-
-		const persistedSettings = await readPersistedSettings(env);
-		const persistedCustomConverterURL = normalizeSublinkConverter(persistedSettings.customConverterURL);
-		runtime.converterMode = persistedSettings.converterMode === 'custom' && persistedCustomConverterURL ? 'custom' : 'default';
-		runtime.customConverterURL = persistedCustomConverterURL;
 		const customSublinkConverter = runtime.converterMode === 'custom'
 			? runtime.customConverterURL
 			: (!env.KV ? normalizeSublinkConverter(url.searchParams.get('converter')) : '');
 
-		let mainData = DEFAULT_MAIN_DATA;
+		let mainData = sourceData || '';
 		let urls = [];
-		if (env.KV) {
-			await 迁移地址列表(env, 'LINK.txt');
-			if (userAgent.includes('mozilla') && !url.search) {
-				queueTelegram(ctx, sendMessage(runtime, `#编辑订阅 ${runtime.FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
-				return KV(request, env, 'LINK.txt', visitorToken, runtime);
-			}
-			mainData = await env.KV.get('LINK.txt') || DEFAULT_MAIN_DATA;
-		} else {
-			mainData = env.LINK || DEFAULT_MAIN_DATA;
-			if (env.LINKSUB) urls = await ADD(env.LINKSUB);
-		}
+		if (access === 'main' && !env.KV && env.LINKSUB) urls = await ADD(env.LINKSUB);
 
 		const allLinks = await ADD(mainData + '\n' + urls.join('\n'));
 		let selfBuiltNodes = '';
@@ -77,8 +98,7 @@ export default {
 		const isSubConverterRequest = request.headers.get('subconverter-request')
 			|| request.headers.get('subconverter-version')
 			|| userAgent.includes('subconverter');
-		const isInternalSubscriptionRequest = token === fakeToken || isSubConverterRequest;
-		if (!isInternalSubscriptionRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request)) {
+		if (!isSubConverterRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request)) {
 			queueTelegram(ctx, sendMessage(runtime, `#获取订阅 ${runtime.FileName}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}\n<tg-spoiler>入口: ${url.pathname + url.search}</tg-spoiler>`));
 		}
 
@@ -91,7 +111,10 @@ export default {
 			else if (userAgent.includes('clash') || userAgent.includes('meta') || userAgent.includes('mihomo') || url.searchParams.has('clash')) subscriptionFormat = 'clash';
 		}
 
-		let converterSourceURL = `${url.origin}/${await MD5MD5(fakeToken)}?token=${fakeToken}`;
+		const sourceBaseURL = access === 'main'
+			? `${url.origin}/s/${encodeURIComponent(runtime.mainSubscriptionId)}`
+			: url.origin + url.pathname;
+		let converterSourceURL = sourceBaseURL + '?base64';
 		let requestData = mainData;
 		let appendUA = 'v2rayn';
 		let usedConverter = '';
@@ -102,12 +125,12 @@ export default {
 		else if (url.searchParams.has('quanx')) appendUA = 'Quantumult%20X';
 		else if (url.searchParams.has('loon')) appendUA = 'Loon';
 
-		if (!isInternalSubscriptionRequest && request.method === 'GET' && runtime.requestLogEnabled) {
+		if (!isSubConverterRequest && request.method === 'GET' && runtime.requestLogEnabled) {
 			queueSubscriptionRequestLog(ctx, env, {
 				client: detectSubscriptionClient(userAgentHeader),
 				userAgent: userAgentHeader || 'Unknown',
 				format: subscriptionFormat,
-				access: token === visitorToken ? 'guest' : 'owner'
+				access
 			});
 		}
 
@@ -131,7 +154,7 @@ export default {
 			}
 		}
 
-		if (env.WARP) converterSourceURL += '|' + (await ADD(env.WARP)).join('|');
+		if (includeWarp && env.WARP) converterSourceURL += '|' + (await ADD(env.WARP)).join('|');
 		const text = new TextDecoder().decode(new TextEncoder().encode(requestData));
 		const result = [...new Set(text.split('\n'))].join('\n');
 		let base64Data;
@@ -141,10 +164,10 @@ export default {
 		const responseHeaders = {
 			'content-type': 'text/plain; charset=utf-8',
 			'Profile-Update-Interval': `${runtime.SUBUpdateTime}`,
-			'Profile-web-page-url': request.url.includes('?') ? request.url.split('?')[0] : request.url
+			'Profile-web-page-url': sourceBaseURL
 		};
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = usedConverter;
-		if (subscriptionFormat === 'base64' || token === fakeToken) return new Response(base64Data, { headers: responseHeaders });
+		if (subscriptionFormat === 'base64') return new Response(base64Data, { headers: responseHeaders });
 
 		const conversionInit = { headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' } };
 		const conversionResult = customSublinkConverter && supportsSublinkTarget(subscriptionFormat)
@@ -158,22 +181,33 @@ export default {
 		if (!userAgent.includes('mozilla')) responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(runtime.FileName)}`;
 		return new Response(convertedContent, { headers: responseHeaders });
 	}
-};
 
-async function createRuntimeConfig(env) {
+async function createRuntimeConfig(env, persistedSettings = {}) {
 	const updateTime = Number(env.SUBUPTIME);
+	const persistedCustomConverterURL = normalizeSublinkConverter(persistedSettings.customConverterURL);
+	const storedMainId = isValidShareId(persistedSettings.mainSubscriptionId) ? persistedSettings.mainSubscriptionId : '';
+	const configuredMainId = isValidShareId(env.SUBSCRIPTION_ID) ? env.SUBSCRIPTION_ID : '';
+	const mainSubscriptionId = storedMainId
+		|| configuredMainId
+		|| (env.KV ? createShareId() : (await sha256Base64Url('main:' + sessionSecret(env))).slice(0, 24));
+	if (env.KV && storedMainId !== mainSubscriptionId) {
+		persistedSettings = { ...persistedSettings, mainSubscriptionId };
+		await env.KV.put(SETTINGS_KEY, JSON.stringify(persistedSettings));
+	}
 	return {
-		mytoken: env.TOKEN || DEFAULT_TOKEN,
-		guestToken: env.GUESTTOKEN || env.GUEST || DEFAULT_GUEST_TOKEN,
 		BotToken: env.TGTOKEN || '',
 		ChatID: env.TGID || '',
 		TG: Number(env.TG || 0),
-		FileName: env.SUBNAME || DEFAULT_FILE_NAME,
+		FileName: sanitizeSubscriptionName(persistedSettings.subscriptionName || env.SUBNAME || DEFAULT_FILE_NAME),
 		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
 		subConfig: env.SUBCONFIG || DEFAULT_SUB_CONFIG,
 		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER),
-		converterMode: 'default',
-		customConverterURL: '',
+		converterMode: persistedSettings.converterMode === 'custom' && persistedCustomConverterURL ? 'custom' : 'default',
+		customConverterURL: persistedCustomConverterURL,
+		mainSubscriptionId,
+		legacySubscriptionToken: Object.prototype.hasOwnProperty.call(persistedSettings, 'legacySubscriptionToken')
+			? sanitizeLegacySubscriptionToken(persistedSettings.legacySubscriptionToken)
+			: sanitizeLegacySubscriptionToken(env.TOKEN || ''),
 		requestLogEnabled: String(env.REQUESTLOG ?? '1') !== '0'
 	};
 }
@@ -188,6 +222,303 @@ async function readPersistedSettings(env) {
 		console.error('读取持久化设置时发生错误:', error);
 		return {};
 	}
+}
+
+function adminUsername(env) {
+	return String(env.ADMIN_USERNAME || env.USERNAME || 'admin').slice(0, 100);
+}
+
+function adminPassword(env) {
+	return String(env.ADMIN_PASSWORD || env.PASSWORD || '');
+}
+
+function sessionSecret(env) {
+	return String(env.SESSION_SECRET || adminPassword(env) || 'node2link-unconfigured');
+}
+
+function sanitizeSubscriptionName(value) {
+	const name = String(value || '').trim().replace(/[\r\n\0]/g, '').slice(0, 80);
+	return name || DEFAULT_FILE_NAME;
+}
+
+function sanitizeLegacySubscriptionToken(value) {
+	const token = String(value || '').trim();
+	return token && token.length <= 128 && !/[\u0000-\u001f\u007f]/.test(token) ? token : '';
+}
+
+function isLegacySubscriptionRequest(url, legacyToken) {
+	if (!legacyToken) return false;
+	if (url.searchParams.get('token') === legacyToken) return url.pathname === '/';
+	if (url.pathname === '/') return false;
+	try {
+		return !url.pathname.slice(1).includes('/') && decodeURIComponent(url.pathname.slice(1)) === legacyToken;
+	} catch (error) {
+		return false;
+	}
+}
+
+function escapeHTML(value) {
+	return String(value ?? '')
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;');
+}
+
+function jsonResponse(data, status = 200, extraHeaders = {}) {
+	return new Response(JSON.stringify(data), {
+		status,
+		headers: { 'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store', ...extraHeaders }
+	});
+}
+
+function textResponse(text, status = 200) {
+	return new Response(text, { status, headers: { 'Content-Type': 'text/plain;charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+function requestHasSameOrigin(request) {
+	const origin = request.headers.get('Origin');
+	return !origin || origin === new URL(request.url).origin;
+}
+
+function toBase64Url(bytes) {
+	let binary = '';
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function sha256Base64Url(value) {
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(value)));
+	return toBase64Url(new Uint8Array(digest));
+}
+
+async function hmacBase64Url(value, secret) {
+	const key = await crypto.subtle.importKey(
+		'raw',
+		new TextEncoder().encode(String(secret)),
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign']
+	);
+	const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(String(value)));
+	return toBase64Url(new Uint8Array(signature));
+}
+
+function safeEqual(left, right) {
+	const a = String(left || '');
+	const b = String(right || '');
+	let difference = a.length ^ b.length;
+	const length = Math.max(a.length, b.length);
+	for (let index = 0; index < length; index += 1) difference |= (a.charCodeAt(index) || 0) ^ (b.charCodeAt(index) || 0);
+	return difference === 0;
+}
+
+function readCookie(request, name) {
+	const cookieHeader = request.headers.get('Cookie') || '';
+	for (const part of cookieHeader.split(';')) {
+		const separator = part.indexOf('=');
+		if (separator < 0) continue;
+		if (part.slice(0, separator).trim() === name) return part.slice(separator + 1).trim();
+	}
+	return '';
+}
+
+async function createSessionCookie(env) {
+	const expires = Math.floor(Date.now() / 1000) + SESSION_TTL;
+	const payload = adminUsername(env) + '.' + expires;
+	const signature = await hmacBase64Url(payload, sessionSecret(env));
+	return `${SESSION_COOKIE}=${encodeURIComponent(payload + '.' + signature)}; Path=/; Max-Age=${SESSION_TTL}; HttpOnly; Secure; SameSite=Strict`;
+}
+
+function clearSessionCookie() {
+	return `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
+}
+
+async function isAuthenticated(request, env) {
+	let raw = '';
+	try { raw = decodeURIComponent(readCookie(request, SESSION_COOKIE) || ''); }
+	catch (error) { return false; }
+	const lastDot = raw.lastIndexOf('.');
+	if (lastDot < 1) return false;
+	const payload = raw.slice(0, lastDot);
+	const signature = raw.slice(lastDot + 1);
+	const split = payload.lastIndexOf('.');
+	if (split < 1) return false;
+	const username = payload.slice(0, split);
+	const expires = Number(payload.slice(split + 1));
+	if (username !== adminUsername(env) || !Number.isFinite(expires) || expires < Math.floor(Date.now() / 1000)) return false;
+	return safeEqual(signature, await hmacBase64Url(payload, sessionSecret(env)));
+}
+
+async function handleLogin(request, env) {
+	if (!requestHasSameOrigin(request)) return textResponse('Invalid origin', 403);
+	const configuredPassword = adminPassword(env);
+	if (!configuredPassword) return renderLoginPage(env, '尚未配置 ADMIN_PASSWORD，登录已禁用。');
+	let username = '';
+	let password = '';
+	const contentType = request.headers.get('Content-Type') || '';
+	if (contentType.includes('application/json')) {
+		const body = await request.json();
+		username = body.username;
+		password = body.password;
+	} else {
+		const form = await request.formData();
+		username = form.get('username');
+		password = form.get('password');
+	}
+	if (!safeEqual(username, adminUsername(env)) || !safeEqual(password, configuredPassword)) {
+		return renderLoginPage(env, '用户名或密码错误。', 401);
+	}
+	return new Response(null, {
+		status: 303,
+		headers: { Location: '/', 'Set-Cookie': await createSessionCookie(env), 'Cache-Control': 'no-store' }
+	});
+}
+
+function basePageStyles() {
+	return `
+		:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17211d;background:#f5f6f3;--green:#176b49;--muted:#66736d;--line:#dfe5e0;--surface:#fff;--danger:#b42318}
+		*{box-sizing:border-box}body{margin:0;background:#f5f6f3;color:#17211d}button,input,textarea{font:inherit}a{color:inherit}.topbar{background:#fff;border-bottom:1px solid var(--line)}.topbar-inner{max-width:1180px;margin:auto;min-height:70px;padding:12px 22px;display:flex;align-items:center;gap:20px}.brand{font-weight:750;color:var(--green);margin-right:auto}.nav{display:flex;align-items:center;gap:6px}.nav a,.nav button{border:0;background:transparent;text-decoration:none;padding:9px 12px;border-radius:7px;color:var(--muted);cursor:pointer}.nav a:hover,.nav a.active,.nav button:hover{background:#edf6f0;color:var(--green)}main{max-width:980px;margin:30px auto;padding:0 22px}.page-head{margin-bottom:22px}.page-head h1{margin:0 0 7px;font-size:28px}.page-head p{margin:0;color:var(--muted)}.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.field{display:grid;gap:7px;margin-bottom:18px}.field label{font-size:13px;font-weight:700}.field small{color:var(--muted)}input[type=text],input[type=password],input[type=url],textarea{width:100%;border:1px solid #ccd6ce;border-radius:8px;background:#fff;padding:11px 12px;color:#17211d}textarea{min-height:190px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.55}input:focus,textarea:focus{outline:3px solid rgba(23,107,73,.12);border-color:#72ad90}.button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 15px;cursor:pointer}.button.primary{background:var(--green);border-color:var(--green);color:#fff}.button.danger{color:var(--danger);border-color:#f2c6c2}.button:disabled{opacity:.55;cursor:wait}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.message{padding:11px 13px;border-radius:8px;margin-bottom:18px;background:#fff2f0;color:#9b2319;border:1px solid #facdc8}.success{color:var(--green)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.muted{color:var(--muted)}@media(max-width:700px){.topbar-inner{align-items:flex-start;flex-wrap:wrap}.brand{width:100%}.nav{width:100%;overflow:auto}main{margin-top:22px}.panel{padding:17px}}`;
+}
+
+function renderTopbar(active, fileName) {
+	const link = (href, label, key) => `<a href="${href}"${active === key ? ' class="active"' : ''}>${label}</a>`;
+	return `<header class="topbar"><div class="topbar-inner"><div class="brand">${escapeHTML(fileName || DEFAULT_FILE_NAME)}</div><nav class="nav">${link('/', '主页面', 'home')}${link('/shares', '分享管理', 'shares')}${link('/settings', '设置', 'settings')}<form action="/api/logout" method="post"><button type="submit">退出登录</button></form></nav></div></header>`;
+}
+
+function renderLoginPage(env, error = '', status = 200) {
+	const missing = !adminPassword(env);
+	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · Node2Link</title><style>${basePageStyles()}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(420px,100%)}.login-title{margin:0 0 7px}.login-copy{margin:0 0 24px;color:var(--muted)}</style></head><body><div class="login-wrap"><main class="login-card"><section class="panel"><h1 class="login-title">登录订阅控制台</h1><p class="login-copy">输入管理员账号后访问节点与分享管理。</p>${error ? `<div class="message">${escapeHTML(error)}</div>` : ''}${missing && !error ? '<div class="message">请先在 Cloudflare 中设置 ADMIN_PASSWORD 环境变量。</div>' : ''}<form action="/api/login" method="post"><div class="field"><label for="username">用户名</label><input id="username" name="username" type="text" autocomplete="username" value="${escapeHTML(adminUsername(env))}" required></div><div class="field"><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="button primary" type="submit"${missing ? ' disabled' : ''}>登录</button></form></section></main></div></body></html>`;
+	return new Response(html, { status, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff' } });
+}
+
+async function saveSettings(request, env, currentSettings) {
+	if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
+	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
+	try {
+		const payload = await request.json();
+		const subscriptionName = sanitizeSubscriptionName(payload.subscriptionName);
+		const converterMode = payload.converterMode === 'custom' ? 'custom' : 'default';
+		const customConverterURL = normalizeSublinkConverter(payload.customConverterURL);
+		const legacyTokenInput = String(payload.legacySubscriptionToken || '').trim();
+		const legacySubscriptionToken = sanitizeLegacySubscriptionToken(legacyTokenInput);
+		if (converterMode === 'custom' && !customConverterURL) return jsonResponse({ ok: false, message: '请输入有效的自建转换服务地址' }, 400);
+		if (legacyTokenInput && !legacySubscriptionToken) return jsonResponse({ ok: false, message: '旧版订阅入口不能包含控制字符，且不能超过 128 个字符' }, 400);
+		const settings = { ...currentSettings, subscriptionName, converterMode, customConverterURL, legacySubscriptionToken, savedAt: new Date().toISOString() };
+		await env.KV.put(SETTINGS_KEY, JSON.stringify(settings));
+		return jsonResponse({ ok: true, settings });
+	} catch (error) {
+		return jsonResponse({ ok: false, message: '保存失败：' + error.message }, 500);
+	}
+}
+
+function renderSettingsPage(_request, runtime) {
+	const converters = runtime.subConverters.map((item, index) => `<li><b>${index ? '备用 ' + index : '默认'}</b> <code>${escapeHTML(item)}</code></li>`).join('');
+	const initial = JSON.stringify({ subscriptionName: runtime.FileName, converterMode: runtime.converterMode, customConverterURL: runtime.customConverterURL, legacySubscriptionToken: runtime.legacySubscriptionToken }).replace(/</g, '\\u003c');
+	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · ${escapeHTML(runtime.FileName)}</title><style>${basePageStyles()}.choice{display:flex;gap:18px;margin:4px 0 18px}.service-list{margin:12px 0 0;padding-left:20px;color:var(--muted)}.service-list li{margin:6px 0}.footer-note{font-size:12px;margin-top:12px}</style></head><body>${renderTopbar('settings', runtime.FileName)}<main><div class="page-head"><h1>设置</h1><p>统一修改订阅名称和转换服务，保存后对主订阅及所有分享链接生效。</p></div><section class="panel"><form id="settingsForm"><div class="field"><label for="subscriptionName">订阅名称</label><input id="subscriptionName" type="text" maxlength="80" required><small>显示在管理页面标题和客户端下载文件名中。</small></div><div class="field"><label>转换服务</label><div class="choice"><label><input type="radio" name="converterMode" value="default"> 默认服务</label><label><input type="radio" name="converterMode" value="custom"> 自建 Sublink Worker</label></div></div><div class="field"><label for="customConverterURL">自建服务地址</label><input id="customConverterURL" type="url" placeholder="https://sub.example.com"><small>自建服务用于 Clash、Sing-box、Surge；其他格式继续使用默认服务。</small></div><div class="row"><button class="button primary" id="saveSettings" type="submit">保存设置</button><span id="saveMessage" class="muted"></span></div></form><ul class="service-list">${converters}</ul><div class="footer-note muted">规则配置：<code>${escapeHTML(runtime.subConfig)}</code></div></section></main><script>var initial=${initial};var form=document.getElementById('settingsForm');var nameInput=document.getElementById('subscriptionName');var urlInput=document.getElementById('customConverterURL');nameInput.value=initial.subscriptionName;urlInput.value=initial.customConverterURL||'';document.querySelector('input[name="converterMode"][value="'+initial.converterMode+'"]').checked=true;function syncMode(){var mode=document.querySelector('input[name="converterMode"]:checked').value;urlInput.disabled=mode!=='custom';}document.querySelectorAll('input[name="converterMode"]').forEach(function(el){el.addEventListener('change',syncMode)});syncMode();form.addEventListener('submit',function(event){event.preventDefault();var button=document.getElementById('saveSettings');var message=document.getElementById('saveMessage');button.disabled=true;message.textContent='正在保存…';fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscriptionName:nameInput.value,converterMode:document.querySelector('input[name="converterMode"]:checked').value,customConverterURL:urlInput.value})}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'保存失败');return data})}).then(function(data){message.textContent='已保存';message.className='success';document.querySelector('.brand').textContent=data.settings.subscriptionName}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});</script></body></html>`;
+	const legacyField = `<div class="field"><label for="legacySubscriptionToken">旧版订阅入口</label><input id="legacySubscriptionToken" type="text" maxlength="128" placeholder="例如 auto"><small>兼容原来的 /TOKEN 和 /?token=TOKEN 订阅地址；包含特殊路径字符时请使用 ?token= 格式。修改后旧地址失效，留空可禁用。</small></div>`;
+	const enhancedHTML = html
+		.replace('<div class="field"><label>转换服务</label>', legacyField + '<div class="field"><label>转换服务</label>')
+		.replace("var urlInput=document.getElementById('customConverterURL');", "var urlInput=document.getElementById('customConverterURL');var legacyInput=document.getElementById('legacySubscriptionToken');")
+		.replace("urlInput.value=initial.customConverterURL||'';", "urlInput.value=initial.customConverterURL||'';legacyInput.value=initial.legacySubscriptionToken||'';")
+		.replace('customConverterURL:urlInput.value})', 'customConverterURL:urlInput.value,legacySubscriptionToken:legacyInput.value})');
+	return new Response(enhancedHTML, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+}
+
+async function readShare(kv, id) {
+	try {
+		const value = await kv.get(SHARE_KEY_PREFIX + id);
+		if (!value) return null;
+		const share = JSON.parse(value);
+		return share && share.id === id && typeof share.content === 'string' ? share : null;
+	} catch (error) {
+		console.error('读取分享失败:', error);
+		return null;
+	}
+}
+
+async function readShareIndex(kv) {
+	try {
+		const value = await kv.get(SHARE_INDEX_KEY);
+		const parsed = value ? JSON.parse(value) : [];
+		return Array.isArray(parsed) ? parsed.filter(isValidShareId) : [];
+	} catch (error) {
+		return [];
+	}
+}
+
+function isValidShareId(value) {
+	return /^[A-Za-z0-9_-]{12,64}$/.test(String(value || ''));
+}
+
+async function listShares(kv) {
+	if (!kv) return [];
+	const ids = await readShareIndex(kv);
+	const shares = await Promise.all(ids.map(id => readShare(kv, id)));
+	return shares.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+function normalizeSharePayload(payload) {
+	const name = String(payload && payload.name || '').trim().replace(/[\r\n\0]/g, '').slice(0, 80);
+	const lines = String(payload && payload.content || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+	const content = [...new Set(lines)].join('\n');
+	if (!name) throw new Error('请输入分享名称');
+	if (!content) throw new Error('请至少填写一个节点');
+	const invalidIndex = content.split('\n').findIndex(line => !/^(vless|vmess|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard|socks|socks5):\/\//i.test(line));
+	if (invalidIndex >= 0) throw new Error(`第 ${invalidIndex + 1} 行不是支持的节点链接`);
+	if (new TextEncoder().encode(content).length > 1024 * 1024) throw new Error('节点内容不能超过 1 MB');
+	return { name, content, nodeCount: content.split('\n').length };
+}
+
+function createShareId() {
+	const bytes = new Uint8Array(18);
+	crypto.getRandomValues(bytes);
+	return toBase64Url(bytes);
+}
+
+async function handleSharesAPI(request, env) {
+	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
+	if (request.method === 'GET') return jsonResponse({ ok: true, shares: await listShares(env.KV) });
+	if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
+	try {
+		const payload = await request.json();
+		const index = await readShareIndex(env.KV);
+		if (request.method === 'POST') {
+			const normalized = normalizeSharePayload(payload);
+			const now = new Date().toISOString();
+			const share = { id: createShareId(), ...normalized, createdAt: now, updatedAt: now };
+			await Promise.all([
+				env.KV.put(SHARE_KEY_PREFIX + share.id, JSON.stringify(share)),
+				env.KV.put(SHARE_INDEX_KEY, JSON.stringify([share.id, ...index.filter(id => id !== share.id)]))
+			]);
+			return jsonResponse({ ok: true, share }, 201);
+		}
+		if (request.method === 'PUT') {
+			const id = String(payload.id || '');
+			const previous = await readShare(env.KV, id);
+			if (!previous) return jsonResponse({ ok: false, message: '分享不存在' }, 404);
+			const share = { ...previous, ...normalizeSharePayload(payload), updatedAt: new Date().toISOString() };
+			await env.KV.put(SHARE_KEY_PREFIX + id, JSON.stringify(share));
+			return jsonResponse({ ok: true, share });
+		}
+		if (request.method === 'DELETE') {
+			const id = String(payload.id || '');
+			if (!index.includes(id)) return jsonResponse({ ok: false, message: '分享不存在' }, 404);
+			await Promise.all([env.KV.delete(SHARE_KEY_PREFIX + id), env.KV.put(SHARE_INDEX_KEY, JSON.stringify(index.filter(item => item !== id)))]);
+			return jsonResponse({ ok: true });
+		}
+		return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);
+	} catch (error) {
+		return jsonResponse({ ok: false, message: error.message || '操作失败' }, 400);
+	}
+}
+
+async function renderSharesPage(_request, env, runtime) {
+	const shares = await listShares(env.KV);
+	const initial = JSON.stringify(shares).replace(/</g, '\\u003c');
+const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>分享管理 · ${escapeHTML(runtime.FileName)}</title><style>${basePageStyles()}.layout{display:grid;grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr);gap:18px;align-items:start}.share-list{display:grid;gap:12px}.share-card{border:1px solid var(--line);border-radius:10px;padding:15px;background:#fff}.share-card h3{margin:0 0 5px}.share-meta{font-size:12px;color:var(--muted);margin-bottom:10px}.share-link{display:flex;gap:8px;margin:10px 0}.share-link code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px;background:#f5f7f5;border-radius:6px;flex:1}.empty{text-align:center;padding:35px;color:var(--muted)}@media(max-width:820px){.layout{grid-template-columns:1fr}}</style></head><body>${renderTopbar('shares', runtime.FileName)}<main><div class="page-head"><h1>分享管理</h1><p>把一组或多组节点保存为独立订阅链接，可随时修改或删除。</p></div>${env.KV ? `<div class="layout"><section class="panel"><h2 id="formTitle">新建分享</h2><form id="shareForm"><input id="shareId" type="hidden"><div class="field"><label for="shareName">分享名称</label><input id="shareName" type="text" maxlength="80" placeholder="例如：给朋友的日本节点" required></div><div class="field"><label for="shareContent">节点内容</label><textarea id="shareContent" placeholder="每行一个节点，例如 vless://..." required></textarea><small>保存时会自动移除空行和完全重复的行。</small></div><div class="row"><button class="button primary" id="submitShare" type="submit">生成订阅链接</button><button class="button" id="cancelEdit" type="button" hidden>取消修改</button><span id="formMessage" class="muted"></span></div></form></section><section><div id="shareList" class="share-list"></div></section></div>` : '<section class="panel empty">请先绑定 KV 命名空间后使用分享管理。</section>'}</main>${env.KV ? `<script>var shares=${initial};var origin=window.location.origin;var form=document.getElementById('shareForm');var list=document.getElementById('shareList');function esc(value){return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}function linkOf(id){return origin+'/s/'+id}function render(){if(!shares.length){list.innerHTML='<div class="panel empty">还没有分享链接，请先创建一组。</div>';return}list.innerHTML=shares.map(function(item){return '<article class="share-card"><h3>'+esc(item.name)+'</h3><div class="share-meta">'+item.nodeCount+' 个节点 · 更新于 '+new Date(item.updatedAt).toLocaleString()+'</div><div class="share-link"><code title="'+esc(linkOf(item.id))+'">'+esc(linkOf(item.id))+'</code><button class="button" data-copy="'+esc(linkOf(item.id))+'">复制</button></div><div class="row"><button class="button" data-edit="'+item.id+'">修改</button><button class="button danger" data-delete="'+item.id+'">删除</button></div></article>'}).join('')}function reset(){form.reset();document.getElementById('shareId').value='';document.getElementById('formTitle').textContent='新建分享';document.getElementById('submitShare').textContent='生成订阅链接';document.getElementById('cancelEdit').hidden=true}function call(method,body){return fetch('/api/shares',{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'操作失败');return data})})}form.addEventListener('submit',function(event){event.preventDefault();var id=document.getElementById('shareId').value;var button=document.getElementById('submitShare');var message=document.getElementById('formMessage');button.disabled=true;message.textContent='正在保存…';call(id?'PUT':'POST',{id:id,name:document.getElementById('shareName').value,content:document.getElementById('shareContent').value}).then(function(data){var index=shares.findIndex(function(item){return item.id===data.share.id});if(index>=0)shares[index]=data.share;else shares.unshift(data.share);render();reset();message.textContent='已保存，订阅链接可直接使用';message.className='success'}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});list.addEventListener('click',function(event){var copy=event.target.dataset.copy;if(copy){navigator.clipboard.writeText(copy).then(function(){event.target.textContent='已复制';setTimeout(function(){event.target.textContent='复制'},1200)});return}var edit=event.target.dataset.edit;if(edit){var item=shares.find(function(value){return value.id===edit});document.getElementById('shareId').value=item.id;document.getElementById('shareName').value=item.name;document.getElementById('shareContent').value=item.content;document.getElementById('formTitle').textContent='修改分享';document.getElementById('submitShare').textContent='保存修改';document.getElementById('cancelEdit').hidden=false;window.scrollTo({top:0,behavior:'smooth'});return}var remove=event.target.dataset.delete;if(remove&&confirm('删除后，这个订阅链接将失效，KV 同步可能有短暂延迟。确定删除？')){call('DELETE',{id:remove}).then(function(){shares=shares.filter(function(item){return item.id!==remove});render()}).catch(function(error){alert(error.message)})}});document.getElementById('cancelEdit').addEventListener('click',reset);render();</script>` : ''}</body></html>`;
+	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
 function parseSubConverters(value) {
@@ -274,7 +605,7 @@ async function recordSubscriptionRequest(kv, details) {
 		client: String(details.client || '其他客户端').slice(0, 40),
 		userAgent: String(details.userAgent || 'Unknown').slice(0, 240),
 		format: String(details.format || 'base64').slice(0, 20),
-		access: details.access === 'guest' ? 'guest' : 'owner',
+		access: details.access === 'share' ? 'share' : 'main',
 		requestedAt: new Date(now).toISOString()
 	};
 	await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
@@ -316,7 +647,7 @@ async function readSubscriptionRequestStats(kv) {
 		item.count += 1;
 		const format = String(event.format || 'base64');
 		item.formats[format] = (item.formats[format] || 0) + 1;
-		if (event.access === 'guest') item.guest += 1;
+		if (event.access === 'share' || event.access === 'guest') item.guest += 1;
 		else item.owner += 1;
 		if (!item.lastRequestedAt || String(event.requestedAt || '') > item.lastRequestedAt) {
 			item.lastRequestedAt = String(event.requestedAt || '');
@@ -682,7 +1013,7 @@ async function 迁移地址列表(env, txt = 'ADD.txt') {
 }
 
 
-async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
+async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 	const url = new URL(request.url);
 	const metaKey = txt + '.meta.json';
 	const backupKey = txt.endsWith('.txt') ? txt.slice(0, -4) + '.backup.txt' : txt + '.backup';
@@ -690,24 +1021,8 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 	try {
 		if (request.method === "POST") {
 			if (!env.KV) return new Response("未绑定 KV 命名空间", { status: 400 });
+			if (!requestHasSameOrigin(request)) return new Response("请求来源无效", { status: 403 });
 			try {
-				if (request.headers.get('X-Node2Link-Action') === 'save-converter') {
-					const payload = await request.json();
-					const mode = payload && payload.mode === 'custom' ? 'custom' : 'default';
-					const customConverterURL = normalizeSublinkConverter(payload && payload.url);
-					if (mode === 'custom' && !customConverterURL) {
-						return new Response(JSON.stringify({ ok: false, message: '自建 Sublink Worker 地址无效' }), {
-							status: 400,
-							headers: { "Content-Type": "application/json;charset=utf-8" }
-						});
-					}
-					const settings = { converterMode: mode, customConverterURL, savedAt: new Date().toISOString() };
-					await env.KV.put(SETTINGS_KEY, JSON.stringify(settings));
-					return new Response(JSON.stringify({ ok: true, settings }), {
-						headers: { "Content-Type": "application/json;charset=utf-8" }
-					});
-				}
-
 				if (request.headers.get('X-Node2Link-Action') === 'get-backup') {
 					const [backupContent, backupMetadataText] = await Promise.all([
 						env.KV.get(backupKey),
@@ -802,11 +1117,9 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&#039;");
 		const origin = url.origin;
-		const ownerBase = origin + "/" + encodeURIComponent(runtime.mytoken);
-		const guestBase = origin + "/sub?token=" + encodeURIComponent(guest);
-		const converterListHTML = runtime.subConverters.map((converter, index) =>
-			`<span class="converter-entry"><b>${index === 0 ? "主" : "备" + index}</b><code title="${escapeHTML(converter)}">${escapeHTML(converter)}</code></span>`
-		).join("");
+		const ownerBase = runtime.legacySubscriptionToken
+			? origin + "/" + encodeURIComponent(runtime.legacySubscriptionToken)
+			: origin + "/s/" + encodeURIComponent(mainSubscriptionId);
 		const formatNames = { base64: 'Base64', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX', loon: 'Loon' };
 		const requestStatsHTML = requestStats.clients.slice(0, 10).map((client) => {
 			const formats = Object.entries(client.formats)
@@ -818,7 +1131,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					<div class="request-client-head"><strong>${escapeHTML(client.name)}</strong><span>${client.count} 次</span></div>
 					<div class="request-client-meta"><span>${escapeHTML(formats || '未知格式')}</span><time data-request-time="${escapeHTML(client.lastRequestedAt)}">${escapeHTML(client.lastRequestedAt || '时间未知')}</time></div>
 					<code title="${escapeHTML(client.lastUserAgent)}">${escapeHTML(client.lastUserAgent)}</code>
-					<div class="request-access"><span>管理 ${client.owner}</span><span>访客 ${client.guest}</span></div>
+					<div class="request-access"><span>主订阅 ${client.owner}</span><span>分享 ${client.guest}</span></div>
 				</div>`;
 		}).join('');
 		const formats = [
@@ -828,10 +1141,8 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 			{ name: "Loon", key: "loon", icon: "orbit", description: "适用于 Loon 客户端" }
 		];
 
-		const renderSubscriptions = (isGuest = false) => formats.map((format) => {
-			const subscriptionURL = isGuest
-				? guestBase + (format.key === "sub" ? "" : "&" + format.key)
-				: ownerBase + "?" + format.key;
+		const renderSubscriptions = () => formats.map((format) => {
+			const subscriptionURL = ownerBase + (format.key === "sub" ? "" : "?" + format.key);
 			return `
 				<article class="subscription-card" data-default-url="${escapeHTML(subscriptionURL)}">
 					<div class="subscription-head">
@@ -883,6 +1194,10 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.header-overview h1 { margin: 0; font-size: 23px; line-height: 1.12; letter-spacing: 0; }
 					.header-overview .intro-copy { max-width: 620px; margin: 3px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 					.header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
+					.header-nav { display: flex; align-items: center; gap: 4px; }
+					.header-nav a, .header-nav button { min-height: 34px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; text-decoration: none; cursor: pointer; }
+					.header-nav a:hover, .header-nav button:hover { background: var(--green-soft); color: var(--green); }
+					.header-nav form { margin: 0; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
 					main { width: calc(100% - 48px); margin: 0 auto; padding: 18px 0 48px; }
@@ -893,7 +1208,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 					.section-heading h2 { margin: 0; font-size: 19px; }
 					.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-					.workspace-grid { display: grid; grid-template-columns: 230px minmax(0, 1fr) 330px; grid-template-areas: "config main sidebar"; gap: 16px; align-items: start; }
+					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-areas: "main sidebar"; gap: 16px; align-items: start; }
 					.workspace-config, .workspace-main, .workspace-sidebar { min-width: 0; }
 					.workspace-config { grid-area: config; }
 					.workspace-main { grid-area: main; }
@@ -1035,12 +1350,11 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 1180px) {
 						.header-overview .intro-copy { display: none; }
-						.workspace-grid { grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
+						.workspace-grid { grid-template-columns: minmax(0, 1fr) 310px; grid-template-areas: "main sidebar"; }
 						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-						.workspace-sidebar > .guest-panel { grid-column: 1 / -1; }
 					}
 					@media (max-width: 980px) {
-						.workspace-grid { grid-template-columns: 1fr; grid-template-areas: "main" "config" "sidebar"; }
+						.workspace-grid { grid-template-columns: 1fr; grid-template-areas: "main" "sidebar"; }
 						.workspace-sidebar { display: flex; }
 					}
 					@media (max-width: 760px) {
@@ -1098,34 +1412,13 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 							<p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p>
 						</section>
 						<div class="header-actions">
-							<div class="token-chip"><i data-lucide="shield-check"></i><span>当前入口</span><code>/${escapeHTML(runtime.mytoken)}</code></div>
+							<nav class="header-nav" aria-label="管理导航"><a href="/">主页面</a><a href="/shares">分享管理</a><a href="/settings">设置</a><form action="/api/logout" method="post"><button type="submit">退出</button></form></nav>
 							<span class="online">服务正常</span>
 						</div>
 					</div>
 				</header>
 				<main>
 					<div class="workspace-grid">
-						<aside class="workspace-config" aria-label="转换配置">
-							<section class="section" aria-labelledby="settings-title">
-								<div class="section-heading"><div><h2 id="settings-title">转换配置</h2><p>选择默认服务，或接入自建 Sublink Worker</p></div></div>
-								<div class="converter-picker">
-									<div class="converter-options" role="radiogroup" aria-label="订阅转换服务">
-										<label class="converter-option"><input type="radio" name="converterMode" value="default" checked><span><strong>默认服务</strong><small>使用内置 Subconverter</small></span></label>
-										<label class="converter-option"><input type="radio" name="converterMode" value="custom"><span><strong>自建服务</strong><small>7Sageer/sublink-worker</small></span></label>
-									</div>
-									<div class="custom-converter-row">
-										<input id="customConverterUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://sub.example.com" aria-label="自建 Sublink Worker 地址">
-										<button class="tool-button" id="applyConverterButton" type="button" onclick="applyConverterSelection()">应用</button>
-									</div>
-									<p class="converter-help" id="converterHelp">当前使用：<strong>默认服务</strong>。选择会持久化到 KV，并对所有设备生效。</p>
-								</div>
-								<div class="settings-grid">
-									<div class="setting"><span class="setting-label"><i data-lucide="server"></i>默认后端</span><div class="converter-list">${converterListHTML}</div></div>
-									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
-								</div>
-							</section>
-						</aside>
-
 						<section class="section workspace-main" aria-labelledby="editor-title">
 							<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
 							${hasKV ? `
@@ -1173,16 +1466,10 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 								${requestStatsHTML ? `<div class="request-list">${requestStatsHTML}</div>` : '<div class="request-empty">暂无客户端请求记录</div>'}
 							</section>
 
-							<details class="guest-panel">
-								<summary>
-									<span class="summary-label"><i data-lucide="users"></i>访客订阅</span>
-									<span class="summary-meta"><span>仅允许获取订阅</span><i data-lucide="chevron-down"></i></span>
-								</summary>
-								<div class="guest-body">
-									<div class="guest-note"><i data-lucide="shield-alert"></i><span>访客链接无法进入本管理页，适合分享给其他设备或用户。访客 Token：<strong>${escapeHTML(guest)}</strong></span></div>
-									<div class="subscription-grid">${renderSubscriptions(true)}</div>
-								</div>
-							</details>
+							<section class="section" aria-labelledby="share-title">
+								<div class="section-heading"><div><h2 id="share-title">节点分享</h2><p>按组生成独立订阅链接</p></div></div>
+								<a class="tool-button" href="/shares"><i data-lucide="share-2"></i><span>管理分享链接</span></a>
+							</section>
 						</aside>
 					</div>
 
@@ -1210,7 +1497,6 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					var pendingDedupeContent = "";
 					var savedMetadata = ${JSON.stringify(savedMetadata)};
 					var draftStorageKey = "node2link:draft:" + window.location.host + window.location.pathname;
-					var initialConverterSettings = ${JSON.stringify({ mode: runtime.converterMode, url: runtime.customConverterURL })};
 
 					function initializeIcons() {
 						if (window.lucide) window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } });
@@ -1224,72 +1510,11 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 						toastTimer = setTimeout(function () { toast.classList.remove("show"); }, 2200);
 					}
 
-					function normalizeCustomConverter(value) {
-						try {
-							var parsed = new URL(String(value || "").trim());
-							if (!/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password) return "";
-							parsed.search = "";
-							parsed.hash = "";
-							return parsed.toString().replace(/\\/+$/, "");
-						} catch (error) { return ""; }
-					}
-
-					function setConverterForm(mode, customConverter) {
-						var selectedMode = mode === "custom" ? "custom" : "default";
-						document.querySelector('input[name="converterMode"][value="' + selectedMode + '"]').checked = true;
-						var input = document.getElementById("customConverterUrl");
-						input.value = customConverter || "";
-						input.disabled = selectedMode !== "custom";
-						var help = document.getElementById("converterHelp");
-						help.innerHTML = selectedMode === "custom"
-							? "当前使用：<strong>自建 Sublink Worker</strong>。已持久化到 KV；支持 Clash、Sing-box、Surge，其他格式仍使用默认服务。"
-							: "当前使用：<strong>默认服务</strong>。选择已持久化到 KV，并对所有设备生效。";
-					}
-
-					function restoreConverterSelection() {
-						var customConverter = normalizeCustomConverter(initialConverterSettings.url);
-						var mode = initialConverterSettings.mode === "custom" && customConverter ? "custom" : "default";
-						setConverterForm(mode, customConverter);
-					}
-
 					function localizeRequestTimes() {
 						document.querySelectorAll("[data-request-time]").forEach(function (element) {
 							var value = element.dataset.requestTime;
 							if (value) element.textContent = new Date(value).toLocaleString();
 						});
-					}
-
-					function applyConverterSelection() {
-						var checked = document.querySelector('input[name="converterMode"]:checked');
-						var mode = checked ? checked.value : "default";
-						var customConverter = normalizeCustomConverter(document.getElementById("customConverterUrl").value);
-						if (mode === "custom" && !customConverter) {
-							showToast("请输入有效的 http/https 自建地址");
-							document.getElementById("customConverterUrl").focus();
-							return;
-						}
-						var button = document.getElementById("applyConverterButton");
-						button.disabled = true;
-						button.textContent = "保存中";
-						return fetch(window.location.href, {
-							method: "POST",
-							headers: { "Content-Type": "application/json", "X-Node2Link-Action": "save-converter" },
-							body: JSON.stringify({ mode: mode, url: customConverter }),
-							cache: "no-cache"
-						})
-							.then(function (response) {
-								return response.json().then(function (result) {
-									if (!response.ok) throw new Error(result.message || "保存失败");
-									return result;
-								});
-							})
-							.then(function (result) {
-								initialConverterSettings = { mode: result.settings.converterMode, url: result.settings.customConverterURL };
-								setConverterForm(initialConverterSettings.mode, initialConverterSettings.url);
-								showToast(mode === "custom" ? "自建转换服务已保存到 KV" : "默认转换服务已保存到 KV");
-							})
-							.catch(function (error) { showToast("转换服务保存失败：" + error.message); })
-							.finally(function () { button.disabled = false; button.textContent = "应用"; });
 					}
 
 					function copyText(text) {
@@ -1580,14 +1805,7 @@ async function KV(request, env, txt = 'ADD.txt', guest, runtime) {
 					document.addEventListener("DOMContentLoaded", function () {
 						initializeIcons();
 						setTimeout(initializeIcons, 500);
-						restoreConverterSelection();
 						localizeRequestTimes();
-						document.querySelectorAll('input[name="converterMode"]').forEach(function (radio) {
-							radio.addEventListener("change", function () {
-								document.getElementById("customConverterUrl").disabled = radio.value !== "custom";
-								if (radio.value === "custom") document.getElementById("customConverterUrl").focus();
-							});
-						});
 						var textarea = document.getElementById("content");
 						if (textarea) {
 							originalContent = textarea.value;
