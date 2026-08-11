@@ -1,6 +1,6 @@
 # Node2Link 订阅管理
 
-这是一个运行在 Cloudflare Workers / Pages 上的节点与订阅汇聚工具。管理端使用账号密码登录，不再使用 `域名/token` 或 `?token=` 进入管理页；`TOKEN` 只作为主订阅入口，确保已有设备无需修改订阅地址。
+这是一个以 Cloudflare Pages Git 集成为主要部署方式的节点与订阅汇聚工具。管理端使用账号密码登录，不再使用 `域名/token` 或 `?token=` 进入管理页；`TOKEN` 只作为主订阅入口，确保已有设备无需修改订阅地址。
 
 ## 功能
 
@@ -11,7 +11,7 @@
 - 独立分享管理页，可为不同节点组生成不同订阅链接，并支持重复创建、修改、重置链接和删除；分享订阅与主订阅使用相同的客户端自适应转换逻辑；
 - 主订阅与分享订阅统一使用 `/s/<随机ID>`，管理密码不会出现在订阅地址中；
 - 节点检查、去重、草稿、备份与最近一次版本恢复；
-- 独立的近 30 天订阅请求统计页，主订阅与当前仍存在的分享订阅分别记录和展示；
+- 独立的订阅请求统计页，记录保留 30 天并聚合最近 500 条，主订阅与当前仍存在的分享订阅分别展示；
 - 多个 Subconverter 后端自动回退。
 
 ## 部署前配置
@@ -34,7 +34,6 @@
 | `REQUESTLOG` | 否 | `1` | `0` 关闭订阅请求统计，默认开启 |
 | `TGTOKEN` | 否 | `123:abc` | Telegram Bot Token |
 | `TGID` | 否 | `123456` | Telegram 接收账号或群组 ID |
-| `TG` | 否 | `1` | `1` 开启 Telegram 通知 |
 | `WARP` | 否 | `vless://...` | 附加到主订阅的 WARP 节点 |
 
 旧版 `GUEST`、`GUESTTOKEN` 已不再使用，可以删除。`TOKEN` 默认作为主订阅入口；登录后可在“设置 → 主订阅入口”中手动修改或随机生成新 Token。设置为 `TOKEN` 后，`/TOKEN` 与 `/?token=TOKEN` 均可订阅；留空则停用这两种 Token 入口，但系统生成的 `/s/<随机ID>` 主订阅链接仍然有效。
@@ -45,35 +44,23 @@
 
 获取订阅的 Telegram 通知会显示具体的主订阅名称或分享名称。
 
-### Workers（Wrangler）
-
-1. 创建 KV：
-
-   ```bash
-   npx wrangler kv namespace create KV
-   ```
-
-2. 把返回的 ID 写入 `wrangler.toml`：
-
-   ```toml
-   [[kv_namespaces]]
-   binding = "KV"
-   id = "你的 KV ID"
-   ```
-
-3. 设置敏感变量并部署：
-
-   ```bash
-   npx wrangler secret put ADMIN_PASSWORD
-   npx wrangler secret put SESSION_SECRET
-   npx wrangler deploy
-   ```
-
-如需自定义用户名，可在 Cloudflare 控制台添加 `ADMIN_USERNAME` 普通变量，或使用 `wrangler secret put ADMIN_USERNAME`。
-
 ### Pages
 
-在 Pages 项目的“设置 → 绑定”中添加 KV 命名空间，变量名必须是 `KV`；然后在“变量和机密”中添加 `ADMIN_PASSWORD`、`SESSION_SECRET`，重新部署项目。
+在 Pages 项目的“设置 → 绑定”中添加 KV 命名空间，变量名必须是 `KV`；然后在“变量和机密”中添加 `ADMIN_PASSWORD`、`SESSION_SECRET`。
+
+Git 集成的构建配置使用：
+
+```text
+Build command: npm run pages:build
+Build output directory: dist
+Root directory: 留空
+```
+
+完整的一次性升级、自动部署、验证和回滚步骤见 [Cloudflare Pages 部署与升级手册](DEPLOY.md)。
+
+项目会将模块化 Worker 源码打包到 `dist/_worker.js`，公共 CSS、精简后的 Lucide 图标和 QRCode 放在 `dist/assets`。静态资源绕过 Worker 并由 Pages 缓存；管理页面、API 和订阅响应继续禁止缓存。
+
+分享列表只读取摘要索引，点击“修改”时才按 ID 读取完整节点内容；旧版 ID 索引会在首次访问时自动补充摘要。请求统计单次最多扫描最近 500 条事件。管理页面响应包含 `Server-Timing`，可在浏览器开发者工具中查看 Worker 总处理时间。
 
 ## 使用方式
 
