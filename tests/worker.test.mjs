@@ -61,6 +61,7 @@ const loginHTML = await response.text();
 assert.match(loginHTML, /id="username"/);
 assert.doesNotMatch(loginHTML, /id="username"[^>]*value=/);
 assert.doesNotMatch(loginHTML, /独立随机密钥|Service is running|Edge Gateway/);
+assert.match(loginHTML, /rel="icon"/);
 
 response = await call('/auto?base64', { headers: { 'User-Agent': 'test-client' } });
 assert.equal(response.status, 200);
@@ -89,11 +90,12 @@ assert.match(homeHTML, /https:\/\/example\.com\/auto/);
 assert.match(homeHTML, /转换信息/);
 assert.match(homeHTML, /当前转换后端/);
 assert.match(homeHTML, /规则配置/);
+assert.doesNotMatch(homeHTML, /<h2 id="share-title">节点分享<\/h2>/);
+assert.doesNotMatch(homeHTML.slice(homeHTML.indexOf('<body>')), /<div class="brand">/);
 assert.doesNotMatch(homeHTML, /当前入口|访客 Token/);
 assert.doesNotMatch(homeHTML, /Service is running|Edge Gateway/);
 const homeBody = homeHTML.slice(homeHTML.indexOf('<body>'));
-assert.ok(homeBody.indexOf('header-overview') < homeBody.indexOf('class="brand"'));
-assert.ok(homeBody.indexOf('class="brand"') < homeBody.indexOf('header-actions'));
+assert.ok(homeBody.indexOf('header-overview') < homeBody.indexOf('header-actions'));
 compileInlineScripts(homeHTML);
 
 const settingsBeforeUpdate = JSON.parse(await kv.get('NODE2LINK.settings.json'));
@@ -104,36 +106,65 @@ assert.match(Buffer.from(await response.text(), 'base64').toString(), /vless:\/\
 response = await call('/api/settings', {
 	method: 'POST',
 	headers: { ...authHeaders, 'Content-Type': 'application/json' },
-	body: JSON.stringify({ subscriptionName: '我的订阅', converterMode: 'default', customConverterURL: '', legacySubscriptionToken: 'legacy2' })
+	body: JSON.stringify({
+		subscriptionName: '我的订阅',
+		browserIconURL: 'https://example.com/custom-icon.png',
+		subscriptionToken: 'entry2',
+		converterMode: 'default',
+		customConverterURL: '',
+		subConfig: 'https://example.com/rules.ini'
+	})
 });
 assert.equal(response.status, 200);
-assert.equal((await response.json()).settings.subscriptionName, '我的订阅');
+const updatedSettings = (await response.json()).settings;
+assert.equal(updatedSettings.subscriptionName, '我的订阅');
+assert.equal(updatedSettings.subscriptionToken, 'entry2');
+assert.equal(updatedSettings.browserIconURL, 'https://example.com/custom-icon.png');
+assert.equal(updatedSettings.subConfig, 'https://example.com/rules.ini');
+assert.equal(Object.hasOwn(updatedSettings, 'legacySubscriptionToken'), false);
 
-response = await call('/legacy2?base64', { headers: { 'User-Agent': 'test-client' } });
+response = await call('/entry2?base64', { headers: { 'User-Agent': 'test-client' } });
 assert.equal(response.status, 200);
 assert.equal(Buffer.from(response.headers.get('Profile-Title').slice(7), 'base64').toString(), '我的订阅');
 assert.match(response.headers.get('Content-Disposition'), /%E6%88%91%E7%9A%84%E8%AE%A2%E9%98%85/);
 assert.match(Buffer.from(await response.text(), 'base64').toString(), /vless:\/\/main-node/);
 
+response = await call('/?token=entry2&base64', { headers: { 'User-Agent': 'test-client' } });
+assert.equal(response.status, 200);
+assert.match(Buffer.from(await response.text(), 'base64').toString(), /vless:\/\/main-node/);
+
+response = await call('/', { headers: { Cookie: cookie, 'User-Agent': 'Mozilla/5.0' } });
+assert.equal(response.status, 200);
+const updatedHomeHTML = await response.text();
+assert.match(updatedHomeHTML, /https:\/\/example\.com\/rules\.ini/);
+assert.match(updatedHomeHTML, /rel="icon" href="https:\/\/example\.com\/custom-icon\.png"/);
+assert.match(updatedHomeHTML, /https:\/\/example\.com\/entry2/);
+
 response = await call('/settings', { headers: { Cookie: cookie } });
 assert.equal(response.status, 200);
 const settingsHTML = await response.text();
-assert.match(settingsHTML, /旧版订阅入口/);
-assert.match(settingsHTML, /legacySubscriptionToken/);
-assert.match(settingsHTML, /rel="icon"/);
+assert.match(settingsHTML, /订阅入口 Token/);
+assert.doesNotMatch(settingsHTML, /旧版订阅入口/);
+assert.match(settingsHTML, /id="browserIconURL"/);
+assert.match(settingsHTML, /id="subConfig"/);
+assert.match(settingsHTML, /https:\/\/example\.com\/rules\.ini/);
+assert.match(settingsHTML, /rel="icon" href="https:\/\/example\.com\/custom-icon\.png"/);
 assert.match(settingsHTML, /header-overview/);
-assert.match(settingsHTML, /brand-mark/);
+assert.doesNotMatch(settingsHTML.slice(settingsHTML.indexOf('<body>')), /<div class="brand">/);
 assert.match(settingsHTML, /max-width:1440px/);
-assert.match(settingsHTML, /#settingsForm\{display:grid/);
+assert.match(settingsHTML, /1\. 基本显示/);
+assert.match(settingsHTML, /2\. 订阅入口/);
+assert.match(settingsHTML, /3\. 转换配置/);
 compileInlineScripts(settingsHTML);
 
 response = await call('/shares', { headers: { Cookie: cookie } });
 assert.equal(response.status, 200);
 const sharesHTML = await response.text();
 assert.match(sharesHTML, /header-overview/);
-assert.match(sharesHTML, /brand-mark/);
-assert.match(sharesHTML, /minmax\(360px,.56fr\)/);
+assert.doesNotMatch(sharesHTML.slice(sharesHTML.indexOf('<body>')), /<div class="brand">/);
+assert.match(sharesHTML, /minmax\(420px,.78fr\)/);
 assert.match(sharesHTML, /#shareContent\{min-height:320px\}/);
+assert.match(sharesHTML, /rel="icon" href="https:\/\/example\.com\/custom-icon\.png"/);
 compileInlineScripts(sharesHTML);
 
 response = await call('/api/shares', {
