@@ -164,8 +164,12 @@ async function serveSubscription(request, env, ctx, runtime, sourceData, access,
 		const responseHeaders = {
 			'content-type': 'text/plain; charset=utf-8',
 			'Profile-Update-Interval': `${runtime.SUBUpdateTime}`,
-			'Profile-web-page-url': sourceBaseURL
+			'Profile-web-page-url': sourceBaseURL,
+			'Profile-Title': `base64:${encodeBase64(runtime.FileName)}`
 		};
+		if (!userAgent.includes('mozilla')) {
+			responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(runtime.FileName)}`;
+		}
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = usedConverter;
 		if (subscriptionFormat === 'base64') return new Response(base64Data, { headers: responseHeaders });
 
@@ -178,7 +182,6 @@ async function serveSubscription(request, env, ctx, runtime, sourceData, access,
 		responseHeaders['X-Subconverter-Used'] = conversionResult.converter;
 		let convertedContent = await conversionResult.response.text();
 		if (subscriptionFormat === 'clash') convertedContent = await clashFix(convertedContent);
-		if (!userAgent.includes('mozilla')) responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(runtime.FileName)}`;
 		return new Response(convertedContent, { headers: responseHeaders });
 	}
 
@@ -1178,9 +1181,9 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					* { box-sizing: border-box; }
 					html { scroll-behavior: smooth; }
 					body { margin: 0; min-width: 320px; background: var(--bg); color: var(--text); }
-					button, textarea { font: inherit; }
+					button, input, textarea { font: inherit; }
 					button { letter-spacing: 0; }
-					button:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
+					button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
 					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
 					.header-inner { width: calc(100% - 48px); min-height: 82px; margin: 0 auto; display: flex; align-items: center; gap: 22px; }
 					.brand { min-width: 0; display: flex; align-items: center; gap: 12px; }
