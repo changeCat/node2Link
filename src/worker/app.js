@@ -1134,6 +1134,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 				<title>${escapeHTML(runtime.pageTitle)}</title>
 				${renderFavicon(runtime.browserIconURL)}
 				<style>
+					${basePageStyles()}
 					:root {
 						color-scheme: light;
 						font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
@@ -1148,25 +1149,6 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					button, input, textarea { font: inherit; }
 					button { letter-spacing: 0; }
 					button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
-					.app-header { border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .92); }
-					.header-inner { width: calc(100% - 48px); min-height: 82px; margin: 0 auto; display: flex; align-items: center; gap: 22px; }
-					.header-overview { min-width: 0; flex: 0 1 420px; }
-					.header-overview .eyebrow { margin: 0 0 2px; color: var(--green); font-size: 9px; font-weight: 800; text-transform: uppercase; }
-					.header-overview h1 { margin: 0; font-size: 23px; line-height: 1.12; letter-spacing: 0; }
-					.header-overview .intro-copy { max-width: 620px; margin: 3px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-					.header-tabs { align-self: stretch; display: flex; align-items: stretch; gap: 4px; }
-					.header-tabs a { position: relative; display: inline-flex; align-items: center; padding: 0 16px; color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
-					.header-tabs a:hover { color: var(--green); }
-					.header-tabs a.active { color: var(--green-dark); }
-					.header-tabs a.active::after { content: ""; position: absolute; right: 10px; bottom: -1px; left: 10px; height: 3px; border-radius: 3px 3px 0 0; background: var(--green); }
-					.header-actions { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 12px; }
-					.header-nav { display: flex; align-items: center; gap: 4px; }
-					.header-nav a, .header-nav button { min-height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; text-decoration: none; white-space: nowrap; cursor: pointer; }
-					.header-nav a:hover, .header-nav a.active, .header-nav button:hover { background: var(--green-soft); color: var(--green); }
-					.header-nav svg { width: 14px; height: 14px; }
-					.header-nav form { display: flex; margin: 0; }
-					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
-					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
 					main { width: calc(100% - 48px); margin: 0 auto; padding: 18px 0 48px; }
 					.token-chip { max-width: 360px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 12px; }
 					.token-chip svg { flex: 0 0 auto; width: 16px; height: 16px; color: var(--green); }
@@ -1316,8 +1298,6 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					.toast.show { opacity: 1; transform: translate(-50%, 0); }
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 1180px) {
-						.header-overview .intro-copy { display: none; }
-						.header-tabs a { padding: 0 10px; }
 						.workspace-grid { grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
 						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 					}
@@ -1326,16 +1306,6 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 						.workspace-sidebar { display: flex; }
 					}
 					@media (max-width: 760px) {
-						.header-inner, main { width: min(100% - 28px, 1440px); }
-						.header-inner { flex-wrap: wrap; gap: 0 12px; padding: 9px 0; }
-						.header-overview { order: 1; flex: 0 0 100%; padding: 0 0 7px; border-bottom: 1px solid var(--line-soft); }
-						.header-overview .eyebrow, .header-overview .intro-copy { display: none; }
-						.header-overview h1 { font-size: 20px; }
-						.header-tabs { order: 2; width: 100%; min-height: 42px; border-bottom: 1px solid var(--line-soft); }
-						.header-tabs a { padding: 0 14px; }
-						.header-actions { order: 3; width: 100%; margin-left: 0; padding-top: 8px; justify-content: space-between; }
-						.header-actions .token-chip { max-width: 180px; padding: 7px 9px; }
-						.header-actions .token-chip span { display: none; }
 						main { padding-top: 14px; }
 						.workspace-sidebar .subscription-grid { grid-template-columns: 1fr; }
 						.workspace-sidebar .compact-subscription-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1351,8 +1321,6 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					}
 					@media (max-width: 480px) {
 						.workspace-sidebar .compact-subscription-grid { grid-template-columns: 1fr; }
-						.online { width: 9px; height: 9px; padding: 0; border: 0; font-size: 0; background: #21a464; box-shadow: 0 0 0 4px rgba(33, 164, 100, .13); }
-						.online::before { display: none; }
 						.subscription-card { padding: 15px; }
 						.link-row { grid-template-columns: minmax(0, 1fr) 34px 40px; }
 						.copy-button { width: 40px; padding: 0; }
