@@ -97,6 +97,8 @@ assert.equal((await response.json()).settings.subscriptionName, '我的订阅');
 
 response = await call('/legacy2?base64', { headers: { 'User-Agent': 'test-client' } });
 assert.equal(response.status, 200);
+assert.equal(Buffer.from(response.headers.get('Profile-Title').slice(7), 'base64').toString(), '我的订阅');
+assert.match(response.headers.get('Content-Disposition'), /%E6%88%91%E7%9A%84%E8%AE%A2%E9%98%85/);
 assert.match(Buffer.from(await response.text(), 'base64').toString(), /vless:\/\/main-node/);
 
 response = await call('/settings', { headers: { Cookie: cookie } });
