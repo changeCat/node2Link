@@ -6,7 +6,7 @@
 
 - 账号密码登录管理端，会话 Cookie 使用 `HttpOnly`、`Secure`、`SameSite=Strict`；
 - 汇聚多个节点或上游订阅，并输出 Base64、Clash、Sing-box、Surge、QuanX、Loon 等格式；
-- 独立设置页，可修改订阅名称、标签页图标、订阅入口 Token、转换服务及规则配置；
+- 独立设置页，可分别修改客户端订阅名称、浏览器标签页标题与图标、订阅入口 Token，并在默认/自建转换服务和默认/自建规则之间切换；
 - 独立分享管理页，可为不同节点组生成不同订阅链接，并支持重复创建、修改和删除；
 - 主订阅与分享订阅统一使用 `/s/<随机ID>`，管理密码不会出现在订阅地址中；
 - 节点检查、去重、草稿、备份与最近一次版本恢复；
@@ -26,9 +26,9 @@
 | `SESSION_SECRET` | 建议 | `独立强随机字符串` | 会话签名密钥；未配置时使用 `ADMIN_PASSWORD`，修改后所有会话失效 |
 | `TOKEN` | 否 | `auto` | 初始订阅入口 Token，同时提供 `/auto` 与 `/?token=auto` 两种主订阅地址，不授予管理权限 |
 | `LINK` | 否 | `vless://...` | 未绑定 KV 时的只读节点来源；正式使用建议绑定 KV |
-| `SUBNAME` | 否 | `Node2Link` | 初始订阅名称；绑定 KV 后可在“设置”中修改 |
+| `SUBNAME` | 否 | `Node2Link` | 初始客户端订阅名称；仅用于订阅标题及下载文件名，绑定 KV 后可在“设置”中修改 |
 | `SUBAPI` | 否 | `sub.example.com,backup.example.com` | 默认转换后端，多个地址用逗号、分号或换行分隔 |
-| `SUBCONFIG` | 否 | `https://.../config.ini` | 初始 Subconverter 规则配置；绑定 KV 后可在“设置”中修改 |
+| `SUBCONFIG` | 否 | `https://.../config.ini` | 默认 Subconverter 规则配置；绑定 KV 后可在“设置”中切换为自建规则 |
 | `SUBUPTIME` | 否 | `6` | 客户端订阅更新间隔（小时） |
 | `REQUESTLOG` | 否 | `1` | `0` 关闭订阅请求统计，默认开启 |
 | `TGTOKEN` | 否 | `123:abc` | Telegram Bot Token |
@@ -75,7 +75,7 @@
 1. 打开部署域名根路径，例如 `https://sub.example.com/`；
 2. 使用 `ADMIN_USERNAME`（默认 `admin`）和 `ADMIN_PASSWORD` 登录；
 3. 在主页面保存汇聚节点与上游订阅，右侧复制“我的订阅”链接；
-4. 在“设置”中修改订阅名称、标签页图标、订阅入口 Token、转换服务或规则配置；
+4. 在“设置”中修改客户端订阅名称、标签页标题与图标、订阅入口 Token，或选择默认/自建转换服务与规则；
 5. 在“分享管理”中填写分享名称及一个或多个节点，保存后复制独立订阅链接；
 6. 分享内容修改后原链接保持不变；删除后该链接失效（Cloudflare KV 跨区域同步可能有短暂延迟）。
 
