@@ -381,18 +381,24 @@ async function handleLogin(request, env) {
 
 function basePageStyles() {
 	return `
-		:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17211d;background:#f5f6f3;--green:#176b49;--muted:#66736d;--line:#dfe5e0;--surface:#fff;--danger:#b42318}
-		*{box-sizing:border-box}body{margin:0;background:#f5f6f3;color:#17211d}button,input,textarea{font:inherit}a{color:inherit}.topbar{background:#fff;border-bottom:1px solid var(--line)}.topbar-inner{max-width:1180px;margin:auto;min-height:70px;padding:12px 22px;display:flex;align-items:center;gap:20px}.brand{font-weight:750;color:var(--green);margin-right:auto}.nav{display:flex;align-items:center;gap:6px}.nav a,.nav button{border:0;background:transparent;text-decoration:none;padding:9px 12px;border-radius:7px;color:var(--muted);cursor:pointer}.nav a:hover,.nav a.active,.nav button:hover{background:#edf6f0;color:var(--green)}main{max-width:980px;margin:30px auto;padding:0 22px}.page-head{margin-bottom:22px}.page-head h1{margin:0 0 7px;font-size:28px}.page-head p{margin:0;color:var(--muted)}.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.field{display:grid;gap:7px;margin-bottom:18px}.field label{font-size:13px;font-weight:700}.field small{color:var(--muted)}input[type=text],input[type=password],input[type=url],textarea{width:100%;border:1px solid #ccd6ce;border-radius:8px;background:#fff;padding:11px 12px;color:#17211d}textarea{min-height:190px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.55}input:focus,textarea:focus{outline:3px solid rgba(23,107,73,.12);border-color:#72ad90}.button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 15px;cursor:pointer}.button.primary{background:var(--green);border-color:var(--green);color:#fff}.button.danger{color:var(--danger);border-color:#f2c6c2}.button:disabled{opacity:.55;cursor:wait}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.message{padding:11px 13px;border-radius:8px;margin-bottom:18px;background:#fff2f0;color:#9b2319;border:1px solid #facdc8}.success{color:var(--green)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.muted{color:var(--muted)}@media(max-width:700px){.topbar-inner{align-items:flex-start;flex-wrap:wrap}.brand{width:100%}.nav{width:100%;overflow:auto}main{margin-top:22px}.panel{padding:17px}}`;
+		:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17211d;background:#f5f6f3;--green:#176b49;--green-dark:#105239;--green-soft:#e8f3ed;--muted:#68736d;--line:#dfe4de;--line-soft:#edf0ec;--surface:#fff;--danger:#b42318}
+		*{box-sizing:border-box}body{margin:0;min-width:320px;background:#f5f6f3;color:#17211d}button,input,textarea{font:inherit}a{color:inherit}
+		.app-header{border-bottom:1px solid var(--line);background:rgba(255,255,255,.92)}.header-inner{width:calc(100% - 48px);min-height:82px;margin:0 auto;display:flex;align-items:center;gap:22px}.header-overview{min-width:0;flex:0 1 420px;padding-right:22px;border-right:1px solid var(--line)}.header-overview .eyebrow{margin:0 0 2px;color:var(--green);font-size:9px;font-weight:800;text-transform:uppercase}.header-overview h1{margin:0;font-size:23px;line-height:1.12}.header-overview .intro-copy{margin:3px 0 0;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}.brand{min-width:0;display:flex;align-items:center;gap:12px}.brand-mark{flex:0 0 auto;width:38px;height:38px;display:grid;place-items:center;border-radius:7px;background:#143f32;color:#fff}.brand-mark svg{width:20px;height:20px}.brand-copy{min-width:0}.brand-copy strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}.brand-copy span{display:block;margin-top:2px;color:var(--muted);font-size:12px}.header-actions{flex:0 0 auto;margin-left:auto;display:flex;align-items:center;gap:12px}.header-nav{display:flex;align-items:center;gap:4px}.header-nav a,.header-nav button{min-height:34px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}.header-nav a:hover,.header-nav a.active,.header-nav button:hover{background:var(--green-soft);color:var(--green)}.header-nav svg{width:14px;height:14px}.header-nav form{display:flex;margin:0}.online{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #cce4d6;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:700;white-space:nowrap}.online::before{content:"";width:7px;height:7px;border-radius:50%;background:#21a464;box-shadow:0 0 0 3px rgba(33,164,100,.13)}
+		main{width:calc(100% - 48px);max-width:1440px;margin:26px auto;padding:0}.page-head{margin-bottom:22px}.page-head h1{margin:0 0 7px;font-size:28px}.page-head p{margin:0;color:var(--muted)}.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.field{display:grid;gap:7px;margin-bottom:18px}.field label{font-size:13px;font-weight:700}.field small{color:var(--muted)}input[type=text],input[type=password],input[type=url],textarea{width:100%;border:1px solid #ccd6ce;border-radius:8px;background:#fff;padding:11px 12px;color:#17211d}textarea{min-height:190px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.55}input:focus,textarea:focus{outline:3px solid rgba(23,107,73,.12);border-color:#72ad90}.button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 15px;cursor:pointer}.button.primary{background:var(--green);border-color:var(--green);color:#fff}.button.danger{color:var(--danger);border-color:#f2c6c2}.button:disabled{opacity:.55;cursor:wait}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.message{padding:11px 13px;border-radius:8px;margin-bottom:18px;background:#fff2f0;color:#9b2319;border:1px solid #facdc8}.success{color:var(--green)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.muted{color:var(--muted)}
+		@media(max-width:1040px){.header-overview .intro-copy{display:none}.header-inner{gap:14px}.header-nav a,.header-nav button{padding:0 7px}}
+		@media(max-width:760px){.header-inner,main{width:calc(100% - 28px)}.header-inner{flex-wrap:wrap;gap:8px 12px;padding:9px 0}.brand{order:1}.header-actions{order:2}.header-overview{order:3;flex:0 0 100%;padding:7px 0 0;border-top:1px solid var(--line-soft);border-right:0}.header-overview .eyebrow,.header-overview .intro-copy{display:none}.header-overview h1{font-size:20px}.header-nav{max-width:calc(100vw - 90px);overflow-x:auto}.online{width:9px;height:9px;padding:0;border:0;font-size:0;background:#21a464;box-shadow:0 0 0 4px rgba(33,164,100,.13)}.online::before{display:none}main{margin-top:18px}.panel{padding:17px}}`;
 }
 
 function renderTopbar(active, fileName) {
-	const link = (href, label, key) => `<a href="${href}"${active === key ? ' class="active"' : ''}>${label}</a>`;
-	return `<header class="topbar"><div class="topbar-inner"><div class="brand">${escapeHTML(fileName || DEFAULT_FILE_NAME)}</div><nav class="nav">${link('/', '主页面', 'home')}${link('/shares', '分享管理', 'shares')}${link('/settings', '设置', 'settings')}<form action="/api/logout" method="post"><button type="submit">退出登录</button></form></nav></div></header>`;
+	const settingsIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.2 15a1.7 1.7 0 0 0-.6-1A1.7 1.7 0 0 0 2.5 13.6H2.4V9.6h.1A1.7 1.7 0 0 0 4.2 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.66 3.8l.06.06A1.7 1.7 0 0 0 8.6 4.2a1.7 1.7 0 0 0 1-.6A1.7 1.7 0 0 0 10 2.5v-.1h4v.1a1.7 1.7 0 0 0 1 1.7 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.6a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1a1.7 1.7 0 0 0-1.7 1Z"/></svg>`;
+	const routeIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M6 16V8a3 3 0 0 1 3-3h6M9 19h6a3 3 0 0 0 3-3V8"/></svg>`;
+	const link = (href, label, key, icon = '') => `<a href="${href}"${active === key ? ' class="active"' : ''}>${icon}${label}</a>`;
+	return `<header class="app-header"><div class="header-inner"><section class="header-overview" aria-label="订阅控制台"><p class="eyebrow">Overview</p><h1>订阅控制台</h1><p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p></section><div class="brand"><span class="brand-mark">${routeIcon}</span><div class="brand-copy"><strong>${escapeHTML(fileName || DEFAULT_FILE_NAME)}</strong><span>Subscription Console</span></div></div><div class="header-actions"><nav class="header-nav" aria-label="管理导航">${link('/', '主页面', 'home')}${link('/shares', '分享管理', 'shares')}${link('/settings', '设置', 'settings', settingsIcon)}<form action="/api/logout" method="post"><button type="submit">退出</button></form></nav><span class="online">服务正常</span></div></div></header>`;
 }
 
 function renderLoginPage(env, error = '', status = 200) {
 	const missing = !adminPassword(env);
-	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · Node2Link</title><style>${basePageStyles()}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(420px,100%)}.login-title{margin:0 0 7px}.login-copy{margin:0 0 24px;color:var(--muted)}</style></head><body><div class="login-wrap"><main class="login-card"><section class="panel"><h1 class="login-title">登录订阅控制台</h1><p class="login-copy">输入管理员账号后访问节点与分享管理。</p>${error ? `<div class="message">${escapeHTML(error)}</div>` : ''}${missing && !error ? '<div class="message">请先在 Cloudflare 中设置 ADMIN_PASSWORD 环境变量。</div>' : ''}<form action="/api/login" method="post"><div class="field"><label for="username">用户名</label><input id="username" name="username" type="text" autocomplete="username" value="${escapeHTML(adminUsername(env))}" required></div><div class="field"><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="button primary" type="submit"${missing ? ' disabled' : ''}>登录</button></form></section></main></div></body></html>`;
+	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>登录 · Node2Link</title><style>${basePageStyles()}.login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(420px,100%)}.login-title{margin:0 0 7px}.login-copy{margin:0 0 24px;color:var(--muted)}</style></head><body><div class="login-wrap"><main class="login-card"><section class="panel"><h1 class="login-title">登录订阅控制台</h1><p class="login-copy">输入管理员账号后访问节点与分享管理。</p>${error ? `<div class="message">${escapeHTML(error)}</div>` : ''}${missing && !error ? '<div class="message">请先在 Cloudflare 中设置 ADMIN_PASSWORD 环境变量。</div>' : ''}<form action="/api/login" method="post"><div class="field"><label for="username">用户名</label><input id="username" name="username" type="text" autocomplete="username" required autofocus></div><div class="field"><label for="password">密码</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="button primary" type="submit"${missing ? ' disabled' : ''}>登录</button></form></section></main></div></body></html>`;
 	return new Response(html, { status, headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff' } });
 }
 
@@ -421,11 +427,15 @@ function renderSettingsPage(_request, runtime) {
 	const initial = JSON.stringify({ subscriptionName: runtime.FileName, converterMode: runtime.converterMode, customConverterURL: runtime.customConverterURL, legacySubscriptionToken: runtime.legacySubscriptionToken }).replace(/</g, '\\u003c');
 	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · ${escapeHTML(runtime.FileName)}</title><style>${basePageStyles()}.choice{display:flex;gap:18px;margin:4px 0 18px}.service-list{margin:12px 0 0;padding-left:20px;color:var(--muted)}.service-list li{margin:6px 0}.footer-note{font-size:12px;margin-top:12px}</style></head><body>${renderTopbar('settings', runtime.FileName)}<main><div class="page-head"><h1>设置</h1><p>统一修改订阅名称和转换服务，保存后对主订阅及所有分享链接生效。</p></div><section class="panel"><form id="settingsForm"><div class="field"><label for="subscriptionName">订阅名称</label><input id="subscriptionName" type="text" maxlength="80" required><small>显示在管理页面标题和客户端下载文件名中。</small></div><div class="field"><label>转换服务</label><div class="choice"><label><input type="radio" name="converterMode" value="default"> 默认服务</label><label><input type="radio" name="converterMode" value="custom"> 自建 Sublink Worker</label></div></div><div class="field"><label for="customConverterURL">自建服务地址</label><input id="customConverterURL" type="url" placeholder="https://sub.example.com"><small>自建服务用于 Clash、Sing-box、Surge；其他格式继续使用默认服务。</small></div><div class="row"><button class="button primary" id="saveSettings" type="submit">保存设置</button><span id="saveMessage" class="muted"></span></div></form><ul class="service-list">${converters}</ul><div class="footer-note muted">规则配置：<code>${escapeHTML(runtime.subConfig)}</code></div></section></main><script>var initial=${initial};var form=document.getElementById('settingsForm');var nameInput=document.getElementById('subscriptionName');var urlInput=document.getElementById('customConverterURL');nameInput.value=initial.subscriptionName;urlInput.value=initial.customConverterURL||'';document.querySelector('input[name="converterMode"][value="'+initial.converterMode+'"]').checked=true;function syncMode(){var mode=document.querySelector('input[name="converterMode"]:checked').value;urlInput.disabled=mode!=='custom';}document.querySelectorAll('input[name="converterMode"]').forEach(function(el){el.addEventListener('change',syncMode)});syncMode();form.addEventListener('submit',function(event){event.preventDefault();var button=document.getElementById('saveSettings');var message=document.getElementById('saveMessage');button.disabled=true;message.textContent='正在保存…';fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscriptionName:nameInput.value,converterMode:document.querySelector('input[name="converterMode"]:checked').value,customConverterURL:urlInput.value})}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'保存失败');return data})}).then(function(data){message.textContent='已保存';message.className='success';document.querySelector('.brand').textContent=data.settings.subscriptionName}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});</script></body></html>`;
 	const legacyField = `<div class="field"><label for="legacySubscriptionToken">旧版订阅入口</label><input id="legacySubscriptionToken" type="text" maxlength="128" placeholder="例如 auto"><small>兼容原来的 /TOKEN 和 /?token=TOKEN 订阅地址；包含特殊路径字符时请使用 ?token= 格式。修改后旧地址失效，留空可禁用。</small></div>`;
+	const settingsFavicon = `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23143f32'/%3E%3Ctext x='12' y='17' text-anchor='middle' font-size='14'%3E%E2%9A%99%3C/text%3E%3C/svg%3E">`;
 	const enhancedHTML = html
+		.replace('</title>', '</title>' + settingsFavicon)
+		.replace('</style>', '#settingsForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px}#settingsForm>.row{grid-column:1/-1}@media(max-width:760px){#settingsForm{grid-template-columns:1fr}}</style>')
 		.replace('<div class="field"><label>转换服务</label>', legacyField + '<div class="field"><label>转换服务</label>')
 		.replace("var urlInput=document.getElementById('customConverterURL');", "var urlInput=document.getElementById('customConverterURL');var legacyInput=document.getElementById('legacySubscriptionToken');")
 		.replace("urlInput.value=initial.customConverterURL||'';", "urlInput.value=initial.customConverterURL||'';legacyInput.value=initial.legacySubscriptionToken||'';")
-		.replace('customConverterURL:urlInput.value})', 'customConverterURL:urlInput.value,legacySubscriptionToken:legacyInput.value})');
+		.replace('customConverterURL:urlInput.value})', 'customConverterURL:urlInput.value,legacySubscriptionToken:legacyInput.value})')
+		.replace("document.querySelector('.brand').textContent=data.settings.subscriptionName", "document.querySelector('.brand-copy strong').textContent=data.settings.subscriptionName");
 	return new Response(enhancedHTML, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
@@ -521,7 +531,10 @@ async function renderSharesPage(_request, env, runtime) {
 	const shares = await listShares(env.KV);
 	const initial = JSON.stringify(shares).replace(/</g, '\\u003c');
 const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>分享管理 · ${escapeHTML(runtime.FileName)}</title><style>${basePageStyles()}.layout{display:grid;grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr);gap:18px;align-items:start}.share-list{display:grid;gap:12px}.share-card{border:1px solid var(--line);border-radius:10px;padding:15px;background:#fff}.share-card h3{margin:0 0 5px}.share-meta{font-size:12px;color:var(--muted);margin-bottom:10px}.share-link{display:flex;gap:8px;margin:10px 0}.share-link code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px;background:#f5f7f5;border-radius:6px;flex:1}.empty{text-align:center;padding:35px;color:var(--muted)}@media(max-width:820px){.layout{grid-template-columns:1fr}}</style></head><body>${renderTopbar('shares', runtime.FileName)}<main><div class="page-head"><h1>分享管理</h1><p>把一组或多组节点保存为独立订阅链接，可随时修改或删除。</p></div>${env.KV ? `<div class="layout"><section class="panel"><h2 id="formTitle">新建分享</h2><form id="shareForm"><input id="shareId" type="hidden"><div class="field"><label for="shareName">分享名称</label><input id="shareName" type="text" maxlength="80" placeholder="例如：给朋友的日本节点" required></div><div class="field"><label for="shareContent">节点内容</label><textarea id="shareContent" placeholder="每行一个节点，例如 vless://..." required></textarea><small>保存时会自动移除空行和完全重复的行。</small></div><div class="row"><button class="button primary" id="submitShare" type="submit">生成订阅链接</button><button class="button" id="cancelEdit" type="button" hidden>取消修改</button><span id="formMessage" class="muted"></span></div></form></section><section><div id="shareList" class="share-list"></div></section></div>` : '<section class="panel empty">请先绑定 KV 命名空间后使用分享管理。</section>'}</main>${env.KV ? `<script>var shares=${initial};var origin=window.location.origin;var form=document.getElementById('shareForm');var list=document.getElementById('shareList');function esc(value){return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}function linkOf(id){return origin+'/s/'+id}function render(){if(!shares.length){list.innerHTML='<div class="panel empty">还没有分享链接，请先创建一组。</div>';return}list.innerHTML=shares.map(function(item){return '<article class="share-card"><h3>'+esc(item.name)+'</h3><div class="share-meta">'+item.nodeCount+' 个节点 · 更新于 '+new Date(item.updatedAt).toLocaleString()+'</div><div class="share-link"><code title="'+esc(linkOf(item.id))+'">'+esc(linkOf(item.id))+'</code><button class="button" data-copy="'+esc(linkOf(item.id))+'">复制</button></div><div class="row"><button class="button" data-edit="'+item.id+'">修改</button><button class="button danger" data-delete="'+item.id+'">删除</button></div></article>'}).join('')}function reset(){form.reset();document.getElementById('shareId').value='';document.getElementById('formTitle').textContent='新建分享';document.getElementById('submitShare').textContent='生成订阅链接';document.getElementById('cancelEdit').hidden=true}function call(method,body){return fetch('/api/shares',{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'操作失败');return data})})}form.addEventListener('submit',function(event){event.preventDefault();var id=document.getElementById('shareId').value;var button=document.getElementById('submitShare');var message=document.getElementById('formMessage');button.disabled=true;message.textContent='正在保存…';call(id?'PUT':'POST',{id:id,name:document.getElementById('shareName').value,content:document.getElementById('shareContent').value}).then(function(data){var index=shares.findIndex(function(item){return item.id===data.share.id});if(index>=0)shares[index]=data.share;else shares.unshift(data.share);render();reset();message.textContent='已保存，订阅链接可直接使用';message.className='success'}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});list.addEventListener('click',function(event){var copy=event.target.dataset.copy;if(copy){navigator.clipboard.writeText(copy).then(function(){event.target.textContent='已复制';setTimeout(function(){event.target.textContent='复制'},1200)});return}var edit=event.target.dataset.edit;if(edit){var item=shares.find(function(value){return value.id===edit});document.getElementById('shareId').value=item.id;document.getElementById('shareName').value=item.name;document.getElementById('shareContent').value=item.content;document.getElementById('formTitle').textContent='修改分享';document.getElementById('submitShare').textContent='保存修改';document.getElementById('cancelEdit').hidden=false;window.scrollTo({top:0,behavior:'smooth'});return}var remove=event.target.dataset.delete;if(remove&&confirm('删除后，这个订阅链接将失效，KV 同步可能有短暂延迟。确定删除？')){call('DELETE',{id:remove}).then(function(){shares=shares.filter(function(item){return item.id!==remove});render()}).catch(function(error){alert(error.message)})}});document.getElementById('cancelEdit').addEventListener('click',reset);render();</script>` : ''}</body></html>`;
-	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+	const widenedHTML = html
+		.replace('grid-template-columns:minmax(300px,.8fr) minmax(0,1.2fr)', 'grid-template-columns:minmax(360px,.56fr) minmax(0,1fr)')
+		.replace('.share-list{', '#shareContent{min-height:320px}.share-list{');
+	return new Response(widenedHTML, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
 function parseSubConverters(value) {
@@ -715,44 +728,6 @@ async function ADD(envadd) {
 	const add = addtext.split('\n');
 	//console.log(add);
 	return add;
-}
-
-async function nginx() {
-	const text = `
-	<!DOCTYPE html>
-	<html lang="zh-CN">
-	<head>
-		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<meta name="color-scheme" content="light">
-		<title>Edge Gateway</title>
-		<style>
-			:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-			* { box-sizing: border-box; }
-			body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f5f2; color: #17211d; }
-			main { width: min(92vw, 520px); padding: 32px; border: 1px solid #dfe3dd; border-radius: 8px; background: #fff; box-shadow: 0 16px 50px rgba(28, 43, 35, .08); }
-			.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 30px; font-weight: 700; }
-			.mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; background: #143f32; color: #fff; font-size: 18px; }
-			.status { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: #e8f4ed; color: #18613f; font-size: 12px; font-weight: 700; }
-			.dot { width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 4px rgba(33, 164, 100, .12); }
-			h1 { margin: 18px 0 10px; font-size: 38px; line-height: 1.1; letter-spacing: 0; }
-			p { margin: 0; color: #68736d; line-height: 1.7; }
-			footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 34px; padding-top: 18px; border-top: 1px solid #edf0ec; color: #89918d; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
-			@media (max-width: 480px) { main { padding: 24px; } h1 { font-size: 30px; } footer { flex-direction: column; } }
-		</style>
-	</head>
-	<body>
-		<main>
-			<div class="brand"><span class="mark">E</span><span>Edge Gateway</span></div>
-			<span class="status"><span class="dot"></span>All systems operational</span>
-			<h1>Service is running.</h1>
-			<p>The edge gateway is online and ready to handle requests.</p>
-			<footer><span>HTTP 200</span><span>Cloudflare Network</span></footer>
-		</main>
-	</body>
-	</html>
-	`
-	return text;
 }
 
 function shouldSendSubscriptionNotification(request) {
@@ -1123,6 +1098,12 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 		const ownerBase = runtime.legacySubscriptionToken
 			? origin + "/" + encodeURIComponent(runtime.legacySubscriptionToken)
 			: origin + "/s/" + encodeURIComponent(mainSubscriptionId);
+		const converterListHTML = runtime.subConverters.map((converter, index) =>
+			`<span class="converter-entry"><b>${index === 0 ? "主" : "备" + index}</b><code title="${escapeHTML(converter)}">${escapeHTML(converter)}</code></span>`
+		).join("");
+		const activeConverterHTML = runtime.converterMode === 'custom'
+			? `<span class="converter-entry"><b>自建</b><code title="${escapeHTML(runtime.customConverterURL)}">${escapeHTML(runtime.customConverterURL)}</code></span>`
+			: converterListHTML;
 		const formatNames = { base64: 'Base64', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX', loon: 'Loon' };
 		const requestStatsHTML = requestStats.clients.slice(0, 10).map((client) => {
 			const formats = Object.entries(client.formats)
@@ -1192,15 +1173,16 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					.brand-copy { min-width: 0; }
 					.brand-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
 					.brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
-					.header-overview { min-width: 0; flex: 1; padding-left: 22px; border-left: 1px solid var(--line); }
+					.header-overview { min-width: 0; flex: 0 1 420px; padding-right: 22px; border-right: 1px solid var(--line); }
 					.header-overview .eyebrow { margin: 0 0 2px; color: var(--green); font-size: 9px; font-weight: 800; text-transform: uppercase; }
 					.header-overview h1 { margin: 0; font-size: 23px; line-height: 1.12; letter-spacing: 0; }
 					.header-overview .intro-copy { max-width: 620px; margin: 3px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-					.header-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; }
+					.header-actions { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 12px; }
 					.header-nav { display: flex; align-items: center; gap: 4px; }
-					.header-nav a, .header-nav button { min-height: 34px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; text-decoration: none; cursor: pointer; }
-					.header-nav a:hover, .header-nav button:hover { background: var(--green-soft); color: var(--green); }
-					.header-nav form { margin: 0; }
+					.header-nav a, .header-nav button { min-height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; text-decoration: none; white-space: nowrap; cursor: pointer; }
+					.header-nav a:hover, .header-nav a.active, .header-nav button:hover { background: var(--green-soft); color: var(--green); }
+					.header-nav svg { width: 14px; height: 14px; }
+					.header-nav form { display: flex; margin: 0; }
 					.online { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cce4d6; border-radius: 999px; background: var(--green-soft); color: var(--green-dark); font-size: 12px; font-weight: 700; }
 					.online::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #21a464; box-shadow: 0 0 0 3px rgba(33, 164, 100, .13); }
 					main { width: calc(100% - 48px); margin: 0 auto; padding: 18px 0 48px; }
@@ -1211,7 +1193,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 					.section-heading h2 { margin: 0; font-size: 19px; }
 					.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-areas: "main sidebar"; gap: 16px; align-items: start; }
+					.workspace-grid { display: grid; grid-template-columns: 230px minmax(0, 1fr) 330px; grid-template-areas: "config main sidebar"; gap: 16px; align-items: start; }
 					.workspace-config, .workspace-main, .workspace-sidebar { min-width: 0; }
 					.workspace-config { grid-area: config; }
 					.workspace-main { grid-area: main; }
@@ -1353,17 +1335,17 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 1180px) {
 						.header-overview .intro-copy { display: none; }
-						.workspace-grid { grid-template-columns: minmax(0, 1fr) 310px; grid-template-areas: "main sidebar"; }
+						.workspace-grid { grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
 						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 					}
 					@media (max-width: 980px) {
-						.workspace-grid { grid-template-columns: 1fr; grid-template-areas: "main" "sidebar"; }
+						.workspace-grid { grid-template-columns: 1fr; grid-template-areas: "main" "config" "sidebar"; }
 						.workspace-sidebar { display: flex; }
 					}
 					@media (max-width: 760px) {
 						.header-inner, main { width: min(100% - 28px, 1440px); }
 						.header-inner { flex-wrap: wrap; gap: 8px 12px; padding: 9px 0; }
-						.header-overview { order: 3; flex: 0 0 100%; padding: 7px 0 0; border-top: 1px solid var(--line-soft); border-left: 0; }
+						.header-overview { order: 3; flex: 0 0 100%; padding: 7px 0 0; border-top: 1px solid var(--line-soft); border-right: 0; }
 						.header-overview .eyebrow, .header-overview .intro-copy { display: none; }
 						.header-overview h1 { font-size: 20px; }
 						.header-actions { margin-left: auto; }
@@ -1403,25 +1385,20 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 				<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
 			</head>
 			<body>
-				<header class="app-header">
-					<div class="header-inner">
-						<div class="brand">
-							<span class="brand-mark"><i data-lucide="route"></i></span>
-							<div class="brand-copy"><strong>${escapeHTML(runtime.FileName)}</strong><span>Subscription Console</span></div>
-						</div>
-						<section class="header-overview" aria-labelledby="page-title">
-							<p class="eyebrow">Overview</p>
-							<h1 id="page-title">订阅控制台</h1>
-							<p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p>
-						</section>
-						<div class="header-actions">
-							<nav class="header-nav" aria-label="管理导航"><a href="/">主页面</a><a href="/shares">分享管理</a><a href="/settings">设置</a><form action="/api/logout" method="post"><button type="submit">退出</button></form></nav>
-							<span class="online">服务正常</span>
-						</div>
-					</div>
-				</header>
+				${renderTopbar('home', runtime.FileName)}
 				<main>
 					<div class="workspace-grid">
+						<aside class="workspace-config" aria-label="当前转换信息">
+							<section class="section" aria-labelledby="converter-info-title">
+								<div class="section-heading"><div><h2 id="converter-info-title">转换信息</h2><p>配置请前往设置页面修改</p></div></div>
+								<div class="settings-grid">
+									<div class="setting"><span class="setting-label"><i data-lucide="server-cog"></i>当前转换后端</span><div class="converter-list">${activeConverterHTML}</div></div>
+									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
+								</div>
+								<a class="tool-button" href="/settings" style="width:100%;margin-top:10px;text-decoration:none"><i data-lucide="settings"></i><span>前往设置</span></a>
+							</section>
+						</aside>
+
 						<section class="section workspace-main" aria-labelledby="editor-title">
 							<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
 							${hasKV ? `

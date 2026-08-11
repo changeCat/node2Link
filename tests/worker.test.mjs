@@ -38,7 +38,7 @@ const env = {
 	KV: kv,
 	ADMIN_USERNAME: 'admin',
 	ADMIN_PASSWORD: 'correct horse battery staple',
-	SESSION_SECRET: 'test-session-secret',
+	SESSION_SECRET: '独立随机密钥-session-test',
 	TOKEN: 'auto',
 	REQUESTLOG: '0'
 };
@@ -54,6 +54,13 @@ const compileInlineScripts = html => {
 let response = await call('/');
 assert.equal(response.status, 303);
 assert.equal(response.headers.get('location'), 'https://example.com/login');
+
+response = await call('/login');
+assert.equal(response.status, 200);
+const loginHTML = await response.text();
+assert.match(loginHTML, /id="username"/);
+assert.doesNotMatch(loginHTML, /id="username"[^>]*value=/);
+assert.doesNotMatch(loginHTML, /独立随机密钥|Service is running|Edge Gateway/);
 
 response = await call('/auto?base64', { headers: { 'User-Agent': 'test-client' } });
 assert.equal(response.status, 200);
@@ -79,7 +86,14 @@ const homeHTML = await response.text();
 assert.match(homeHTML, /订阅控制台/);
 assert.match(homeHTML, /href="\/shares"/);
 assert.match(homeHTML, /https:\/\/example\.com\/auto/);
+assert.match(homeHTML, /转换信息/);
+assert.match(homeHTML, /当前转换后端/);
+assert.match(homeHTML, /规则配置/);
 assert.doesNotMatch(homeHTML, /当前入口|访客 Token/);
+assert.doesNotMatch(homeHTML, /Service is running|Edge Gateway/);
+const homeBody = homeHTML.slice(homeHTML.indexOf('<body>'));
+assert.ok(homeBody.indexOf('header-overview') < homeBody.indexOf('class="brand"'));
+assert.ok(homeBody.indexOf('class="brand"') < homeBody.indexOf('header-actions'));
 compileInlineScripts(homeHTML);
 
 const settingsBeforeUpdate = JSON.parse(await kv.get('NODE2LINK.settings.json'));
@@ -106,11 +120,21 @@ assert.equal(response.status, 200);
 const settingsHTML = await response.text();
 assert.match(settingsHTML, /旧版订阅入口/);
 assert.match(settingsHTML, /legacySubscriptionToken/);
+assert.match(settingsHTML, /rel="icon"/);
+assert.match(settingsHTML, /header-overview/);
+assert.match(settingsHTML, /brand-mark/);
+assert.match(settingsHTML, /max-width:1440px/);
+assert.match(settingsHTML, /#settingsForm\{display:grid/);
 compileInlineScripts(settingsHTML);
 
 response = await call('/shares', { headers: { Cookie: cookie } });
 assert.equal(response.status, 200);
-compileInlineScripts(await response.text());
+const sharesHTML = await response.text();
+assert.match(sharesHTML, /header-overview/);
+assert.match(sharesHTML, /brand-mark/);
+assert.match(sharesHTML, /minmax\(360px,.56fr\)/);
+assert.match(sharesHTML, /#shareContent\{min-height:320px\}/);
+compileInlineScripts(sharesHTML);
 
 response = await call('/api/shares', {
 	method: 'POST',
