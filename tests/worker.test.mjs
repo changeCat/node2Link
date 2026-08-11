@@ -119,17 +119,18 @@ test('重置分享链接后保留内容，并使旧链接失效', async () => {
 	assert.match(page, /call\('PATCH'/);
 });
 
-test('Telegram 订阅通知保留 UA 和域名，但不包含入口', async () => {
+test('Telegram 订阅通知直接显示全部字段，但不包含入口', async () => {
 	const env = createEnv({ TGTOKEN: 'test-bot-token', TGID: 'test-chat-id' });
 	const cookie = await login(env);
 	const share = await createShare(env, cookie);
+	await env.KV.put(`NODE2LINK.share.${share.id}`, JSON.stringify({ ...share, name: '测试<&分享' }));
 	const originalFetch = globalThis.fetch;
 	let telegramText = '';
 
 	globalThis.fetch = async input => {
 		const url = new URL(String(input));
 		if (url.hostname === 'ip-api.com') {
-			return new Response(JSON.stringify({ country: '测试国家', city: '测试城市', org: '测试组织', as: 'AS64512' }), {
+			return new Response(JSON.stringify({ country: '测试<国家&', city: '测试>城市', org: '测试&组织', as: 'AS<64512>' }), {
 				status: 200,
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -144,7 +145,7 @@ test('Telegram 订阅通知保留 UA 和域名，但不包含入口', async () =
 	try {
 		const ctx = createContext();
 		const response = await worker.fetch(new Request(`https://subscriptions.example/s/${share.id}?base64`, {
-			headers: { 'CF-Connecting-IP': '203.0.113.10', 'User-Agent': 'TestClient/1.0' }
+			headers: { 'CF-Connecting-IP': '203.0.113.10', 'User-Agent': 'TestClient/1.0 <beta>&' }
 		}), env, ctx);
 		assert.equal(response.status, 200);
 		await Promise.all(ctx.pending);
@@ -152,9 +153,16 @@ test('Telegram 订阅通知保留 UA 和域名，但不包含入口', async () =
 		globalThis.fetch = originalFetch;
 	}
 
-	assert.match(telegramText, /UA: TestClient\/1\.0/);
+	assert.match(telegramText, /#获取订阅 测试&lt;&amp;分享/);
+	assert.match(telegramText, /UA: TestClient\/1\.0 &lt;beta&gt;&amp;/);
 	assert.match(telegramText, /域名: subscriptions\.example/);
+	assert.match(telegramText, /国家: 测试&lt;国家&amp;/);
+	assert.match(telegramText, /城市: 测试&gt;城市/);
+	assert.match(telegramText, /组织: 测试&amp;组织/);
+	assert.match(telegramText, /ASN: AS&lt;64512&gt;/);
 	assert.doesNotMatch(telegramText, /入口:/);
+	assert.doesNotMatch(telegramText, /tg-spoiler/);
+	assert.doesNotMatch(telegramText, /<beta>/);
 	assert.doesNotMatch(telegramText, new RegExp(share.id));
 });
 

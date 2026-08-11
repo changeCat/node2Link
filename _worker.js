@@ -123,7 +123,10 @@ async function serveSubscription(request, env, ctx, runtime, sourceData, access,
 			|| request.headers.get('subconverter-version')
 			|| userAgent.includes('subconverter');
 		if (!isSubConverterRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request)) {
-			queueTelegram(ctx, sendMessage(runtime, `#获取订阅 ${escapeHTML(effectiveSubscriptionName)}`, request.headers.get('CF-Connecting-IP'), `UA: ${userAgentHeader}</tg-spoiler>\n域名: ${url.hostname}`));
+			queueTelegram(ctx, sendMessage(runtime, effectiveSubscriptionName, request.headers.get('CF-Connecting-IP'), {
+				userAgent: userAgentHeader || 'Unknown',
+				hostname: url.hostname
+			}));
 		}
 
 		let subscriptionFormat = 'base64';
@@ -960,15 +963,17 @@ function shouldSendSubscriptionNotification(request) {
 	return true;
 }
 
-async function sendMessage(runtime, type, ip, add_data = "") {
+async function sendMessage(runtime, subscriptionName, ip, details = {}) {
 	if (runtime.BotToken !== '' && runtime.ChatID !== '') {
 		let msg = "";
+		const title = `#获取订阅 ${escapeHTML(subscriptionName)}`;
+		const requestDetails = `UA: ${escapeHTML(details.userAgent || 'Unknown')}\n域名: ${escapeHTML(details.hostname || 'Unknown')}`;
 		const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
 		if (response.status == 200) {
 			const ipInfo = await response.json();
-			msg = `${type}\nIP: ${ip}\n国家: ${ipInfo.country}\n<tg-spoiler>城市: ${ipInfo.city}\n组织: ${ipInfo.org}\nASN: ${ipInfo.as}\n${add_data}`;
+			msg = `${title}\nIP: ${escapeHTML(ip || 'Unknown')}\n国家: ${escapeHTML(ipInfo.country)}\n城市: ${escapeHTML(ipInfo.city)}\n组织: ${escapeHTML(ipInfo.org)}\nASN: ${escapeHTML(ipInfo.as)}\n${requestDetails}`;
 		} else {
-			msg = `${type}\nIP: ${ip}\n<tg-spoiler>${add_data}`;
+			msg = `${title}\nIP: ${escapeHTML(ip || 'Unknown')}\n${requestDetails}`;
 		}
 
 		let url = "https://api.telegram.org/bot" + runtime.BotToken + "/sendMessage?chat_id=" + runtime.ChatID + "&parse_mode=HTML&text=" + encodeURIComponent(msg);
