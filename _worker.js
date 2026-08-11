@@ -2,7 +2,8 @@
 // 管理端使用账号密码登录；订阅通过不可猜测的 /s/<id> 链接访问。
 
 const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
-const DEFAULT_PAGE_TITLE = 'Node2Link';
+const DEFAULT_PAGE_TITLE = DEFAULT_FILE_NAME;
+const LEGACY_DEFAULT_PAGE_TITLE = 'Node2Link';
 const DEFAULT_SUB_UPDATE_TIME = 6;
 const DEFAULT_MAIN_DATA = `
 https://cfxr.eu.org/getSub
@@ -29,7 +30,7 @@ export default {
 
 		if (request.method === 'GET' && isSubscriptionTokenRequest(url, runtime.subscriptionToken)) {
 			const mainData = env.KV ? (await env.KV.get('LINK.txt') || DEFAULT_MAIN_DATA) : (env.LINK || DEFAULT_MAIN_DATA);
-			return serveSubscription(request, env, ctx, runtime, mainData, 'main', true);
+			return serveSubscription(request, env, ctx, runtime, mainData, 'main', true, runtime.mainSubscriptionId);
 		}
 
 		const shareMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{12,64})$/);
@@ -37,12 +38,12 @@ export default {
 			const shareId = shareMatch[1];
 			if (shareId === runtime.mainSubscriptionId) {
 				const mainData = env.KV ? (await env.KV.get('LINK.txt') || DEFAULT_MAIN_DATA) : (env.LINK || DEFAULT_MAIN_DATA);
-				return serveSubscription(request, env, ctx, runtime, mainData, 'main', true);
+				return serveSubscription(request, env, ctx, runtime, mainData, 'main', true, runtime.mainSubscriptionId);
 			}
 			if (!env.KV) return textResponse('分享链接不存在', 404);
 			const shared = await readShare(env.KV, shareId);
 			if (!shared) return textResponse('分享链接不存在或已被删除', 404);
-			return serveSubscription(request, env, ctx, runtime, shared.content, 'share', false);
+			return serveSubscription(request, env, ctx, runtime, shared.content, 'share', false, shareId);
 		}
 
 		if (url.pathname === '/api/login' && request.method === 'POST') return handleLogin(request, env, runtime);
@@ -64,6 +65,7 @@ export default {
 		if (url.pathname === '/api/shares') return handleSharesAPI(request, env, url);
 		if (url.pathname === '/settings' && request.method === 'GET') return renderSettingsPage(request, runtime);
 		if (url.pathname === '/shares' && request.method === 'GET') return renderSharesPage(request, env, runtime);
+		if (url.pathname === '/requests' && request.method === 'GET') return renderRequestsPage(request, env, runtime);
 		if (url.pathname !== '/') return textResponse('页面不存在', 404);
 		if (!env.KV) return KV(request, env, 'LINK.txt', runtime.mainSubscriptionId, runtime);
 
@@ -75,7 +77,7 @@ export default {
 	}
 };
 
-async function serveSubscription(request, env, ctx, runtime, sourceData, access, includeWarp) {
+async function serveSubscription(request, env, ctx, runtime, sourceData, access, includeWarp, subscriptionId = '') {
 		const userAgentHeader = request.headers.get('User-Agent');
 		const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : 'null';
 		const url = new URL(request.url);
@@ -132,7 +134,8 @@ async function serveSubscription(request, env, ctx, runtime, sourceData, access,
 				client: detectSubscriptionClient(userAgentHeader),
 				userAgent: userAgentHeader || 'Unknown',
 				format: subscriptionFormat,
-				access
+				access,
+				subscriptionId
 			});
 		}
 
@@ -210,7 +213,7 @@ async function createRuntimeConfig(env, persistedSettings = {}) {
 		ChatID: env.TGID || '',
 		TG: Number(env.TG || 0),
 		FileName: sanitizeSubscriptionName(persistedSettings.subscriptionName || env.SUBNAME || DEFAULT_FILE_NAME),
-		pageTitle: sanitizePageTitle(persistedSettings.pageTitle || DEFAULT_PAGE_TITLE),
+		pageTitle: sanitizePageTitle(!persistedSettings.pageTitle || persistedSettings.pageTitle === LEGACY_DEFAULT_PAGE_TITLE ? DEFAULT_PAGE_TITLE : persistedSettings.pageTitle),
 		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
 		subConfig: ruleMode === 'custom' ? persistedCustomSubConfigURL : defaultSubConfig,
 		defaultSubConfig,
@@ -425,16 +428,16 @@ function basePageStyles() {
 	return `
 		:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:#17211d;background:#f5f6f3;--green:#176b49;--green-dark:#105239;--green-soft:#e8f3ed;--muted:#68736d;--line:#dfe4de;--line-soft:#edf0ec;--surface:#fff;--danger:#b42318}
 		*{box-sizing:border-box}body{margin:0;min-width:320px;background:#f5f6f3;color:#17211d}button,input,textarea{font:inherit}a{color:inherit}
-		.app-header{border-bottom:1px solid var(--line);background:rgba(255,255,255,.92)}.header-inner{width:calc(100% - 48px);min-height:82px;margin:0 auto;display:flex;align-items:center;gap:22px}.header-overview{min-width:0;flex:0 1 420px}.header-overview .eyebrow{margin:0 0 2px;color:var(--green);font-size:9px;font-weight:800;text-transform:uppercase}.header-overview h1{margin:0;font-size:23px;line-height:1.12}.header-overview .intro-copy{margin:3px 0 0;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}.header-actions{flex:0 0 auto;margin-left:auto;display:flex;align-items:center;gap:12px}.header-nav{display:flex;align-items:center;gap:4px}.header-nav a,.header-nav button{min-height:34px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}.header-nav a:hover,.header-nav a.active,.header-nav button:hover{background:var(--green-soft);color:var(--green)}.header-nav svg{width:14px;height:14px}.header-nav form{display:flex;margin:0}.online{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #cce4d6;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:700;white-space:nowrap}.online::before{content:"";width:7px;height:7px;border-radius:50%;background:#21a464;box-shadow:0 0 0 3px rgba(33,164,100,.13)}
+		.app-header{border-bottom:1px solid var(--line);background:rgba(255,255,255,.92)}.header-inner{width:calc(100% - 48px);min-height:82px;margin:0 auto;display:flex;align-items:center;gap:22px}.header-overview{min-width:0;flex:0 1 420px}.header-overview .eyebrow{margin:0 0 2px;color:var(--green);font-size:9px;font-weight:800;text-transform:uppercase}.header-overview h1{margin:0;font-size:23px;line-height:1.12}.header-overview .intro-copy{margin:3px 0 0;overflow:hidden;color:var(--muted);font-size:12px;line-height:1.4;text-overflow:ellipsis;white-space:nowrap}.header-tabs{align-self:stretch;display:flex;align-items:stretch;gap:4px}.header-tabs a{position:relative;display:inline-flex;align-items:center;padding:0 16px;color:var(--muted);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap}.header-tabs a:hover{color:var(--green)}.header-tabs a.active{color:var(--green-dark)}.header-tabs a.active::after{content:"";position:absolute;right:10px;bottom:-1px;left:10px;height:3px;border-radius:3px 3px 0 0;background:var(--green)}.header-actions{flex:0 0 auto;margin-left:auto;display:flex;align-items:center;gap:12px}.header-nav{display:flex;align-items:center;gap:4px}.header-nav a,.header-nav button{min-height:34px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12px;text-decoration:none;white-space:nowrap;cursor:pointer}.header-nav a:hover,.header-nav a.active,.header-nav button:hover{background:var(--green-soft);color:var(--green)}.header-nav svg{width:14px;height:14px}.header-nav form{display:flex;margin:0}.online{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #cce4d6;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:700;white-space:nowrap}.online::before{content:"";width:7px;height:7px;border-radius:50%;background:#21a464;box-shadow:0 0 0 3px rgba(33,164,100,.13)}
 		main{width:calc(100% - 48px);max-width:1440px;margin:26px auto;padding:0}.page-head{margin-bottom:22px}.page-head h1{margin:0 0 7px;font-size:28px}.page-head p{margin:0;color:var(--muted)}.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.field{display:grid;gap:7px;margin-bottom:18px}.field label{font-size:13px;font-weight:700}.field small{color:var(--muted)}input[type=text],input[type=password],input[type=url],textarea{width:100%;border:1px solid #ccd6ce;border-radius:8px;background:#fff;padding:11px 12px;color:#17211d}textarea{min-height:190px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;line-height:1.55}input:focus,textarea:focus{outline:3px solid rgba(23,107,73,.12);border-color:#72ad90}.button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 15px;cursor:pointer}.button.primary{background:var(--green);border-color:var(--green);color:#fff}.button.danger{color:var(--danger);border-color:#f2c6c2}.button:disabled{opacity:.55;cursor:wait}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.message{padding:11px 13px;border-radius:8px;margin-bottom:18px;background:#fff2f0;color:#9b2319;border:1px solid #facdc8}.success{color:var(--green)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.muted{color:var(--muted)}
-		@media(max-width:1040px){.header-overview .intro-copy{display:none}.header-inner{gap:14px}.header-nav a,.header-nav button{padding:0 7px}}
-		@media(max-width:760px){.header-inner,main{width:calc(100% - 28px)}.header-inner{flex-wrap:wrap;gap:8px 12px;padding:9px 0}.header-overview{order:1;flex:0 0 100%;padding:0 0 7px;border-right:0;border-bottom:1px solid var(--line-soft)}.header-actions{order:2;margin-left:0;width:100%;justify-content:space-between}.header-overview .eyebrow,.header-overview .intro-copy{display:none}.header-overview h1{font-size:20px}.header-nav{max-width:calc(100vw - 62px);overflow-x:auto}.online{width:9px;height:9px;padding:0;border:0;font-size:0;background:#21a464;box-shadow:0 0 0 4px rgba(33,164,100,.13)}.online::before{display:none}main{margin-top:18px}.panel{padding:17px}}`;
+		@media(max-width:1040px){.header-overview .intro-copy{display:none}.header-inner{gap:14px}.header-tabs a{padding:0 10px}.header-nav a,.header-nav button{padding:0 7px}}
+		@media(max-width:760px){.header-inner,main{width:calc(100% - 28px)}.header-inner{flex-wrap:wrap;gap:0 12px;padding:9px 0}.header-overview{order:1;flex:0 0 100%;padding:0 0 7px;border-bottom:1px solid var(--line-soft)}.header-tabs{order:2;width:100%;min-height:42px;border-bottom:1px solid var(--line-soft)}.header-tabs a{padding:0 14px}.header-actions{order:3;margin-left:0;width:100%;padding-top:8px;justify-content:space-between}.header-overview .eyebrow,.header-overview .intro-copy{display:none}.header-overview h1{font-size:20px}.header-nav{max-width:calc(100vw - 62px);overflow-x:auto}.online{width:9px;height:9px;padding:0;border:0;font-size:0;background:#21a464;box-shadow:0 0 0 4px rgba(33,164,100,.13)}.online::before{display:none}main{margin-top:18px}.panel{padding:17px}}`;
 }
 
-function renderTopbar(active, fileName) {
+function renderTopbar(active) {
 	const settingsIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.2 15a1.7 1.7 0 0 0-.6-1A1.7 1.7 0 0 0 2.5 13.6H2.4V9.6h.1A1.7 1.7 0 0 0 4.2 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.66 3.8l.06.06A1.7 1.7 0 0 0 8.6 4.2a1.7 1.7 0 0 0 1-.6A1.7 1.7 0 0 0 10 2.5v-.1h4v.1a1.7 1.7 0 0 0 1 1.7 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.6a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1a1.7 1.7 0 0 0-1.7 1Z"/></svg>`;
 	const link = (href, label, key, icon = '') => `<a href="${href}"${active === key ? ' class="active"' : ''}>${icon}${label}</a>`;
-	return `<header class="app-header"><div class="header-inner"><section class="header-overview" aria-label="订阅控制台"><p class="eyebrow">Overview</p><h1>订阅控制台</h1><p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p></section><div class="header-actions"><nav class="header-nav" aria-label="管理导航">${link('/', '主页面', 'home')}${link('/shares', '分享管理', 'shares')}${link('/settings', '设置', 'settings', settingsIcon)}<form action="/api/logout" method="post"><button type="submit">退出</button></form></nav><span class="online">服务正常</span></div></div></header>`;
+	return `<header class="app-header"><div class="header-inner"><section class="header-overview" aria-label="订阅控制台"><p class="eyebrow">Overview</p><h1>订阅控制台</h1><p class="intro-copy">在一个入口中管理节点来源，并为常用客户端生成对应格式的订阅地址。</p></section><nav class="header-tabs" aria-label="订阅管理">${link('/', '主订阅', 'home')}${link('/shares', '分享管理', 'shares')}${link('/requests', '订阅请求', 'requests')}</nav><div class="header-actions"><nav class="header-nav" aria-label="管理导航">${link('/settings', '设置', 'settings', settingsIcon)}<form action="/api/logout" method="post"><button type="submit">退出</button></form></nav><span class="online">服务正常</span></div></div></header>`;
 }
 
 function renderLoginPage(env, runtime, error = '', status = 200) {
@@ -448,29 +451,43 @@ async function saveSettings(request, env, currentSettings) {
 	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	try {
 		const payload = await request.json();
-		const subscriptionName = sanitizeSubscriptionName(payload.subscriptionName);
-		const pageTitle = sanitizePageTitle(payload.pageTitle ?? currentSettings.pageTitle ?? DEFAULT_PAGE_TITLE);
-		const converterMode = payload.converterMode === 'custom' ? 'custom' : 'default';
-		const customConverterURL = normalizeSublinkConverter(payload.customConverterURL);
-		const tokenInput = String(payload.subscriptionToken ?? payload.legacySubscriptionToken ?? '').trim();
-		const subscriptionToken = sanitizeSubscriptionToken(tokenInput);
-		const defaultSubConfig = normalizeHTTPURL(env.SUBCONFIG) || DEFAULT_SUB_CONFIG;
-		const customSubConfigInput = String(payload.customSubConfigURL ?? payload.subConfig ?? currentSettings.customSubConfigURL ?? currentSettings.subConfig ?? '').trim();
-		const customSubConfigURL = normalizeHTTPURL(customSubConfigInput);
-		const ruleMode = payload.ruleMode === 'custom'
-			|| (!Object.prototype.hasOwnProperty.call(payload, 'ruleMode') && customSubConfigURL && customSubConfigURL !== defaultSubConfig)
-			? 'custom' : 'default';
-		const browserIconInput = String(payload.browserIconURL ?? currentSettings.browserIconURL ?? '').trim();
-		const browserIconURL = normalizeBrowserIconURL(browserIconInput);
-		if (converterMode === 'custom' && !customConverterURL) return jsonResponse({ ok: false, message: '请输入有效的自建转换服务地址' }, 400);
-		if (tokenInput && !subscriptionToken) return jsonResponse({ ok: false, message: '订阅入口 Token 不能包含控制字符，且不能超过 128 个字符' }, 400);
-		if (ruleMode === 'custom' && !customSubConfigURL) return jsonResponse({ ok: false, message: '请输入有效的自建规则配置地址（HTTP 或 HTTPS）' }, 400);
-		if (customSubConfigInput && !customSubConfigURL) return jsonResponse({ ok: false, message: '自建规则配置地址无效，请使用 HTTP 或 HTTPS 地址' }, 400);
-		if (browserIconInput && !browserIconURL) return jsonResponse({ ok: false, message: '请输入有效的标签页图标地址（HTTP、HTTPS 或 data:image）' }, 400);
-		const { legacySubscriptionToken: _legacySubscriptionToken, subConfig: _migratedSubConfig, ...settingsBase } = currentSettings;
-		const settings = { ...settingsBase, subscriptionName, pageTitle, browserIconURL, subscriptionToken, converterMode, customConverterURL, ruleMode, customSubConfigURL, savedAt: new Date().toISOString() };
+		const section = ['display', 'entry', 'conversion'].includes(payload.section) ? payload.section : 'all';
+		const settings = { ...currentSettings };
+
+		if (section === 'display' || section === 'all') {
+			settings.subscriptionName = sanitizeSubscriptionName(payload.subscriptionName ?? currentSettings.subscriptionName ?? env.SUBNAME ?? DEFAULT_FILE_NAME);
+			const storedPageTitle = payload.pageTitle ?? currentSettings.pageTitle ?? DEFAULT_PAGE_TITLE;
+			settings.pageTitle = sanitizePageTitle(!Object.prototype.hasOwnProperty.call(payload, 'pageTitle') && storedPageTitle === LEGACY_DEFAULT_PAGE_TITLE ? DEFAULT_PAGE_TITLE : storedPageTitle);
+			const browserIconInput = String(payload.browserIconURL ?? currentSettings.browserIconURL ?? '').trim();
+			settings.browserIconURL = normalizeBrowserIconURL(browserIconInput);
+			if (browserIconInput && !settings.browserIconURL) return jsonResponse({ ok: false, message: '请输入有效的标签页图标地址（HTTP、HTTPS 或 data:image）' }, 400);
+		}
+
+		if (section === 'entry' || section === 'all') {
+			const tokenInput = String(payload.subscriptionToken ?? payload.legacySubscriptionToken ?? currentSettings.subscriptionToken ?? currentSettings.legacySubscriptionToken ?? env.TOKEN ?? '').trim();
+			settings.subscriptionToken = sanitizeSubscriptionToken(tokenInput);
+			if (tokenInput && !settings.subscriptionToken) return jsonResponse({ ok: false, message: '订阅入口 Token 不能包含控制字符，且不能超过 128 个字符' }, 400);
+			delete settings.legacySubscriptionToken;
+		}
+
+		if (section === 'conversion' || section === 'all') {
+			settings.converterMode = payload.converterMode === 'custom' ? 'custom' : 'default';
+			settings.customConverterURL = normalizeSublinkConverter(payload.customConverterURL ?? currentSettings.customConverterURL);
+			const defaultSubConfig = normalizeHTTPURL(env.SUBCONFIG) || DEFAULT_SUB_CONFIG;
+			const customSubConfigInput = String(payload.customSubConfigURL ?? payload.subConfig ?? currentSettings.customSubConfigURL ?? currentSettings.subConfig ?? '').trim();
+			settings.customSubConfigURL = normalizeHTTPURL(customSubConfigInput);
+			settings.ruleMode = payload.ruleMode === 'custom'
+				|| (!Object.prototype.hasOwnProperty.call(payload, 'ruleMode') && settings.customSubConfigURL && settings.customSubConfigURL !== defaultSubConfig)
+				? 'custom' : 'default';
+			if (settings.converterMode === 'custom' && !settings.customConverterURL) return jsonResponse({ ok: false, message: '请输入有效的自建转换服务地址' }, 400);
+			if (settings.ruleMode === 'custom' && !settings.customSubConfigURL) return jsonResponse({ ok: false, message: '请输入有效的自建规则配置地址（HTTP 或 HTTPS）' }, 400);
+			if (customSubConfigInput && !settings.customSubConfigURL) return jsonResponse({ ok: false, message: '自建规则配置地址无效，请使用 HTTP 或 HTTPS 地址' }, 400);
+			delete settings.subConfig;
+		}
+
+		settings.savedAt = new Date().toISOString();
 		await env.KV.put(SETTINGS_KEY, JSON.stringify(settings));
-		return jsonResponse({ ok: true, settings });
+		return jsonResponse({ ok: true, section, settings });
 	} catch (error) {
 		return jsonResponse({ ok: false, message: '保存失败：' + error.message }, 500);
 	}
@@ -481,13 +498,12 @@ function renderSettingsPage(_request, runtime) {
 	const initial = JSON.stringify({ subscriptionName: runtime.FileName, pageTitle: runtime.pageTitle, browserIconURL: runtime.browserIconURL, subscriptionToken: runtime.subscriptionToken, converterMode: runtime.converterMode, customConverterURL: runtime.customConverterURL, ruleMode: runtime.ruleMode, customSubConfigURL: runtime.customSubConfigURL }).replace(/</g, '\\u003c');
 	const defaultIcon = JSON.stringify(DEFAULT_BROWSER_ICON);
 	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>设置 · ${escapeHTML(runtime.pageTitle)}</title>${renderFavicon(runtime.browserIconURL)}<style>${basePageStyles()}
-		.settings-form{display:grid;gap:18px}.settings-section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.settings-section-head{margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}.settings-section-head h2{margin:0 0 5px;font-size:19px}.settings-section-head p{margin:0;color:var(--muted);font-size:13px}.settings-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px}.settings-fields .field{margin-bottom:20px}.field.full{grid-column:1/-1}.conversion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px}.config-column{min-width:0}.config-column>.field:last-child{margin-bottom:0}.choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.choice label{min-width:0;display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;cursor:pointer}.choice label:has(input:checked){border-color:#8bc5a7;background:var(--green-soft)}.choice input{margin-top:3px;accent-color:var(--green)}.choice strong,.choice small{display:block}.choice small{margin-top:3px;font-weight:400;line-height:1.45}.icon-control{display:grid;grid-template-columns:48px minmax(0,1fr);gap:12px;align-items:center}.icon-preview{width:48px;height:48px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:#f8faf7}.icon-preview img{width:34px;height:34px;object-fit:contain}.service-list{margin:0;padding:12px 14px 12px 34px;border:1px solid var(--line-soft);border-radius:8px;background:#f8faf7;color:var(--muted);font-size:12px}.service-list li{margin:5px 0}.service-list code,.default-rule code{overflow-wrap:anywhere}.default-rule{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid var(--line-soft);border-radius:8px;background:#f8faf7;color:var(--muted);font-size:12px}.default-rule b{flex:0 0 auto;color:var(--text)}.settings-actions{display:flex;align-items:center;gap:12px;padding:4px 2px 18px}.settings-actions .button{min-width:120px}@media(max-width:980px){.conversion-grid{grid-template-columns:1fr}}@media(max-width:760px){.settings-section{padding:18px}.settings-fields{grid-template-columns:1fr}.field.full{grid-column:auto}.choice{grid-template-columns:1fr}}
-	</style></head><body>${renderTopbar('settings', runtime.FileName)}<main><div class="page-head"><h1>设置</h1><p>按用途管理界面、订阅入口和转换配置，保存后立即生效。</p></div><form id="settingsForm" class="settings-form">
-		<section class="settings-section" aria-labelledby="displaySettings"><div class="settings-section-head"><h2 id="displaySettings">1. 基本显示</h2><p>分别设置客户端订阅名称和管理页面的浏览器标签信息。</p></div><div class="settings-fields"><div class="field"><label for="subscriptionName">订阅名称</label><input id="subscriptionName" type="text" maxlength="80" required><small>仅用于客户端拉取订阅后的订阅标题和下载文件名。</small></div><div class="field"><label for="pageTitle">浏览器标签页标题</label><input id="pageTitle" type="text" maxlength="100" required><small>用于登录、主页面、分享管理和设置页面的浏览器标题。</small></div><div class="field full"><label for="browserIconURL">浏览器标签页图标</label><div class="icon-control"><span class="icon-preview"><img id="iconPreview" alt="图标预览"></span><input id="browserIconURL" type="text" maxlength="65535" placeholder="https://example.com/favicon.png"></div><small>支持 HTTP、HTTPS 或 data:image 地址；留空恢复默认图标。</small></div></div></section>
-		<section class="settings-section" aria-labelledby="entrySettings"><div class="settings-section-head"><h2 id="entrySettings">2. 订阅入口</h2><p>管理主订阅的兼容访问 Token。</p></div><div class="settings-fields"><div class="field full"><label for="subscriptionToken">订阅入口 Token</label><input id="subscriptionToken" type="text" maxlength="128" placeholder="例如 auto"><small>设置为 TOKEN 后，<code>/TOKEN</code> 和 <code>/?token=TOKEN</code> 都能访问主订阅；修改后原 Token 地址失效，留空则只保留系统生成的订阅链接。</small></div></div></section>
-		<section class="settings-section" aria-labelledby="converterSettings"><div class="settings-section-head"><h2 id="converterSettings">3. 转换配置</h2><p>分别选择转换后端和转换时使用的规则配置。</p></div><div class="conversion-grid"><div class="config-column"><div class="field"><label>转换服务</label><div class="choice"><label><input type="radio" name="converterMode" value="default"><span><strong>默认服务</strong><small>按顺序使用项目配置的 Subconverter 后端。</small></span></label><label><input type="radio" name="converterMode" value="custom"><span><strong>自建 Sublink Worker</strong><small>Clash、Sing-box、Surge 优先使用自建服务。</small></span></label></div></div><div class="field"><label for="customConverterURL">自建转换服务地址</label><input id="customConverterURL" type="url" placeholder="https://sub.example.com"><small>仅选择“自建 Sublink Worker”时启用。</small></div><div class="field"><label>当前默认转换后端</label><ul class="service-list">${converters}</ul></div></div><div class="config-column"><div class="field"><label>规则配置</label><div class="choice"><label><input type="radio" name="ruleMode" value="default"><span><strong>默认规则</strong><small>使用项目环境变量或内置的 ACL4SSR 规则。</small></span></label><label><input type="radio" name="ruleMode" value="custom"><span><strong>自建规则</strong><small>使用下方填写的自定义规则配置地址。</small></span></label></div></div><div class="field"><label for="customSubConfigURL">自建规则配置地址</label><input id="customSubConfigURL" type="url" maxlength="2048" placeholder="https://example.com/config.ini"><small>仅选择“自建规则”时启用。</small></div><div class="field"><label>当前默认规则配置</label><div class="default-rule"><b>默认</b><code>${escapeHTML(runtime.defaultSubConfig)}</code></div></div></div></div></section>
-		<div class="settings-actions"><button class="button primary" id="saveSettings" type="submit">保存全部设置</button><span id="saveMessage" class="muted" role="status"></span></div>
-	</form></main><script>var initial=${initial};var defaultIcon=${defaultIcon};var form=document.getElementById('settingsForm');var nameInput=document.getElementById('subscriptionName');var pageTitleInput=document.getElementById('pageTitle');var iconInput=document.getElementById('browserIconURL');var iconPreview=document.getElementById('iconPreview');var tokenInput=document.getElementById('subscriptionToken');var urlInput=document.getElementById('customConverterURL');var ruleURLInput=document.getElementById('customSubConfigURL');nameInput.value=initial.subscriptionName;pageTitleInput.value=initial.pageTitle;iconInput.value=initial.browserIconURL||'';tokenInput.value=initial.subscriptionToken||'';urlInput.value=initial.customConverterURL||'';ruleURLInput.value=initial.customSubConfigURL||'';document.querySelector('input[name="converterMode"][value="'+initial.converterMode+'"]').checked=true;document.querySelector('input[name="ruleMode"][value="'+initial.ruleMode+'"]').checked=true;function refreshIcon(){iconPreview.src=iconInput.value.trim()||defaultIcon}function syncModes(){var converterMode=document.querySelector('input[name="converterMode"]:checked').value;var ruleMode=document.querySelector('input[name="ruleMode"]:checked').value;urlInput.disabled=converterMode!=='custom';urlInput.required=converterMode==='custom';ruleURLInput.disabled=ruleMode!=='custom';ruleURLInput.required=ruleMode==='custom';}iconPreview.addEventListener('error',function(){iconPreview.src=defaultIcon});iconInput.addEventListener('input',refreshIcon);document.querySelectorAll('input[name="converterMode"],input[name="ruleMode"]').forEach(function(el){el.addEventListener('change',syncModes)});refreshIcon();syncModes();form.addEventListener('submit',function(event){event.preventDefault();var button=document.getElementById('saveSettings');var message=document.getElementById('saveMessage');button.disabled=true;message.textContent='正在保存…';message.className='muted';fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subscriptionName:nameInput.value,pageTitle:pageTitleInput.value,browserIconURL:iconInput.value,subscriptionToken:tokenInput.value,converterMode:document.querySelector('input[name="converterMode"]:checked').value,customConverterURL:urlInput.value,ruleMode:document.querySelector('input[name="ruleMode"]:checked').value,customSubConfigURL:ruleURLInput.value})}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'保存失败');return data})}).then(function(data){message.textContent='已保存，刷新其他页面后生效';message.className='success';document.title='设置 · '+data.settings.pageTitle;document.querySelector('link[rel="icon"]').href=data.settings.browserIconURL||defaultIcon}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});</script></body></html>`;
+		.settings-form{display:grid;gap:18px}.settings-section{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;box-shadow:0 8px 28px rgba(26,46,35,.04)}.settings-section-head{margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line-soft)}.settings-section-head h2{margin:0 0 5px;font-size:19px}.settings-section-head p{margin:0;color:var(--muted);font-size:13px}.settings-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 24px}.settings-fields .field{margin-bottom:20px}.field.full{grid-column:1/-1}.conversion-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px}.config-column{min-width:0}.config-column>.field:last-child{margin-bottom:0}.choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.choice label{min-width:0;display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;cursor:pointer}.choice label:has(input:checked){border-color:#8bc5a7;background:var(--green-soft)}.choice input{margin-top:3px;accent-color:var(--green)}.choice strong,.choice small{display:block}.choice small{margin-top:3px;font-weight:400;line-height:1.45}.icon-control{display:grid;grid-template-columns:48px minmax(0,1fr);gap:12px;align-items:center}.icon-preview{width:48px;height:48px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:#f8faf7}.icon-preview img{width:34px;height:34px;object-fit:contain}.service-list{margin:0;padding:12px 14px 12px 34px;border:1px solid var(--line-soft);border-radius:8px;background:#f8faf7;color:var(--muted);font-size:12px}.service-list li{margin:5px 0}.service-list code,.default-rule code{overflow-wrap:anywhere}.default-rule{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border:1px solid var(--line-soft);border-radius:8px;background:#f8faf7;color:var(--muted);font-size:12px}.default-rule b{flex:0 0 auto;color:var(--text)}.section-actions{display:flex;align-items:center;gap:12px;margin-top:4px;padding-top:16px;border-top:1px solid var(--line-soft)}.section-actions .button{min-width:120px}@media(max-width:980px){.conversion-grid{grid-template-columns:1fr}}@media(max-width:760px){.settings-section{padding:18px}.settings-fields{grid-template-columns:1fr}.field.full{grid-column:auto}.choice{grid-template-columns:1fr}}
+	</style></head><body>${renderTopbar('settings')}<main><div class="page-head"><h1>设置</h1><p>三个模块可以分别保存，未提交的其他模块不会被修改。</p></div><div class="settings-form">
+		<form id="displayForm" class="settings-section" aria-labelledby="displaySettings"><div class="settings-section-head"><h2 id="displaySettings">1. 基本显示</h2><p>分别设置客户端订阅名称和管理页面的浏览器标签信息。</p></div><div class="settings-fields"><div class="field"><label for="subscriptionName">订阅名称</label><input id="subscriptionName" type="text" maxlength="80" required><small>仅用于客户端拉取订阅后的订阅标题和下载文件名。</small></div><div class="field"><label for="pageTitle">浏览器标签页标题</label><input id="pageTitle" type="text" maxlength="100" required><small>用于登录、主订阅、分享管理和设置页面的浏览器标题。</small></div><div class="field full"><label for="browserIconURL">浏览器标签页图标</label><div class="icon-control"><span class="icon-preview"><img id="iconPreview" alt="图标预览"></span><input id="browserIconURL" type="text" maxlength="65535" placeholder="https://example.com/favicon.png"></div><small>支持 HTTP、HTTPS 或 data:image 地址；留空恢复默认图标。</small></div></div><div class="section-actions"><button class="button primary" type="submit">保存基本显示</button><span id="displayMessage" class="muted" role="status"></span></div></form>
+		<form id="entryForm" class="settings-section" aria-labelledby="entrySettings"><div class="settings-section-head"><h2 id="entrySettings">2. 订阅入口</h2><p>管理主订阅的兼容访问 Token。</p></div><div class="settings-fields"><div class="field full"><label for="subscriptionToken">订阅入口 Token</label><input id="subscriptionToken" type="text" maxlength="128" placeholder="例如 auto"><small>设置为 TOKEN 后，<code>/TOKEN</code> 和 <code>/?token=TOKEN</code> 都能访问主订阅；修改后原 Token 地址失效，留空则只保留系统生成的订阅链接。</small></div></div><div class="section-actions"><button class="button primary" type="submit">保存订阅入口</button><span id="entryMessage" class="muted" role="status"></span></div></form>
+		<form id="conversionForm" class="settings-section" aria-labelledby="converterSettings"><div class="settings-section-head"><h2 id="converterSettings">3. 转换配置</h2><p>分别选择转换后端和转换时使用的规则配置。</p></div><div class="conversion-grid"><div class="config-column"><div class="field"><label>转换服务</label><div class="choice"><label><input type="radio" name="converterMode" value="default"><span><strong>默认服务</strong><small>按顺序使用项目配置的 Subconverter 后端。</small></span></label><label><input type="radio" name="converterMode" value="custom"><span><strong>自建 Sublink Worker</strong><small>Clash、Sing-box、Surge 优先使用自建服务。</small></span></label></div></div><div class="field"><label for="customConverterURL">自建转换服务地址</label><input id="customConverterURL" type="url" placeholder="https://sub.example.com"><small>仅选择“自建 Sublink Worker”时启用。</small></div><div class="field"><label>当前默认转换后端</label><ul class="service-list">${converters}</ul></div></div><div class="config-column"><div class="field"><label>规则配置</label><div class="choice"><label><input type="radio" name="ruleMode" value="default"><span><strong>默认规则</strong><small>使用项目环境变量或内置的 ACL4SSR 规则。</small></span></label><label><input type="radio" name="ruleMode" value="custom"><span><strong>自建规则</strong><small>使用下方填写的自定义规则配置地址。</small></span></label></div></div><div class="field"><label for="customSubConfigURL">自建规则配置地址</label><input id="customSubConfigURL" type="url" maxlength="2048" placeholder="https://example.com/config.ini"><small>仅选择“自建规则”时启用。</small></div><div class="field"><label>当前默认规则配置</label><div class="default-rule"><b>默认</b><code>${escapeHTML(runtime.defaultSubConfig)}</code></div></div></div></div><div class="section-actions"><button class="button primary" type="submit">保存转换配置</button><span id="conversionMessage" class="muted" role="status"></span></div></form>
+	</div></main><script>var initial=${initial};var defaultIcon=${defaultIcon};var nameInput=document.getElementById('subscriptionName');var pageTitleInput=document.getElementById('pageTitle');var iconInput=document.getElementById('browserIconURL');var iconPreview=document.getElementById('iconPreview');var tokenInput=document.getElementById('subscriptionToken');var urlInput=document.getElementById('customConverterURL');var ruleURLInput=document.getElementById('customSubConfigURL');nameInput.value=initial.subscriptionName;pageTitleInput.value=initial.pageTitle;iconInput.value=initial.browserIconURL||'';tokenInput.value=initial.subscriptionToken||'';urlInput.value=initial.customConverterURL||'';ruleURLInput.value=initial.customSubConfigURL||'';document.querySelector('input[name="converterMode"][value="'+initial.converterMode+'"]').checked=true;document.querySelector('input[name="ruleMode"][value="'+initial.ruleMode+'"]').checked=true;function refreshIcon(){iconPreview.src=iconInput.value.trim()||defaultIcon}function syncModes(){var converterMode=document.querySelector('input[name="converterMode"]:checked').value;var ruleMode=document.querySelector('input[name="ruleMode"]:checked').value;urlInput.disabled=converterMode!=='custom';urlInput.required=converterMode==='custom';ruleURLInput.disabled=ruleMode!=='custom';ruleURLInput.required=ruleMode==='custom';}function saveSection(form,message,payload,onSaved){var button=form.querySelector('button[type="submit"]');button.disabled=true;message.textContent='正在保存…';message.className='muted';fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'保存失败');return data})}).then(function(data){message.textContent='已保存';message.className='success';if(onSaved)onSaved(data.settings)}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})}iconPreview.addEventListener('error',function(){iconPreview.src=defaultIcon});iconInput.addEventListener('input',refreshIcon);document.querySelectorAll('input[name="converterMode"],input[name="ruleMode"]').forEach(function(el){el.addEventListener('change',syncModes)});refreshIcon();syncModes();document.getElementById('displayForm').addEventListener('submit',function(event){event.preventDefault();saveSection(this,document.getElementById('displayMessage'),{section:'display',subscriptionName:nameInput.value,pageTitle:pageTitleInput.value,browserIconURL:iconInput.value},function(settings){document.title='设置 · '+settings.pageTitle;document.querySelector('link[rel="icon"]').href=settings.browserIconURL||defaultIcon})});document.getElementById('entryForm').addEventListener('submit',function(event){event.preventDefault();saveSection(this,document.getElementById('entryMessage'),{section:'entry',subscriptionToken:tokenInput.value})});document.getElementById('conversionForm').addEventListener('submit',function(event){event.preventDefault();saveSection(this,document.getElementById('conversionMessage'),{section:'conversion',converterMode:document.querySelector('input[name="converterMode"]:checked').value,customConverterURL:urlInput.value,ruleMode:document.querySelector('input[name="ruleMode"]:checked').value,customSubConfigURL:ruleURLInput.value})});</script></body></html>`;
 	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
@@ -582,7 +598,35 @@ async function handleSharesAPI(request, env) {
 async function renderSharesPage(_request, env, runtime) {
 	const shares = await listShares(env.KV);
 	const initial = JSON.stringify(shares).replace(/</g, '\\u003c');
-const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>分享管理 · ${escapeHTML(runtime.pageTitle)}</title>${renderFavicon(runtime.browserIconURL)}<style>${basePageStyles()}.layout{display:grid;grid-template-columns:minmax(520px,1.35fr) minmax(320px,1fr);gap:18px;align-items:start}.share-list{display:grid;gap:12px}.share-card{border:1px solid var(--line);border-radius:10px;padding:15px;background:#fff}.share-card h3{margin:0 0 5px}.share-meta{font-size:12px;color:var(--muted);margin-bottom:10px}.share-link{display:flex;gap:8px;margin:10px 0}.share-link code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px;background:#f5f7f5;border-radius:6px;flex:1}.empty{text-align:center;padding:35px;color:var(--muted)}#shareContent{min-height:320px}@media(max-width:960px){.layout{grid-template-columns:1fr}}</style></head><body>${renderTopbar('shares', runtime.FileName)}<main><div class="page-head"><h1>分享管理</h1><p>把一组或多组节点保存为独立订阅链接，可随时修改或删除。</p></div>${env.KV ? `<div class="layout"><section class="panel"><h2 id="formTitle">新建分享</h2><form id="shareForm"><input id="shareId" type="hidden"><div class="field"><label for="shareName">分享名称</label><input id="shareName" type="text" maxlength="80" placeholder="例如：给朋友的日本节点" required></div><div class="field"><label for="shareContent">节点内容</label><textarea id="shareContent" placeholder="每行一个节点，例如 vless://..." required></textarea><small>保存时会自动移除空行和完全重复的行。</small></div><div class="row"><button class="button primary" id="submitShare" type="submit">生成订阅链接</button><button class="button" id="cancelEdit" type="button" hidden>取消修改</button><span id="formMessage" class="muted"></span></div></form></section><section><div id="shareList" class="share-list"></div></section></div>` : '<section class="panel empty">请先绑定 KV 命名空间后使用分享管理。</section>'}</main>${env.KV ? `<script>var shares=${initial};var origin=window.location.origin;var form=document.getElementById('shareForm');var list=document.getElementById('shareList');function esc(value){return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}function linkOf(id){return origin+'/s/'+id}function render(){if(!shares.length){list.innerHTML='<div class="panel empty">还没有分享链接，请先创建一组。</div>';return}list.innerHTML=shares.map(function(item){return '<article class="share-card"><h3>'+esc(item.name)+'</h3><div class="share-meta">'+item.nodeCount+' 个节点 · 更新于 '+new Date(item.updatedAt).toLocaleString()+'</div><div class="share-link"><code title="'+esc(linkOf(item.id))+'">'+esc(linkOf(item.id))+'</code><button class="button" data-copy="'+esc(linkOf(item.id))+'">复制</button></div><div class="row"><button class="button" data-edit="'+item.id+'">修改</button><button class="button danger" data-delete="'+item.id+'">删除</button></div></article>'}).join('')}function reset(){form.reset();document.getElementById('shareId').value='';document.getElementById('formTitle').textContent='新建分享';document.getElementById('submitShare').textContent='生成订阅链接';document.getElementById('cancelEdit').hidden=true}function call(method,body){return fetch('/api/shares',{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'操作失败');return data})})}form.addEventListener('submit',function(event){event.preventDefault();var id=document.getElementById('shareId').value;var button=document.getElementById('submitShare');var message=document.getElementById('formMessage');button.disabled=true;message.textContent='正在保存…';call(id?'PUT':'POST',{id:id,name:document.getElementById('shareName').value,content:document.getElementById('shareContent').value}).then(function(data){var index=shares.findIndex(function(item){return item.id===data.share.id});if(index>=0)shares[index]=data.share;else shares.unshift(data.share);render();reset();message.textContent='已保存，订阅链接可直接使用';message.className='success'}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});list.addEventListener('click',function(event){var copy=event.target.dataset.copy;if(copy){navigator.clipboard.writeText(copy).then(function(){event.target.textContent='已复制';setTimeout(function(){event.target.textContent='复制'},1200)});return}var edit=event.target.dataset.edit;if(edit){var item=shares.find(function(value){return value.id===edit});document.getElementById('shareId').value=item.id;document.getElementById('shareName').value=item.name;document.getElementById('shareContent').value=item.content;document.getElementById('formTitle').textContent='修改分享';document.getElementById('submitShare').textContent='保存修改';document.getElementById('cancelEdit').hidden=false;window.scrollTo({top:0,behavior:'smooth'});return}var remove=event.target.dataset.delete;if(remove&&confirm('删除后，这个订阅链接将失效，KV 同步可能有短暂延迟。确定删除？')){call('DELETE',{id:remove}).then(function(){shares=shares.filter(function(item){return item.id!==remove});render()}).catch(function(error){alert(error.message)})}});document.getElementById('cancelEdit').addEventListener('click',reset);render();</script>` : ''}</body></html>`;
+const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>分享管理 · ${escapeHTML(runtime.pageTitle)}</title>${renderFavicon(runtime.browserIconURL)}<style>${basePageStyles()}.layout{display:grid;grid-template-columns:minmax(520px,1.35fr) minmax(320px,1fr);gap:18px;align-items:start}.share-list{display:grid;gap:12px}.share-card{border:1px solid var(--line);border-radius:10px;padding:15px;background:#fff}.share-card h3{margin:0 0 5px}.share-meta{font-size:12px;color:var(--muted);margin-bottom:10px}.share-link{display:flex;gap:8px;margin:10px 0}.share-link code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px;background:#f5f7f5;border-radius:6px;flex:1}.empty{text-align:center;padding:35px;color:var(--muted)}#shareContent{min-height:320px}@media(max-width:960px){.layout{grid-template-columns:1fr}}</style></head><body>${renderTopbar('shares')}<main><div class="page-head"><h1>分享管理</h1><p>把一组或多组节点保存为独立订阅链接，可随时修改或删除。</p></div>${env.KV ? `<div class="layout"><section class="panel"><h2 id="formTitle">新建分享</h2><form id="shareForm"><input id="shareId" type="hidden"><div class="field"><label for="shareName">分享名称</label><input id="shareName" type="text" maxlength="80" placeholder="例如：给朋友的日本节点" required></div><div class="field"><label for="shareContent">节点内容</label><textarea id="shareContent" placeholder="每行一个节点，例如 vless://..." required></textarea><small>保存时会自动移除空行和完全重复的行。</small></div><div class="row"><button class="button primary" id="submitShare" type="submit">生成订阅链接</button><button class="button" id="cancelEdit" type="button" hidden>取消修改</button><span id="formMessage" class="muted"></span></div></form></section><section><div id="shareList" class="share-list"></div></section></div>` : '<section class="panel empty">请先绑定 KV 命名空间后使用分享管理。</section>'}</main>${env.KV ? `<script>var shares=${initial};var origin=window.location.origin;var form=document.getElementById('shareForm');var list=document.getElementById('shareList');function esc(value){return String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}function linkOf(id){return origin+'/s/'+id}function render(){if(!shares.length){list.innerHTML='<div class="panel empty">还没有分享链接，请先创建一组。</div>';return}list.innerHTML=shares.map(function(item){return '<article class="share-card"><h3>'+esc(item.name)+'</h3><div class="share-meta">'+item.nodeCount+' 个节点 · 更新于 '+new Date(item.updatedAt).toLocaleString()+'</div><div class="share-link"><code title="'+esc(linkOf(item.id))+'">'+esc(linkOf(item.id))+'</code><button class="button" data-copy="'+esc(linkOf(item.id))+'">复制</button></div><div class="row"><button class="button" data-edit="'+item.id+'">修改</button><button class="button danger" data-delete="'+item.id+'">删除</button></div></article>'}).join('')}function reset(){form.reset();document.getElementById('shareId').value='';document.getElementById('formTitle').textContent='新建分享';document.getElementById('submitShare').textContent='生成订阅链接';document.getElementById('cancelEdit').hidden=true}function call(method,body){return fetch('/api/shares',{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'操作失败');return data})})}form.addEventListener('submit',function(event){event.preventDefault();var id=document.getElementById('shareId').value;var button=document.getElementById('submitShare');var message=document.getElementById('formMessage');button.disabled=true;message.textContent='正在保存…';call(id?'PUT':'POST',{id:id,name:document.getElementById('shareName').value,content:document.getElementById('shareContent').value}).then(function(data){var index=shares.findIndex(function(item){return item.id===data.share.id});if(index>=0)shares[index]=data.share;else shares.unshift(data.share);render();reset();message.textContent='已保存，订阅链接可直接使用';message.className='success'}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});list.addEventListener('click',function(event){var copy=event.target.dataset.copy;if(copy){navigator.clipboard.writeText(copy).then(function(){event.target.textContent='已复制';setTimeout(function(){event.target.textContent='复制'},1200)});return}var edit=event.target.dataset.edit;if(edit){var item=shares.find(function(value){return value.id===edit});document.getElementById('shareId').value=item.id;document.getElementById('shareName').value=item.name;document.getElementById('shareContent').value=item.content;document.getElementById('formTitle').textContent='修改分享';document.getElementById('submitShare').textContent='保存修改';document.getElementById('cancelEdit').hidden=false;window.scrollTo({top:0,behavior:'smooth'});return}var remove=event.target.dataset.delete;if(remove&&confirm('删除后，这个订阅链接将失效，KV 同步可能有短暂延迟。确定删除？')){call('DELETE',{id:remove}).then(function(){shares=shares.filter(function(item){return item.id!==remove});render()}).catch(function(error){alert(error.message)})}});document.getElementById('cancelEdit').addEventListener('click',reset);render();</script>` : ''}</body></html>`;
+	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+}
+
+async function renderRequestsPage(_request, env, runtime) {
+	const [stats, shares] = await Promise.all([
+		readSubscriptionRequestStats(env.KV),
+		listShares(env.KV)
+	]);
+	const shareNames = new Map(shares.map(item => [item.id, item.name]));
+	const formatNames = { base64: 'Base64', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX', loon: 'Loon' };
+	const renderClients = clients => clients.slice(0, 20).map(client => {
+		const formats = Object.entries(client.formats)
+			.sort((a, b) => b[1] - a[1])
+			.map(([format, count]) => `${formatNames[format] || format} ${count}`)
+			.join(' · ');
+		return `<div class="request-client"><div class="request-client-head"><strong>${escapeHTML(client.name)}</strong><span>${client.count} 次</span></div><div class="request-client-meta"><span>${escapeHTML(formats || '未知格式')}</span><time data-request-time="${escapeHTML(client.lastRequestedAt)}">${escapeHTML(client.lastRequestedAt || '时间未知')}</time></div><code title="${escapeHTML(client.lastUserAgent)}">${escapeHTML(client.lastUserAgent)}</code></div>`;
+	}).join('');
+	const mainHTML = stats.main.total
+		? `<div class="request-list">${renderClients(stats.main.clients)}</div>`
+		: '<div class="request-empty">暂无主订阅请求记录</div>';
+	const shareHTML = stats.shares.length ? stats.shares.map(group => {
+		const isLegacy = group.subscriptionId === 'legacy';
+		const name = isLegacy ? '历史分享请求' : (shareNames.get(group.subscriptionId) || '已删除的分享');
+		const link = isLegacy ? '旧记录未保存分享 ID' : '/s/' + group.subscriptionId;
+		return `<article class="share-request"><div class="share-request-head"><div><h3>${escapeHTML(name)}</h3><code>${escapeHTML(link)}</code></div><strong>${group.total} 次</strong></div><div class="request-list">${renderClients(group.clients)}</div></article>`;
+	}).join('') : '<div class="request-empty">暂无分享订阅请求记录</div>';
+	const disabledNote = runtime.requestLogEnabled ? '' : '<div class="message">订阅请求记录已通过 REQUESTLOG=0 关闭。</div>';
+	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>订阅请求 · ${escapeHTML(runtime.pageTitle)}</title>${renderFavicon(runtime.browserIconURL)}<style>${basePageStyles()}.request-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.request-panel h2{margin:0}.request-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.request-panel-head p{margin:5px 0 0;color:var(--muted);font-size:13px}.count-badge{flex:0 0 auto;padding:5px 10px;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:800}.request-list{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}.request-client{min-width:0;padding:12px 14px}.request-client+.request-client{border-top:1px solid var(--line-soft)}.request-client-head,.request-client-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}.request-client-head strong{font-size:13px}.request-client-head>span{padding:2px 7px;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:10px;font-weight:800}.request-client-meta{margin-top:5px;color:var(--muted);font-size:11px}.request-client-meta span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.request-client-meta time{flex:0 0 auto}.request-client code{display:block;margin-top:7px;overflow:hidden;color:#53605a;font-size:10px;line-height:1.45;text-overflow:ellipsis;white-space:nowrap}.request-empty{padding:32px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}.share-request-list{display:grid;gap:12px}.share-request{border:1px solid var(--line);border-radius:10px;overflow:hidden}.share-request-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 14px;background:#f8faf7}.share-request-head h3{margin:0 0 4px;font-size:14px}.share-request-head code{color:var(--muted);font-size:10px}.share-request-head>strong{color:var(--green);font-size:12px}.share-request .request-list{border:0;border-top:1px solid var(--line-soft);border-radius:0}@media(max-width:900px){.request-summary{grid-template-columns:1fr}}</style></head><body>${renderTopbar('requests')}<main><div class="page-head"><h1>订阅请求</h1><p>近 30 天的请求记录；主订阅和分享订阅分别统计，互不混合。${stats.truncated ? ' 记录较多，仅展示最近一部分。' : ''}</p></div>${disabledNote}<div class="request-summary"><section class="panel request-panel"><div class="request-panel-head"><div><h2>主订阅请求</h2><p>仅统计主订阅入口产生的请求</p></div><span class="count-badge">${stats.main.total} 次</span></div>${mainHTML}</section><section class="panel request-panel"><div class="request-panel-head"><div><h2>分享订阅请求</h2><p>按分享链接分别展示请求记录</p></div><span class="count-badge">${stats.shares.reduce((total, item) => total + item.total, 0)} 次</span></div><div class="share-request-list">${shareHTML}</div></section></div></main><script>document.querySelectorAll('[data-request-time]').forEach(function(el){var value=el.dataset.requestTime;if(value){var date=new Date(value);if(!Number.isNaN(date.getTime()))el.textContent=date.toLocaleString()}});</script></body></html>`;
 	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 
@@ -671,6 +715,7 @@ async function recordSubscriptionRequest(kv, details) {
 		userAgent: String(details.userAgent || 'Unknown').slice(0, 240),
 		format: String(details.format || 'base64').slice(0, 20),
 		access: details.access === 'share' ? 'share' : 'main',
+		subscriptionId: isValidShareId(details.subscriptionId) ? details.subscriptionId : '',
 		requestedAt: new Date(now).toISOString()
 	};
 	await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
@@ -680,7 +725,8 @@ async function recordSubscriptionRequest(kv, details) {
 }
 
 async function readSubscriptionRequestStats(kv) {
-	if (!kv || typeof kv.list !== 'function') return { total: 0, clients: [], truncated: false };
+	const empty = { total: 0, truncated: false, main: { total: 0, clients: [] }, shares: [] };
+	if (!kv || typeof kv.list !== 'function') return empty;
 	const events = [];
 	let cursor;
 	let truncated = false;
@@ -698,32 +744,47 @@ async function readSubscriptionRequestStats(kv) {
 		} while (cursor && events.length < REQUEST_LOG_LIMIT);
 	} catch (error) {
 		console.error('读取订阅请求统计时发生错误:', error);
-		return { total: 0, clients: [], truncated: false };
+		return empty;
 	}
 
-	const clients = new Map();
-	for (const event of events) {
-		const clientName = String(event.client || '其他客户端');
-		let item = clients.get(clientName);
-		if (!item) {
-			item = { name: clientName, count: 0, lastRequestedAt: '', lastUserAgent: '', formats: {}, owner: 0, guest: 0 };
-			clients.set(clientName, item);
+	const summarize = records => {
+		const clients = new Map();
+		for (const event of records) {
+			const clientName = String(event.client || '其他客户端');
+			let item = clients.get(clientName);
+			if (!item) {
+				item = { name: clientName, count: 0, lastRequestedAt: '', lastUserAgent: '', formats: {} };
+				clients.set(clientName, item);
+			}
+			item.count += 1;
+			const format = String(event.format || 'base64');
+			item.formats[format] = (item.formats[format] || 0) + 1;
+			if (!item.lastRequestedAt || String(event.requestedAt || '') > item.lastRequestedAt) {
+				item.lastRequestedAt = String(event.requestedAt || '');
+				item.lastUserAgent = String(event.userAgent || 'Unknown');
+			}
 		}
-		item.count += 1;
-		const format = String(event.format || 'base64');
-		item.formats[format] = (item.formats[format] || 0) + 1;
-		if (event.access === 'share' || event.access === 'guest') item.guest += 1;
-		else item.owner += 1;
-		if (!item.lastRequestedAt || String(event.requestedAt || '') > item.lastRequestedAt) {
-			item.lastRequestedAt = String(event.requestedAt || '');
-			item.lastUserAgent = String(event.userAgent || 'Unknown');
-		}
-	}
+		return {
+			total: records.length,
+			clients: [...clients.values()].sort((a, b) => b.count - a.count || b.lastRequestedAt.localeCompare(a.lastRequestedAt))
+		};
+	};
 
+	const mainEvents = events.filter(event => event.access !== 'share' && event.access !== 'guest');
+	const shareEvents = events.filter(event => event.access === 'share' || event.access === 'guest');
+	const shareGroups = new Map();
+	for (const event of shareEvents) {
+		const id = isValidShareId(event.subscriptionId) ? event.subscriptionId : 'legacy';
+		if (!shareGroups.has(id)) shareGroups.set(id, []);
+		shareGroups.get(id).push(event);
+	}
 	return {
 		total: events.length,
 		truncated,
-		clients: [...clients.values()].sort((a, b) => b.count - a.count || b.lastRequestedAt.localeCompare(a.lastRequestedAt))
+		main: summarize(mainEvents),
+		shares: [...shareGroups.entries()]
+			.map(([subscriptionId, records]) => ({ subscriptionId, ...summarize(records) }))
+			.sort((a, b) => b.total - a.total)
 	};
 }
 
@@ -1109,17 +1170,14 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 
 		let content = "";
 		let savedMetadata = null;
-		let requestStats = { total: 0, clients: [], truncated: false };
 		const hasKV = !!env.KV;
 		if (hasKV) {
 			try {
-				const [storedContent, storedMetadata, storedRequestStats] = await Promise.all([
+				const [storedContent, storedMetadata] = await Promise.all([
 					env.KV.get(txt),
-					env.KV.get(metaKey),
-					readSubscriptionRequestStats(env.KV)
+					env.KV.get(metaKey)
 				]);
 				content = storedContent || "";
-				requestStats = storedRequestStats;
 				if (storedMetadata) {
 					try { savedMetadata = JSON.parse(storedMetadata); }
 					catch (metadataError) { console.error("读取 KV 元数据时发生错误:", metadataError); }
@@ -1153,20 +1211,6 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 		const activeConverterHTML = runtime.converterMode === 'custom'
 			? `<span class="converter-entry"><b>自建</b><code title="${escapeHTML(runtime.customConverterURL)}">${escapeHTML(runtime.customConverterURL)}</code></span>`
 			: converterListHTML;
-		const formatNames = { base64: 'Base64', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX', loon: 'Loon' };
-		const requestStatsHTML = requestStats.clients.slice(0, 10).map((client) => {
-			const formats = Object.entries(client.formats)
-				.sort((a, b) => b[1] - a[1])
-				.map(([format, count]) => `${formatNames[format] || format} ${count}`)
-				.join(' · ');
-			return `
-				<div class="request-client">
-					<div class="request-client-head"><strong>${escapeHTML(client.name)}</strong><span>${client.count} 次</span></div>
-					<div class="request-client-meta"><span>${escapeHTML(formats || '未知格式')}</span><time data-request-time="${escapeHTML(client.lastRequestedAt)}">${escapeHTML(client.lastRequestedAt || '时间未知')}</time></div>
-					<code title="${escapeHTML(client.lastUserAgent)}">${escapeHTML(client.lastUserAgent)}</code>
-					<div class="request-access"><span>主订阅 ${client.owner}</span><span>分享 ${client.guest}</span></div>
-				</div>`;
-		}).join('');
 		const formats = [
 			{ name: "智能适配", key: "sub", icon: "sparkles", description: "自动识别客户端并返回合适格式", recommended: true },
 			{ name: "Base64", key: "b64", icon: "binary", description: "通用 Base64 编码订阅" },
@@ -1221,6 +1265,11 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					.header-overview .eyebrow { margin: 0 0 2px; color: var(--green); font-size: 9px; font-weight: 800; text-transform: uppercase; }
 					.header-overview h1 { margin: 0; font-size: 23px; line-height: 1.12; letter-spacing: 0; }
 					.header-overview .intro-copy { max-width: 620px; margin: 3px 0 0; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+					.header-tabs { align-self: stretch; display: flex; align-items: stretch; gap: 4px; }
+					.header-tabs a { position: relative; display: inline-flex; align-items: center; padding: 0 16px; color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+					.header-tabs a:hover { color: var(--green); }
+					.header-tabs a.active { color: var(--green-dark); }
+					.header-tabs a.active::after { content: ""; position: absolute; right: 10px; bottom: -1px; left: 10px; height: 3px; border-radius: 3px 3px 0 0; background: var(--green); }
 					.header-actions { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 12px; }
 					.header-nav { display: flex; align-items: center; gap: 4px; }
 					.header-nav a, .header-nav button { min-height: 34px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 12px; text-decoration: none; white-space: nowrap; cursor: pointer; }
@@ -1379,6 +1428,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 1180px) {
 						.header-overview .intro-copy { display: none; }
+						.header-tabs a { padding: 0 10px; }
 						.workspace-grid { grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
 						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 					}
@@ -1388,11 +1438,13 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 					}
 					@media (max-width: 760px) {
 						.header-inner, main { width: min(100% - 28px, 1440px); }
-						.header-inner { flex-wrap: wrap; gap: 8px 12px; padding: 9px 0; }
-						.header-overview { order: 1; flex: 0 0 100%; padding: 0 0 7px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
+						.header-inner { flex-wrap: wrap; gap: 0 12px; padding: 9px 0; }
+						.header-overview { order: 1; flex: 0 0 100%; padding: 0 0 7px; border-bottom: 1px solid var(--line-soft); }
 						.header-overview .eyebrow, .header-overview .intro-copy { display: none; }
 						.header-overview h1 { font-size: 20px; }
-						.header-actions { order: 2; width: 100%; margin-left: 0; justify-content: space-between; }
+						.header-tabs { order: 2; width: 100%; min-height: 42px; border-bottom: 1px solid var(--line-soft); }
+						.header-tabs a { padding: 0 14px; }
+						.header-actions { order: 3; width: 100%; margin-left: 0; padding-top: 8px; justify-content: space-between; }
 						.header-actions .token-chip { max-width: 180px; padding: 7px 9px; }
 						.header-actions .token-chip span { display: none; }
 						main { padding-top: 14px; }
@@ -1429,7 +1481,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 				<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
 			</head>
 			<body>
-				${renderTopbar('home', runtime.FileName)}
+				${renderTopbar('home')}
 				<main>
 					<div class="workspace-grid">
 						<aside class="workspace-config" aria-label="当前转换信息">
@@ -1479,15 +1531,10 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 							<div class="empty-state"><i data-lucide="database-zap"></i><h3>尚未绑定 KV 命名空间</h3><p>请在 Cloudflare 中绑定变量名为 KV 的命名空间后再编辑订阅源。</p></div>`}
 						</section>
 
-						<aside class="workspace-sidebar" aria-label="订阅入口与请求统计">
+						<aside class="workspace-sidebar" aria-label="主订阅入口">
 							<section class="section" aria-labelledby="owner-title">
 								<div class="section-heading"><div><h2 id="owner-title">我的订阅</h2><p>复制链接，或扫码导入客户端</p></div></div>
 								<div class="subscription-grid compact-subscription-grid">${renderSubscriptions(false)}</div>
-							</section>
-
-							<section class="section" aria-labelledby="requests-title">
-								<div class="section-heading"><div><h2 id="requests-title">订阅请求</h2><p>近 30 天 · ${requestStats.total}${requestStats.truncated ? '+' : ''} 次，按次数排序 · 滚动查看</p></div></div>
-								${requestStatsHTML ? `<div class="request-list">${requestStatsHTML}</div>` : '<div class="request-empty">暂无客户端请求记录</div>'}
 							</section>
 
 						</aside>
