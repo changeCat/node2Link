@@ -1,0 +1,9 @@
+{
+  "name": "node2link-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/worker.test.mjs",
+    "check": "node --check _worker.js"
+  }
+}

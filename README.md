@@ -1,143 +1,108 @@
-# ⚙ 自建汇聚订阅 CF-Workers-SUB
+# Node2Link 订阅管理
 
-![自建汇聚订阅 CF-Workers-SUB](./sub.png)
+这是一个运行在 Cloudflare Workers / Pages 上的节点与订阅汇聚工具。管理端使用账号密码登录，不再使用 `域名/token` 或 `?token=` 进入管理页；为了让已有设备无需改订阅地址，旧 `TOKEN` 仍可作为主订阅的兼容入口。
 
-这是一个将多个节点和订阅合并为单一链接的工具，支持自动适配与自定义分流，简化了订阅管理。
+## 功能
 
-> [!CAUTION]
-> **汇聚订阅非base64订阅时**，会自动生成一个**有效期为24小时的临时订阅**，并提交给**订阅转换后端**来完成订阅转换，可避免您的汇聚订阅地址泄露。
+- 账号密码登录管理端，会话 Cookie 使用 `HttpOnly`、`Secure`、`SameSite=Strict`；
+- 汇聚多个节点或上游订阅，并输出 Base64、Clash、Sing-box、Surge、QuanX、Loon 等格式；
+- 独立设置页，可修改订阅名称及默认/自建转换服务；
+- 独立分享管理页，可为不同节点组生成不同订阅链接，并支持重复创建、修改和删除；
+- 主订阅与分享订阅统一使用 `/s/<随机ID>`，管理密码不会出现在订阅地址中；
+- 节点检查、去重、草稿、备份与最近一次版本恢复；
+- 近 30 天订阅请求统计；
+- 多个 Subconverter 后端自动回退。
 
-> [!WARNING]
-> **汇聚订阅非base64订阅时**，如果您的节点数量**十分庞大**，订阅转换后端将需要较长时间才能完成订阅转换，这会导致部分梯子客户端在订阅时提示超时而无法完成订阅（说直白一点就是**汇聚节点池的节点时容易导致Clash订阅超时**）！
->
-> 可自行删减订阅节点数量，提高订阅转换效率！
+## 部署前配置
 
-## 🛠 功能特点
-1. **节点链接自动转换成base64订阅链接：** 这是最基础的功能，可以将您的节点自动转换为base64格式的订阅链接；
-2. **将多个base64订阅汇聚成一个订阅链接：** 可以将多个订阅（例如不同的机场）合并成一个订阅，只需使用一个订阅地址即可获取所有节点；
-3. **自动适配不同梯子的格式订阅链接：** 依托[订阅转换](https://sub.cmliussss.com/)服务，自动将订阅转换为不同梯子所需的格式，实现一条订阅适配多种梯子；
-4. **专属代理分流规则：** 自定义分流规则，实现个性化的分流模式；
-5. **管理页内容检查：** 实时统计节点、订阅源、重复行与格式问题；
-6. **安全整理与备份：** 支持去重预览、撤销、配置下载与本地文件恢复；
-7. **订阅转换容错：** 可配置多个转换后端，主后端不可用时自动尝试备用地址；
-8. **自建转换服务：** 管理页可在默认服务与自建 [Sublink Worker](https://github.com/7Sageer/sublink-worker) 之间切换，选择会持久化到 KV 并对所有设备生效；
-9. **订阅请求统计：** 记录近 30 天的客户端、User-Agent、请求格式、入口类型和次数，并在管理页按请求次数展示；
-10. **更多功能等待发掘...**
+必须绑定变量名为 `KV` 的 Cloudflare KV 命名空间。登录、设置、分享管理和主节点保存都依赖该绑定。
 
-## 🎬 视频教程
-- **[自建订阅！CF-Workers-SUB 教你如何将多节点多订阅汇聚合并为一个订阅！](https://youtu.be/w6rRY4FDd58)**
+至少设置以下环境变量：
 
-## 🤝 社区支持
-- Telegram 交流群: [@CMLiussss](https://t.me/CMLiussss)
-- 感谢 [Alice Networks](https://alicenetworks.net/) 提供的云服务器维持 [CM订阅转换服务](https://sub.cmliussss.com/)
+| 变量名 | 必填 | 示例 | 说明 |
+|---|---:|---|---|
+| `ADMIN_PASSWORD` | 是 | `使用强随机密码` | 管理员登录密码；未配置时登录会被禁用 |
+| `ADMIN_USERNAME` | 否 | `admin` | 管理员用户名，默认 `admin` |
+| `SESSION_SECRET` | 建议 | `独立强随机字符串` | 会话签名密钥；未配置时使用 `ADMIN_PASSWORD`，修改后所有会话失效 |
+| `TOKEN` | 否 | `auto` | 兼容旧版 `/auto` 与 `/?token=auto` 主订阅地址，不再授予管理权限 |
+| `LINK` | 否 | `vless://...` | 未绑定 KV 时的只读节点来源；正式使用建议绑定 KV |
+| `SUBNAME` | 否 | `Node2Link` | 初始订阅名称；绑定 KV 后可在“设置”中修改 |
+| `SUBAPI` | 否 | `sub.example.com,backup.example.com` | 默认转换后端，多个地址用逗号、分号或换行分隔 |
+| `SUBCONFIG` | 否 | `https://.../config.ini` | Subconverter 规则配置 |
+| `SUBUPTIME` | 否 | `6` | 客户端订阅更新间隔（小时） |
+| `REQUESTLOG` | 否 | `1` | `0` 关闭订阅请求统计，默认开启 |
+| `TGTOKEN` | 否 | `123:abc` | Telegram Bot Token |
+| `TGID` | 否 | `123456` | Telegram 接收账号或群组 ID |
+| `TG` | 否 | `1` | `1` 开启 Telegram 通知 |
+| `WARP` | 否 | `vless://...` | 附加到主订阅的 WARP 节点 |
 
-## 📦 Pages 部署方法
+旧版 `GUEST`、`GUESTTOKEN` 已不再使用，可以删除。`TOKEN` 默认继续作为主订阅兼容地址；登录后可在“设置 → 旧版订阅入口”中覆盖，留空则禁用旧入口。
 
-<details>
-<summary><code><strong>「 Pages GitHub 部署文字教程 」</strong></code></summary>
+`SESSION_SECRET` 只用于给登录会话 Cookie 签名，防止别人伪造登录状态。它不会参与节点加密，也不会改变主订阅或分享订阅地址；可以使用密码生成器创建一段独立的强随机字符串。不设置时系统会退回使用 `ADMIN_PASSWORD`。
 
-### 1. 部署 Cloudflare Pages：
-   - 在 Github 上先 Fork 本项目，并点上 Star !!!
-   - 在 Cloudflare Pages 控制台中选择 `连接到 Git`后，选中 `CF-Workers-SUB`项目后点击 `开始设置`。
+### Workers（Wrangler）
 
-### 2. 给 Pages绑定 自定义域：
-   - 在 Pages控制台的 `自定义域`选项卡，下方点击 `设置自定义域`。
-   - 填入你的自定义次级域名，注意不要使用你的根域名，例如：
-     您分配到的域名是 `fuck.cloudns.biz`，则添加自定义域填入 `sub.fuck.cloudns.biz`即可；
-   - 按照 Cloudflare 的要求将返回你的域名DNS服务商，添加 该自定义域 `sub`的 CNAME记录 `CF-Workers-SUB.pages.dev` 后，点击 `激活域`即可。
+1. 创建 KV：
 
-### 3. 修改 快速订阅入口 ：
+   ```bash
+   npx wrangler kv namespace create KV
+   ```
 
-  例如您的pages项目域名为：`sub.fuck.cloudns.biz`；
-   - 添加 `TOKEN` 变量，快速订阅访问入口，默认值为: `auto` ，获取订阅器默认节点订阅地址即 `/auto` ，例如 `https://sub.fuck.cloudns.biz/auto`
+2. 把返回的 ID 写入 `wrangler.toml`：
 
-### 4. 添加你的节点和订阅链接：
-   1. 绑定**变量名称**为`KV`的**KV命名空间**；
-   2. 访问 `https://sub.fuck.cloudns.biz/auto`，添加你的自建节点链接和机场订阅链接，确保每行一个链接，例如：
-      ```
-      vless://b7a392e2-4ef0-4496-90bc-1c37bb234904@cf.090227.xyz:443?encryption=none&security=tls&sni=edgetunnel-2z2.pages.dev&fp=random&type=ws&host=edgetunnel-2z2.pages.dev&path=%2F%3Fed%3D2048#%E5%8A%A0%E5%85%A5%E6%88%91%E7%9A%84%E9%A2%91%E9%81%93t.me%2FCMLiussss%E8%A7%A3%E9%94%81%E6%9B%B4%E5%A4%9A%E4%BC%98%E9%80%89%E8%8A%82%E7%82%B9
-      vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogIuWKoOWFpeaIkeeahOmikemBk3QubWUvQ01MaXVzc3Nz6Kej6ZSB5pu05aSa5LyY6YCJ6IqC54K5PuiLseWbvSDlgKvmlabph5Hono3ln44iLA0KICAiYWRkIjogImNmLjA5MDIyNy54eXoiLA0KICAicG9ydCI6ICI4NDQzIiwNCiAgImlkIjogIjAzZmNjNjE4LWI5M2QtNjc5Ni02YWVkLThhMzhjOTc1ZDU4MSIsDQogICJhaWQiOiAiMCIsDQogICJzY3kiOiAiYXV0byIsDQogICJuZXQiOiAid3MiLA0KICAidHlwZSI6ICJub25lIiwNCiAgImhvc3QiOiAicHBmdjJ0bDl2ZW9qZC1tYWlsbGF6eS5wYWdlcy5kZXYiLA0KICAicGF0aCI6ICIvamFkZXIuZnVuOjQ0My9saW5rdndzIiwNCiAgInRscyI6ICJ0bHMiLA0KICAic25pIjogInBwZnYydGw5dmVvamQtbWFpbGxhenkucGFnZXMuZGV2IiwNCiAgImFscG4iOiAiIiwNCiAgImZwIjogIiINCn0=
-      https://sub.xf.free.hr/auto
-      https://hy2sub.pages.dev
-      ```
+   ```toml
+   [[kv_namespaces]]
+   binding = "KV"
+   id = "你的 KV ID"
+   ```
 
-</details>
+3. 设置敏感变量并部署：
 
-## 🛠️ Workers 部署方法
+   ```bash
+   npx wrangler secret put ADMIN_PASSWORD
+   npx wrangler secret put SESSION_SECRET
+   npx wrangler deploy
+   ```
 
-<details>
-<summary><code><strong>「 Workers 部署文字教程 」</strong></code></summary>
+如需自定义用户名，可在 Cloudflare 控制台添加 `ADMIN_USERNAME` 普通变量，或使用 `wrangler secret put ADMIN_USERNAME`。
 
-### 1. 部署 Cloudflare Worker：
+### Pages
 
-   - 在 Cloudflare Worker 控制台中创建一个新的 Worker。
-   - 将 [_worker.js](https://github.com/cmliu/CF-Workers-SUB/blob/main/_worker.js)  的内容粘贴到 Worker 编辑器中。
+在 Pages 项目的“设置 → 绑定”中添加 KV 命名空间，变量名必须是 `KV`；然后在“变量和机密”中添加 `ADMIN_PASSWORD`、`SESSION_SECRET`，重新部署项目。
 
+## 使用方式
 
-### 2. 修改 订阅入口 ：
+1. 打开部署域名根路径，例如 `https://sub.example.com/`；
+2. 使用 `ADMIN_USERNAME`（默认 `admin`）和 `ADMIN_PASSWORD` 登录；
+3. 在主页面保存汇聚节点与上游订阅，右侧复制“我的订阅”链接；
+4. 在“设置”中修改订阅名称或转换服务；
+5. 在“分享管理”中填写分享名称及一个或多个节点，保存后复制独立订阅链接；
+6. 分享内容修改后原链接保持不变；删除后该链接失效（Cloudflare KV 跨区域同步可能有短暂延迟）。
 
-  例如您的workers项目域名为：`sub.cmliussss.workers.dev`；
-   - 通过修改 `mytoken` 赋值内容，达到修改你专属订阅的入口，避免订阅泄漏。
-     ```
-     let mytoken = 'auto';
-     ```
-     如上所示，你的订阅地址则如下：
-     ```url
-     https://sub.cmliussss.workers.dev/auto
-     或
-     https://sub.cmliussss.workers.dev/?token=auto
-     ```
+升级已有部署时不需要新建或重新绑定 KV。原来的 `LINK.txt` 节点数据会直接复用；只需增加登录密码，保留原 `TOKEN` 即可让已有设备继续更新订阅。
 
+订阅链接会根据 User-Agent 自动返回合适格式，也可以显式指定：
 
-### 3. 添加你的节点或订阅链接：
-   1. 绑定**变量名称**为`KV`的**KV命名空间**；
-   2. 访问 `https://sub.cmliussss.workers.dev/auto`，添加你的自建节点链接和机场订阅链接，确保每行一个链接，例如：
-      ```
-      vless://b7a392e2-4ef0-4496-90bc-1c37bb234904@cf.090227.xyz:443?encryption=none&security=tls&sni=edgetunnel-2z2.pages.dev&fp=random&type=ws&host=edgetunnel-2z2.pages.dev&path=%2F%3Fed%3D2048#%E5%8A%A0%E5%85%A5%E6%88%91%E7%9A%84%E9%A2%91%E9%81%93t.me%2FCMLiussss%E8%A7%A3%E9%94%81%E6%9B%B4%E5%A4%9A%E4%BC%98%E9%80%89%E8%8A%82%E7%82%B9
-      vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogIuWKoOWFpeaIkeeahOmikemBk3QubWUvQ01MaXVzc3Nz6Kej6ZSB5pu05aSa5LyY6YCJ6IqC54K5PuiLseWbvSDlgKvmlabph5Hono3ln44iLA0KICAiYWRkIjogImNmLjA5MDIyNy54eXoiLA0KICAicG9ydCI6ICI4NDQzIiwNCiAgImlkIjogIjAzZmNjNjE4LWI5M2QtNjc5Ni02YWVkLThhMzhjOTc1ZDU4MSIsDQogICJhaWQiOiAiMCIsDQogICJzY3kiOiAiYXV0byIsDQogICJuZXQiOiAid3MiLA0KICAidHlwZSI6ICJub25lIiwNCiAgImhvc3QiOiAicHBmdjJ0bDl2ZW9qZC1tYWlsbGF6eS5wYWdlcy5kZXYiLA0KICAicGF0aCI6ICIvamFkZXIuZnVuOjQ0My9saW5rdndzIiwNCiAgInRscyI6ICJ0bHMiLA0KICAic25pIjogInBwZnYydGw5dmVvamQtbWFpbGxhenkucGFnZXMuZGV2IiwNCiAgImFscG4iOiAiIiwNCiAgImZwIjogIiINCn0=
-      https://sub.xf.free.hr/auto
-      https://hy2sub.pages.dev
-      ```
+```text
+https://sub.example.com/s/<id>          # 智能适配 / Base64
+https://sub.example.com/s/<id>?base64   # Base64
+https://sub.example.com/s/<id>?clash    # Clash / Mihomo
+https://sub.example.com/s/<id>?singbox  # Sing-box
+https://sub.example.com/s/<id>?surge    # Surge
+https://sub.example.com/s/<id>?quanx    # Quantumult X
+https://sub.example.com/s/<id>?loon     # Loon
+```
 
-</details>
+## 数据与安全说明
 
-## 📋 变量说明
-| 变量名 | 示例 | 必填 | 备注 | 
-|-|-|-|-|
-| TOKEN | `auto` | ✅ | 汇聚订阅的订阅配置路径地址，例如：`/auto` | 
-| GUEST | `test` | ❌ | 汇聚订阅的访客订阅TOKEN，例如：`/sub?token=test` | 
-| LINK | `vless://b7a39...`,`vmess://ew0K...`,`https://sub...` | ❌ | 可同时放入多个节点链接与多个订阅链接，链接之间用换行做间隔（添加**KV命名空间**后，变量将不会使用）|
-| TGTOKEN | `6894123456:XXXXXXXXXX0qExVsBPUhHDAbXXXXXqWXgBA` | ❌ | 发送TG通知的机器人token | 
-| TGID | `6946912345` | ❌ | 接收TG通知的账户数字ID | 
-| SUBNAME | `CF-Workers-SUB` | ❌ | 订阅名称 |
-| SUBAPI | `SUBAPI.cmliussss.net,backup.example.com` | ❌ | clash、singbox等订阅转换后端；多个地址使用逗号、分号或换行分隔，按顺序自动回退 |
-| SUBCONFIG | [https://raw.github.../ACL4SSR_Online_MultiCountry.ini](https://raw.githubusercontent.com/cmliu/ACL4SSR/main/Clash/config/ACL4SSR_Online_MultiCountry.ini) | ❌ | clash、singbox等 订阅转换配置文件 | 
-| REQUESTLOG | `1` | ❌ | 是否记录订阅请求统计；默认开启，设置为 `0` 可关闭 |
+- 主节点保存在 `LINK.txt`；设置保存在 `NODE2LINK.settings.json`；分享记录保存在 `NODE2LINK.share.*`；
+- 分享 ID 使用加密安全随机数生成，无法从管理账号或节点内容推导；
+- 分享链接本身就是访问凭证，请只发送给需要的人；如发生泄露，删除后重新创建即可获得新链接；
+- 删除分享会删除对应 KV 内容，无法从管理页恢复；边缘节点可能在 KV 同步完成前短暂返回旧内容；
+- 修改 `ADMIN_PASSWORD` 或 `SESSION_SECRET` 会使已有登录会话立即失效，但不会改变订阅链接；
+- 每次保存主节点前会保留最近一版到 `LINK.backup.txt`，不是完整历史记录；
+- 转换非 Base64 格式时，节点来源会提交给已配置的转换服务，请使用你信任的服务。
 
-### 使用自建 Sublink Worker
+## 致谢
 
-进入管理页的“转换配置”，选择“自建服务”，填写部署好的 Sublink Worker 根地址并点击“应用”。选择会写入绑定的 KV 命名空间，同一部署下的浏览器、设备和已有订阅链接都会统一使用当前选择。
-
-Sublink Worker 当前用于 Clash、Sing-box 和 Surge 格式；Base64 不需要转换，Loon 与 QuanX 会继续使用默认 Subconverter，以保留原有格式支持。
-
-### 订阅请求统计
-
-绑定 KV 后，每次外部订阅请求会写入一条轻量记录，并在 30 天后自动过期。管理页按客户端聚合最近最多 5000 条记录，优先按请求次数降序排列；转换器内部回源请求不会计入统计，也不会保存访问 IP。若不需要此功能，可将环境变量 `REQUESTLOG` 设置为 `0`。
-
-
-### 保存与版本恢复
-
-- 管理页输入内容只保存为浏览器本地草稿，点击“保存更改”或按 `Ctrl+S` 后才写入 KV；
-- 每次写入 `LINK.txt` 前，旧内容会保存到 `LINK.backup.txt`，管理页可通过“上次版本”载入；
-- `LINK.backup.txt` 只保留最近一版，不是完整的历史版本记录。
-
-## ⚠️ 注意事项
-项目中，TGTOKEN和TGID在使用时需要先到Telegram注册并获取。其中，TGTOKEN是telegram bot的凭证，TGID是用来接收通知的telegram用户或者组的id。
-
-
-## ⭐ Star 星星走起
-[![Stargazers over time](https://starchart.cc/cmliu/CF-Workers-SUB.svg?variant=adaptive)](https://starchart.cc/cmliu/CF-Workers-SUB)
-
-
-# 🙏 致谢
-[Alice Networks LTD](https://alicenetworks.net/)，[mianayang](https://github.com/mianayang/myself/blob/main/cf-workers/sub/sub.js)、[ACL4SSR](https://github.com/ACL4SSR/ACL4SSR/tree/master/Clash/config)、[肥羊](https://sub.v1.mk/)
+基于 CF-Workers-SUB 的订阅处理能力，并感谢 [ACL4SSR](https://github.com/ACL4SSR/ACL4SSR)、[Sublink Worker](https://github.com/7Sageer/sublink-worker) 等项目。
