@@ -1398,7 +1398,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime) {
 						</aside>
 					</div>
 
-					<footer class="page-footer"><span><a href="https://github.com/cmliu/CF-Workers-SUB" target="_blank" rel="noopener noreferrer">Forked from CF-Workers-SUB</a> · <a href="https://github.com/changeCat/node2Link" target="_blank" rel="noopener noreferrer">github.com/changeCat/node2Link</a></span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
+					<footer class="page-footer"><span><a href="https://github.com/changeCat/node2Link" target="_blank" rel="noopener noreferrer">node2Link</a> · <a href="https://github.com/cmliu/CF-Workers-SUB" target="_blank" rel="noopener noreferrer">Forked from CF-Workers-SUB</a></span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
 				</main>
 
 				<dialog id="qrDialog" aria-labelledby="qrTitle">
