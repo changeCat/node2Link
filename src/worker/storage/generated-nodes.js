@@ -209,7 +209,14 @@ export async function handlePublicNodeImport(request, env, url = new URL(request
 	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	if (!['GET', 'POST'].includes(request.method)) return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);
 	try {
-		const input = request.method === 'GET' ? Object.fromEntries(url.searchParams) : (request.headers.get('Content-Type') || '').includes('application/json') ? await request.json() : Object.fromEntries(await request.formData());
+		const contentType = request.headers.get('Content-Type') || '';
+		const input = request.method === 'GET'
+			? Object.fromEntries(url.searchParams)
+			: contentType.includes('application/json')
+				? await request.json()
+				: contentType.includes('text/plain')
+					? { node: await request.text() }
+					: Object.fromEntries(await request.formData());
 		const settings = await readGeneratedNodeSettings(env.KV);
 		const token = String(input.token || request.headers.get('X-API-Token') || '');
 		if (!settings.token || token !== settings.token) return jsonResponse({ ok: false, message: 'API Token 无效' }, 401);

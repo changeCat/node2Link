@@ -111,6 +111,16 @@ test('公开导入接口要求正确 Token 且只接受 address 参数', async (
 	);
 	assert.equal(created.status, 201);
 	assert.equal((await created.json()).added, 1);
+
+	const rawNode = 'vless://raw-id@raw.example.com:443?security=tls&type=ws#原始节点';
+	const direct = await handlePublicNodeImport(new Request('https://sub.example.com/api/import', {
+		method: 'POST',
+		headers: { 'X-API-Token': 'abcdefghijklmnop', 'Content-Type': 'text/plain;charset=UTF-8' },
+		body: rawNode
+	}), { KV: kv });
+	assert.equal(direct.status, 201);
+	assert.equal((await direct.json()).mode, 'direct');
+	assert.ok((await readGeneratedNodes(kv)).some(node => node.content === rawNode));
 });
 
 test('登录后的模板配置、公开追加、主订阅隔离、分享候选和删除形成完整链路', async () => {
@@ -138,17 +148,19 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	const apiPageHTML = await (await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).text();
 	assert.match(apiPageHTML, /API 订阅/);
 	assert.match(apiPageHTML, /模板使用样例/);
-	assert.match(apiPageHTML, /API 调用 URL/);
+	assert.match(apiPageHTML, /API 调用/);
+	assert.match(apiPageHTML, /原始节点无需转码/);
 	assert.doesNotMatch(apiPageHTML, /class="placeholder-help"/);
 	assert.match(apiPageHTML, /\{\{address\}\}<\/code>域名、IPv4 或 IPv6/);
 	assert.match(apiPageHTML, /\{\{port\}\}<\/code>API 传入的端口/);
 	assert.match(apiPageHTML, /\{\{name\}\}<\/code>由名称格式生成/);
 	assert.match(apiPageHTML, /\{\{type\}\}<\/code>根据 address 自动判断/);
-	assert.match(apiPageHTML, /复制地址调用 URL/);
-	assert.match(apiPageHTML, /复制完整节点 URL/);
+	assert.match(apiPageHTML, /复制 URL/);
+	assert.match(apiPageHTML, /复制命令/);
 	assert.match(apiPageHTML, /address=\{\{address\}\}&amp;port=\{\{port\}\}|address=\{\{address\}\}&port=\{\{port\}\}/);
-	assert.match(apiPageHTML, /node=\{\{node\}\}/);
+	assert.match(apiPageHTML, /--data-binary "\{\{node\}\}"/);
 	assert.match(apiPageHTML, /id="directExample"/);
+	assert.ok(apiPageHTML.indexOf('class="quick-api"') < apiPageHTML.indexOf('id="saveSettings"'));
 	assert.doesNotMatch(apiPageHTML, /\{\{rawAddress/);
 	assert.doesNotMatch(apiPageHTML, /\{\{rawName/);
 	assertInlineScriptsParse(apiPageHTML);
