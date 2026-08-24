@@ -106,16 +106,16 @@ https://sub.example.com/api/import?token=<API_TOKEN>&address=cdn.example.com&por
 https://sub.example.com/api/import?token=<API_TOKEN>&address=1.1.1.1
 ```
 
-也可以直接上传一个或多个完整节点。GET 调用时需要对完整节点做 URL 编码；更推荐使用 POST JSON，避免节点查询参数中的 `&` 被拆分：
+也可以通过 `POST text/plain` 直接上传一个或多个完整节点。请求正文可原样填写 `vless://...`，无需 URL 编码；Token 通过 `X-API-Token` 请求头传入：
 
-```http
-POST /api/import
-Content-Type: application/json
-
-{"token":"<API_TOKEN>","node":"vless://uuid@example.com:443?security=tls#API节点"}
+```bash
+curl -X POST "https://sub.example.com/api/import" \
+  -H "X-API-Token: <API_TOKEN>" \
+  -H "Content-Type: text/plain;charset=UTF-8" \
+  --data-binary "vless://uuid@example.com:443?security=tls#API节点"
 ```
 
-`node` 中可用换行分隔多个完整节点；也可通过 `X-API-Token` 请求头传 Token。相同内容不会重复追加。一次调用会按模板行或完整节点行顺序追加，已有节点顺序保持不变。修改模板只影响之后生成的节点，不会改写已有节点。API 节点仅保存在 API 订阅数据中，不会写进主订阅编辑框；读取主订阅链接时，系统会把它们动态放在所有主订阅节点之后。
+请求正文中可用换行分隔多个完整节点。相同内容不会重复追加。一次调用会按模板行或完整节点行顺序追加，已有节点顺序保持不变。修改模板只影响之后生成的节点，不会改写已有节点。API 节点仅保存在 API 订阅数据中，不会写进主订阅编辑框；读取主订阅链接时，系统会把它们动态放在所有主订阅节点之后。
 
 配置 `TGTOKEN` 和 `TGID` 后，通过 API 实际新增节点以及保存主订阅内容都会发送 Telegram 通知。
 
