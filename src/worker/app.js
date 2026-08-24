@@ -31,6 +31,7 @@ const SUBSCRIPTION_FORMAT_CATALOG = [
 	{ name: 'Loon', key: 'loon', icon: 'orbit', description: '适用于 Loon 客户端' }
 ];
 const DEFAULT_DISPLAY_FORMATS = ['sub', 'b64', 'clash', 'loon'];
+const SUPPORTED_NODE_PROTOCOLS = ['vless', 'vmess', 'trojan', 'ss', 'ssr', 'hysteria', 'hysteria2', 'hy2', 'tuic', 'wireguard', 'socks', 'socks5'];
 const subscriptionNotificationCache = new Map();
 const subscriptionNotificationCooldown = 10 * 1000;
 const APP_VERSION = globalThis.__NODE2LINK_VERSION__ || 'dev';
@@ -940,6 +941,21 @@ async function ADD(envadd) {
 	return add;
 }
 
+function summarizeMainSubscriptionContent(content) {
+	const summary = { nodes: 0, sources: 0 };
+	for (const line of String(content || '').split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		if (/^https?:\/\//i.test(trimmed)) {
+			summary.sources += 1;
+			continue;
+		}
+		const protocol = trimmed.match(/^([a-z0-9+.-]+):\/\//i)?.[1]?.toLowerCase();
+		if (SUPPORTED_NODE_PROTOCOLS.includes(protocol)) summary.nodes += 1;
+	}
+	return summary;
+}
+
 function shouldSendSubscriptionNotification(request) {
 	const now = Date.now();
 	const url = new URL(request.url);
@@ -1251,6 +1267,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime, ct
 				}
 
 				const content = await request.text();
+				const contentSummary = summarizeMainSubscriptionContent(content);
 				const [previousContent, previousMetadataText] = await Promise.all([
 					env.KV.get(txt),
 					env.KV.get(metaKey)
@@ -1280,7 +1297,8 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime, ct
 				}
 				await Promise.all(writes);
 				queueTelegram(ctx, sendActionMessage(runtime, '主订阅已修改', [
-					`节点与订阅源: ${metadata.lines} 行`
+					`有效节点: ${contentSummary.nodes} 个`,
+					`订阅源: ${contentSummary.sources} 个`
 				], request));
 				return new Response(JSON.stringify({ ok: true, metadata }), {
 					headers: { "Content-Type": "application/json;charset=utf-8" }
@@ -1735,7 +1753,7 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime, ct
 
 					function analyzeContent(value) {
 						var lines = value ? value.split(/\\r?\\n/) : [];
-						var supportedProtocols = ["vless", "vmess", "trojan", "ss", "ssr", "hysteria", "hysteria2", "hy2", "tuic", "wireguard", "socks", "socks5"];
+						var supportedProtocols = ${JSON.stringify(SUPPORTED_NODE_PROTOCOLS)};
 						var seen = new Set();
 						var protocols = {};
 						var result = { lines: lines.length, nodes: 0, sources: 0, duplicates: 0, blank: 0, issues: [], protocols: protocols };
