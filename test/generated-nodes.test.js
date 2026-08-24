@@ -139,7 +139,13 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /API 订阅/);
 	assert.match(apiPageHTML, /模板使用样例/);
 	assert.match(apiPageHTML, /API 调用案例/);
-	assert.match(apiPageHTML, /POST JSON/);
+	assert.match(apiPageHTML, /\{\{address\}\}<\/code>域名、IPv4 或 IPv6/);
+	assert.match(apiPageHTML, /\{\{port\}\}<\/code>API 传入的端口/);
+	assert.match(apiPageHTML, /\{\{name\}\}<\/code>由名称格式生成/);
+	assert.match(apiPageHTML, /\{\{type\}\}<\/code>根据 address 自动判断/);
+	assert.match(apiPageHTML, /复制地址调用 URL/);
+	assert.match(apiPageHTML, /复制完整节点 URL/);
+	assert.match(apiPageHTML, /id="directExample"/);
 	assert.doesNotMatch(apiPageHTML, /\{\{rawAddress/);
 	assert.doesNotMatch(apiPageHTML, /\{\{rawName/);
 	assertInlineScriptsParse(apiPageHTML);
