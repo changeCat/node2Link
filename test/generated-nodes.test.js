@@ -23,7 +23,7 @@ class MemoryKV {
 
 const settings = normalizeGeneratedNodeSettings({
 	token: 'abcdefghijklmnop',
-	nameTemplate: 'CF-{{type}}-{{rawAddress}}:{{port}}',
+	nameTemplate: 'CF-{{type}}-{{address}}:{{port}}',
 	nodeTemplate: 'vless://uuid@{{address}}:{{port}}?security=tls#{{name}}'
 });
 
@@ -33,33 +33,54 @@ function assertInlineScriptsParse(html) {
 	}
 }
 
-test('域名参数会替换地址、端口和固定名称', () => {
-	const [node] = generateNodesFromEndpoint(settings, { domain: 'CDN.Example.COM.', port: '8443' }, '2026-01-01T00:00:00.000Z');
-	assert.equal(node.kind, 'domain');
+test('address 域名会替换地址、端口和固定名称', () => {
+	const [node] = generateNodesFromEndpoint(settings, { address: 'CDN.Example.COM.', port: '8443' }, '2026-01-01T00:00:00.000Z');
+	assert.equal(node.kind, 'endpoint');
+	assert.equal(node.addressType, 'domain');
 	assert.equal(node.address, 'cdn.example.com');
 	assert.equal(node.name, 'CF-域名-cdn.example.com:8443');
 	assert.equal(node.content, 'vless://uuid@cdn.example.com:8443?security=tls#CF-%E5%9F%9F%E5%90%8D-cdn.example.com%3A8443');
 });
 
-test('IPv6 地址在节点 authority 中自动加方括号', () => {
-	const [node] = generateNodesFromEndpoint(settings, { ip: '2606:4700:4700::1111', port: 443 });
+test('统一 address 参数支持随机标准 HTTPS 端口和名称截取', () => {
+	const slicedSettings = normalizeGeneratedNodeSettings({
+		token: 'abcdefghijklmnop',
+		nameTemplate: '{{address|split:.:0}}-{{address|slice:0:6}}-{{port}}',
+		nodeTemplate: 'vless://uuid@{{address}}:{{port}}#{{name}}'
+	});
+	const [node] = generateNodesFromEndpoint(slicedSettings, { address: 'cfsaas.080112.xyz' });
+	assert.ok([443, 2053, 2083, 2087, 2096, 8443].includes(node.port));
+	assert.equal(node.name, `cfsaas-cfsaas-${node.port}`);
+});
+
+test('IPv6 address 在节点 authority 中自动加方括号，但名称保持原始地址', () => {
+	const [node] = generateNodesFromEndpoint(settings, { address: '2606:4700:4700::1111', port: 443 });
 	assert.equal(node.address, '2606:4700:4700::1111');
+	assert.equal(node.name, 'CF-IP-2606:4700:4700::1111:443');
 	assert.match(node.content, /@\[2606:4700:4700::1111\]:443/);
+});
+
+test('模板不再接受旧占位符', () => {
+	assert.throws(() => normalizeGeneratedNodeSettings({
+		token: 'abcdefghijklmnop',
+		nameTemplate: '{{rawAddress}}',
+		nodeTemplate: 'vless://uuid@{{rawAddress}}:{{port}}#{{rawName}}'
+	}), /缺少 \{\{address\}\}/);
 });
 
 test('模板必须含地址、端口和名称占位符', () => {
 	assert.throws(() => normalizeGeneratedNodeSettings({
 		token: 'abcdefghijklmnop',
-		nameTemplate: '{{rawAddress}}',
+		nameTemplate: '{{address}}',
 		nodeTemplate: 'vless://uuid@example.com:443#fixed'
 	}), /缺少 \{\{address\}\}/);
 });
 
 test('重复调用不会重复追加，新增节点保留追加顺序', async () => {
 	const kv = new MemoryKV();
-	const first = await appendGeneratedNodes(kv, settings, { domain: 'one.example.com', port: 443 });
-	const duplicate = await appendGeneratedNodes(kv, settings, { domain: 'one.example.com', port: 443 });
-	const second = await appendGeneratedNodes(kv, settings, { ip: '1.1.1.1', port: 2053 });
+	const first = await appendGeneratedNodes(kv, settings, { address: 'one.example.com', port: 443 });
+	const duplicate = await appendGeneratedNodes(kv, settings, { address: 'one.example.com', port: 443 });
+	const second = await appendGeneratedNodes(kv, settings, { address: '1.1.1.1', port: 2053 });
 	const nodes = await readGeneratedNodes(kv);
 	assert.equal(first.added.length, 1);
 	assert.equal(duplicate.added.length, 0);
@@ -68,23 +89,24 @@ test('重复调用不会重复追加，新增节点保留追加顺序', async ()
 	assert.deepEqual(nodes.map(node => node.address), ['one.example.com', '1.1.1.1']);
 });
 
-test('公开导入接口要求正确 Token 且只接受 domain 或 ip 二选一', async () => {
+test('公开导入接口要求正确 Token 且只接受 address 参数', async () => {
 	const kv = new MemoryKV();
 	await kv.put('NODE2LINK.api-subscription.settings.json', JSON.stringify(settings));
 	const unauthorized = await handlePublicNodeImport(
-		new Request('https://sub.example.com/api/import?token=wrong&domain=cdn.example.com&port=443'),
+		new Request('https://sub.example.com/api/import?token=wrong&address=cdn.example.com&port=443'),
 		{ KV: kv }
 	);
 	assert.equal(unauthorized.status, 401);
 
 	const invalid = await handlePublicNodeImport(
-		new Request('https://sub.example.com/api/import?token=abcdefghijklmnop&domain=cdn.example.com&ip=1.1.1.1&port=443'),
+		new Request('https://sub.example.com/api/import?token=abcdefghijklmnop&domain=cdn.example.com&port=443'),
 		{ KV: kv }
 	);
 	assert.equal(invalid.status, 400);
+	assert.equal((await invalid.json()).message, '请传入 address 参数');
 
 	const created = await handlePublicNodeImport(
-		new Request('https://sub.example.com/api/import?token=abcdefghijklmnop&domain=cdn.example.com&port=443'),
+		new Request('https://sub.example.com/api/import?token=abcdefghijklmnop&address=cdn.example.com&port=443'),
 		{ KV: kv }
 	);
 	assert.equal(created.status, 201);
@@ -115,20 +137,25 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	const initial = await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json();
 	const apiPageHTML = await (await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).text();
 	assert.match(apiPageHTML, /API 订阅/);
+	assert.match(apiPageHTML, /模板使用样例/);
+	assert.match(apiPageHTML, /API 调用案例/);
+	assert.match(apiPageHTML, /POST JSON/);
+	assert.doesNotMatch(apiPageHTML, /\{\{rawAddress/);
+	assert.doesNotMatch(apiPageHTML, /\{\{rawName/);
 	assertInlineScriptsParse(apiPageHTML);
 	const saved = await dispatch('/api/generated-nodes', {
 		method: 'PUT',
 		headers: { ...authenticatedHeaders, Origin: origin, 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			token: initial.settings.token,
-			nameTemplate: 'CF-{{type}}-{{rawAddress}}:{{port}}',
+			nameTemplate: 'CF-{{type}}-{{address}}:{{port}}',
 			nodeTemplate: 'vless://test-id@{{address}}:{{port}}?security=tls#{{name}}'
 		})
 	});
 	assert.equal(saved.status, 200);
 
-	const domainImport = await dispatch(`/api/import?token=${initial.settings.token}&domain=edge.example.com&port=8443`);
-	const ipImport = await dispatch(`/api/import?token=${initial.settings.token}&ip=8.8.8.8&port=2053`);
+	const domainImport = await dispatch(`/api/import?token=${initial.settings.token}&address=edge.example.com&port=8443`);
+	const ipImport = await dispatch(`/api/import?token=${initial.settings.token}&address=8.8.8.8&port=2053`);
 	assert.equal(domainImport.status, 201);
 	assert.equal(ipImport.status, 201);
 	const replacementToken = 'qrstuvwxyzABCDEF';
@@ -137,14 +164,14 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 		headers: { ...authenticatedHeaders, Origin: origin, 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			token: replacementToken,
-			nameTemplate: 'CF-{{type}}-{{rawAddress}}:{{port}}',
+			nameTemplate: 'CF-{{type}}-{{address}}:{{port}}',
 			nodeTemplate: 'vless://test-id@{{address}}:{{port}}?security=tls#{{name}}'
 		})
 	});
 	assert.equal(rotated.status, 200);
 	assert.equal((await rotated.json()).settings.token, replacementToken);
-	assert.equal((await dispatch(`/api/import?token=${initial.settings.token}&domain=old-token.example.com&port=443`)).status, 401);
-	assert.equal((await dispatch(`/api/import?token=${replacementToken}&domain=edge.example.com&port=8443`)).status, 200);
+	assert.equal((await dispatch(`/api/import?token=${initial.settings.token}&address=old-token.example.com&port=443`)).status, 401);
+	assert.equal((await dispatch(`/api/import?token=${replacementToken}&address=edge.example.com&port=8443`)).status, 200);
 	const candidates = await (await dispatch('/api/node-candidates', { headers: authenticatedHeaders })).json();
 	assert.deepEqual(candidates.nodes.map(node => node.source), ['main', 'api', 'api']);
 	assert.match(candidates.nodes[0].content, /manual\.example\.com:443/);
@@ -155,8 +182,16 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	const encoded = await (await dispatch(mainPath + '?base64')).text();
 	const decoded = Buffer.from(encoded, 'base64').toString('utf8');
 	assert.match(decoded, /manual\.example\.com:443/);
-	assert.doesNotMatch(decoded, /edge\.example\.com:8443/);
-	assert.doesNotMatch(decoded, /8\.8\.8\.8:2053/);
+	assert.match(decoded, /edge\.example\.com:8443/);
+	assert.match(decoded, /8\.8\.8\.8:2053/);
+	assert.ok(decoded.indexOf('manual.example.com:443') < decoded.indexOf('edge.example.com:8443'));
+
+	const directNode = 'vless://direct-id@direct.example.com:443?security=tls#Direct';
+	const directImport = await dispatch(`/api/import?token=${replacementToken}&node=${encodeURIComponent(directNode)}`);
+	assert.equal(directImport.status, 201);
+	assert.equal((await directImport.json()).mode, 'direct');
+	const decodedWithDirect = Buffer.from(await (await dispatch(mainPath + '?base64')).text(), 'base64').toString('utf8');
+	assert.match(decodedWithDirect, /direct\.example\.com:443/);
 
 	const shareHTML = await (await dispatch('/shares', { headers: authenticatedHeaders })).text();
 	assert.match(shareHTML, /从已有节点选择/);
@@ -171,5 +206,52 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	});
 	assert.equal(deleted.status, 200);
 	const remaining = (await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json()).nodes;
-	assert.equal(remaining.length, 1);
+	assert.equal(remaining.length, 2);
+});
+
+test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', async () => {
+	const origin = 'https://notify.example.com';
+	const env = {
+		KV: new MemoryKV(),
+		ADMIN_USERNAME: 'admin',
+		ADMIN_PASSWORD: 'test-password',
+		SESSION_SECRET: 'test-session-secret',
+		TGTOKEN: '123:abc',
+		TGID: '456',
+		REQUESTLOG: '0'
+	};
+	await env.KV.put('NODE2LINK.api-subscription.settings.json', JSON.stringify(settings));
+	const telegramMessages = [];
+	const pending = [];
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async input => {
+		const url = String(input);
+		if (url.startsWith('https://api.telegram.org/')) {
+			telegramMessages.push(new URL(url).searchParams.get('text'));
+			return new Response('{"ok":true}', { headers: { 'Content-Type': 'application/json' } });
+		}
+		return originalFetch(input);
+	};
+	try {
+		const ctx = { waitUntil(task) { pending.push(task); } };
+		const imported = await worker.fetch(new Request(origin + '/api/import?token=abcdefghijklmnop&address=notify.example.com&port=443'), env, ctx);
+		assert.equal(imported.status, 201);
+		const login = await worker.fetch(new Request(origin + '/api/login', {
+			method: 'POST',
+			headers: { Origin: origin, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'admin', password: 'test-password' })
+		}), env, ctx);
+		const cookie = login.headers.get('Set-Cookie').split(';')[0];
+		const saved = await worker.fetch(new Request(origin + '/', {
+			method: 'POST',
+			headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'text/plain;charset=UTF-8' },
+			body: 'vless://saved@main.example.com:443#Saved'
+		}), env, ctx);
+		assert.equal(saved.status, 200);
+		await Promise.all(pending);
+		assert.ok(telegramMessages.some(message => message.includes('#API 追加节点')));
+		assert.ok(telegramMessages.some(message => message.includes('#主订阅已修改')));
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });

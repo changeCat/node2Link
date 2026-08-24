@@ -8,7 +8,7 @@
 - 汇聚多个节点或上游订阅，并输出 Base64、Clash、Sing-box、Surge、QuanX、Loon 等格式；
 - 独立设置页，可分别修改主订阅名称、浏览器标签页标题与图标、主订阅入口 Token，并在默认/自建转换服务和默认/自建规则之间切换；还可增减及排序“我的订阅”所展示的客户端格式，各设置模块均可独立保存，标签页标题默认使用 `CF-Workers-SUB`；
 - “主订阅”“API 订阅”“分享管理”和“订阅请求”使用顶部 Tab 切换，访问根路径时默认展示主订阅；
-- API 订阅支持先配置节点及名称模板，再由外部系统通过带唯一 Token 的 URL 追加 Cloudflare 优选域名/IP 与端口；生成节点只允许在管理页删除，并与主订阅完全隔离；
+- API 订阅支持先配置节点及名称模板，再由外部系统通过带唯一 Token 的 URL 追加域名/IP 地址或完整节点链接；节点只在 API 订阅页维护，但会动态附加到主订阅结果末尾；
 - 设置按钮附近显示按北京时间生成的构建版本，便于确认线上部署是否已经更新；
 - 独立分享管理页，可为不同节点组生成不同订阅链接，并支持重复创建、修改、重置链接和删除；节点内容既可手动输入，也可从主订阅与 API 订阅节点中勾选；分享订阅与主订阅使用相同的客户端自适应转换逻辑；
 - 主订阅与分享订阅统一使用 `/s/<随机ID>`，管理密码不会出现在订阅地址中；
@@ -69,7 +69,7 @@ Root directory: 留空
 1. 打开部署域名根路径，例如 `https://sub.example.com/`；
 2. 使用 `ADMIN_USERNAME`（默认 `admin`）和 `ADMIN_PASSWORD` 登录；
 3. 在“主订阅”Tab 保存汇聚节点与上游订阅，右侧复制“我的订阅”链接；
-4. 在“API 订阅”中保存节点模板、名称格式与页面自动生成的唯一 API Token，再复制页面展示的域名或 IP 调用 URL 给外部系统；需要时可重新生成 Token，保存后旧 Token 立即失效；
+4. 在“API 订阅”中保存节点模板、名称格式与页面自动生成的唯一 API Token，再复制页面展示的统一地址或完整节点调用 URL 给外部系统；需要时可重新生成 Token，保存后旧 Token 立即失效；
 5. 在“设置”中分别保存基本显示、主订阅入口、转换配置或客户端展示；修改一个模块不会覆盖其他模块；
 6. 在“分享管理”中填写分享名称，手动输入节点或点击“从已有节点选择”；选择器会在打开时汇总主订阅中的直连节点、可解析的上游订阅节点和 API 订阅节点，保存后即可复制独立订阅链接；
 7. 在“订阅请求”中分别查看主订阅及当前分享订阅近 30 天的请求记录；已删除分享不再展示；
@@ -83,25 +83,41 @@ Root directory: 留空
 vless://uuid@{{address}}:{{port}}?encryption=none&security=tls#{{name}}
 ```
 
-名称格式必须包含 `{{address}}` 或 `{{rawAddress}}`，例如 `CF-{{type}}-{{rawAddress}}:{{port}}`。可使用的占位符如下：
+名称格式必须包含 `{{address}}`，例如 `CF-{{type}}-{{address|split:.:0}}:{{port}}`。可使用的占位符如下：
 
 | 占位符 | 内容 |
 |---|---|
-| `{{address}}` | 可直接放入节点地址位置；IPv6 会自动加方括号 |
-| `{{rawAddress}}` | 不带方括号的原始域名或 IP |
+| `{{address}}` | 名称格式中表示原始地址；节点模板中可直接放入地址位置，IPv6 会自动加方括号 |
 | `{{port}}` | 外部调用传入的端口 |
 | `{{name}}` | URL 编码后的节点名称，适合放在 `#` 后 |
-| `{{rawName}}` | 未编码的节点名称 |
 | `{{type}}` | `域名` 或 `IP` |
 
-外部调用使用 `GET` 方式和以下两种 URL，`domain` 和 `ip` 必须二选一，`port` 必填。系统只保存一个有效 API Token：
+占位符后可使用以下名称处理操作：
+
+| 操作 | 示例 | 结果 |
+|---|---|---|
+| `slice:开始:结束` | `{{address|slice:0:6}}` | `cfsaas.080112.xyz` 得到 `cfsaas` |
+| `split:分隔符:序号` | `{{address|split:.:0}}` | 按 `.` 分段后取第 1 段，得到 `cfsaas` |
+
+外部调用使用 `address` 参数，它同时支持域名、IPv4 和 IPv6。`port` 可省略；省略时会从 Cloudflare 标准 HTTPS 端口 `443`、`2053`、`2083`、`2087`、`2096`、`8443` 中随机选择。系统只保存一个有效 API Token：
 
 ```text
-https://sub.example.com/api/import?token=<API_TOKEN>&domain=cdn.example.com&port=443
-https://sub.example.com/api/import?token=<API_TOKEN>&ip=1.1.1.1&port=443
+https://sub.example.com/api/import?token=<API_TOKEN>&address=cdn.example.com&port=443
+https://sub.example.com/api/import?token=<API_TOKEN>&address=1.1.1.1
 ```
 
-接口同时支持 IPv4、IPv6 和域名。相同模板生成的完全相同节点不会重复追加；一次调用会按模板行顺序追加，已有节点顺序保持不变。修改模板只影响之后生成的节点，不会改写已有节点。API 生成节点仅保存在 API 订阅中，不会加入或改变主订阅。
+也可以直接上传一个或多个完整节点。GET 调用时需要对完整节点做 URL 编码；更推荐使用 POST JSON，避免节点查询参数中的 `&` 被拆分：
+
+```http
+POST /api/import
+Content-Type: application/json
+
+{"token":"<API_TOKEN>","node":"vless://uuid@example.com:443?security=tls#API节点"}
+```
+
+`node` 中可用换行分隔多个完整节点；也可通过 `X-API-Token` 请求头传 Token。相同内容不会重复追加。一次调用会按模板行或完整节点行顺序追加，已有节点顺序保持不变。修改模板只影响之后生成的节点，不会改写已有节点。API 节点仅保存在 API 订阅数据中，不会写进主订阅编辑框；读取主订阅链接时，系统会把它们动态放在所有主订阅节点之后。
+
+配置 `TGTOKEN` 和 `TGID` 后，通过 API 实际新增节点以及保存主订阅内容都会发送 Telegram 通知。
 
 升级已有部署时不需要新建或重新绑定 KV。原来的 `LINK.txt` 节点数据会直接复用；只需增加登录密码，保留原 `TOKEN` 即可让已有设备继续更新订阅。
 
