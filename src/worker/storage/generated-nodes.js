@@ -200,9 +200,10 @@ export async function appendGeneratedNodes(kv, settings, payload) {
 	const added = generated.filter(node => !contents.has(node.content));
 	if (existing.length + added.length > MAX_NODES) throw new Error(`API 订阅最多保存 ${MAX_NODES} 个节点`);
 	const serialized = JSON.stringify([...existing, ...added]);
-	if (new TextEncoder().encode(serialized).length > MAX_STORED_BYTES) throw new Error('API 订阅节点数据已达到 20 MB 上限，请删除部分节点后重试');
+	const bytes = new TextEncoder().encode(serialized).length;
+	if (bytes > MAX_STORED_BYTES) throw new Error('API 订阅节点数据已达到 20 MB 上限，请删除部分节点后重试');
 	if (added.length) await kv.put(NODES_KEY, serialized);
-	return { added, duplicateCount: generated.length - added.length, total: existing.length + added.length, mode: isDirect ? 'direct' : 'template' };
+	return { added, duplicateCount: generated.length - added.length, total: existing.length + added.length, bytes, mode: isDirect ? 'direct' : 'template' };
 }
 
 export async function handlePublicNodeImport(request, env, url = new URL(request.url)) {
@@ -221,7 +222,7 @@ export async function handlePublicNodeImport(request, env, url = new URL(request
 		const token = String(input.token || request.headers.get('X-API-Token') || '');
 		if (!settings.token || token !== settings.token) return jsonResponse({ ok: false, message: 'API Token 无效' }, 401);
 		const result = await appendGeneratedNodes(env.KV, settings, input);
-		return jsonResponse({ ok: true, message: result.added.length ? `已追加 ${result.added.length} 个节点` : '节点已存在，未重复追加', added: result.added.length, duplicates: result.duplicateCount, total: result.total, mode: result.mode, nodes: result.added.map(node => ({ id: node.id, name: node.name, address: node.address, port: node.port })) }, result.added.length ? 201 : 200);
+		return jsonResponse({ ok: true, message: result.added.length ? `已追加 ${result.added.length} 个节点` : '节点已存在，未重复追加', added: result.added.length, duplicates: result.duplicateCount, total: result.total, bytes: result.bytes, mode: result.mode, nodes: result.added.map(node => ({ id: node.id, name: node.name, address: node.address, port: node.port })) }, result.added.length ? 201 : 200);
 	} catch (error) { return jsonResponse({ ok: false, message: error.message || '追加节点失败' }, 400); }
 }
 

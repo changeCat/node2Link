@@ -270,8 +270,18 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 		}), env, ctx);
 		assert.equal(saved.status, 200);
 		await Promise.all(pending);
-		assert.ok(telegramMessages.some(message => message.includes('#API 追加节点')));
-		assert.ok(telegramMessages.some(message => message.includes('#主订阅已修改')));
+		const apiMessage = telegramMessages.find(message => message.includes('#API 订阅已修改'));
+		assert.ok(apiMessage);
+		assert.match(apiMessage, /API 订阅节点: 1 个/);
+		assert.match(apiMessage, /本次新增: 1 个/);
+		assert.match(apiMessage, /数据大小: \d+ 字节/);
+		assert.match(apiMessage, /调用方式: 地址模板/);
+		assert.match(apiMessage, /操作 IP: Unknown/);
+		const mainMessage = telegramMessages.find(message => message.includes('#主订阅已修改'));
+		assert.ok(mainMessage);
+		assert.match(mainMessage, /节点与订阅源: 1 行/);
+		assert.match(mainMessage, /数据大小: \d+ 字节/);
+		assert.match(mainMessage, /操作 IP: Unknown/);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
