@@ -61,10 +61,12 @@ export default {
 			if (response.ok) {
 				try {
 					const result = await response.clone().json();
-					if (result.added > 0) queueTelegram(ctx, sendActionMessage(runtime, 'API 追加节点', [
-						`新增: ${result.added} 个`,
-						`方式: ${result.mode === 'direct' ? '完整节点' : '地址模板'}`,
-						`来源 IP: ${request.headers.get('CF-Connecting-IP') || 'Unknown'}`
+					if (result.added > 0) queueTelegram(ctx, sendActionMessage(runtime, 'API 订阅已修改', [
+						`API 订阅节点: ${result.total} 个`,
+						`本次新增: ${result.added} 个`,
+						`数据大小: ${result.bytes} 字节`,
+						`调用方式: ${result.mode === 'direct' ? '完整节点' : '地址模板'}`,
+						`操作 IP: ${request.headers.get('CF-Connecting-IP') || 'Unknown'}`
 					]));
 				} catch (error) { console.error('读取 API 导入结果失败:', error); }
 			}
