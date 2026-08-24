@@ -8,7 +8,7 @@
 - 汇聚多个节点或上游订阅，并输出 Base64、Clash、Sing-box、Surge、QuanX、Loon 等格式；
 - 独立设置页，可分别修改主订阅名称、浏览器标签页标题与图标、主订阅入口 Token，并在默认/自建转换服务和默认/自建规则之间切换；还可增减及排序“我的订阅”所展示的客户端格式，各设置模块均可独立保存，标签页标题默认使用 `CF-Workers-SUB`；
 - “主订阅”“API 订阅”“分享管理”和“订阅请求”使用顶部 Tab 切换，访问根路径时默认展示主订阅；
-- API 订阅支持先配置节点及名称模板，再由外部系统通过带唯一 Token 的 URL 追加域名/IP 地址或完整节点链接；节点只在 API 订阅页维护，但会动态附加到主订阅结果末尾；
+- API 订阅支持先配置节点及名称模板，再由外部系统通过带唯一 Token 的 URL 一次追加多个域名/IP 地址或完整节点链接；节点只在 API 订阅页维护，但会动态附加到主订阅结果末尾；
 - 设置按钮附近显示按北京时间生成的构建版本，便于确认线上部署是否已经更新；
 - 独立分享管理页，可为不同节点组生成不同订阅链接，并支持重复创建、修改、重置链接和删除；节点内容既可手动输入，也可从主订阅与 API 订阅节点中勾选；分享订阅与主订阅使用相同的客户端自适应转换逻辑；
 - 主订阅与分享订阅统一使用 `/s/<随机ID>`，管理密码不会出现在订阅地址中；
@@ -99,11 +99,21 @@ vless://uuid@{{address}}:{{port}}?encryption=none&security=tls#{{name}}
 | `slice:开始:结束` | `{{address|slice:0:6}}` | `cfsaas.080112.xyz` 得到 `cfsaas` |
 | `split:分隔符:序号` | `{{address|split:.:0}}` | 按 `.` 分段后取第 1 段，得到 `cfsaas` |
 
-外部调用使用 `address` 参数，它同时支持域名、IPv4 和 IPv6。`port` 可省略；省略时会从 Cloudflare 标准 HTTPS 端口 `443`、`2053`、`2083`、`2087`、`2096`、`8443` 中随机选择。系统只保存一个有效 API Token：
+外部调用使用 `address` 参数，它同时支持域名、IPv4 和 IPv6。单个地址的调用方式保持不变；批量导入时可在 GET URL 中重复传入 `address`。`port` 只有一个时会应用到全部地址，重复传入时必须与地址一一对应；省略时会为每个地址从 Cloudflare 标准 HTTPS 端口 `443`、`2053`、`2083`、`2087`、`2096`、`8443` 中随机选择。系统只保存一个有效 API Token：
 
 ```text
 https://sub.example.com/api/import?token=<API_TOKEN>&address=cdn.example.com&port=443
 https://sub.example.com/api/import?token=<API_TOKEN>&address=1.1.1.1
+https://sub.example.com/api/import?token=<API_TOKEN>&address=cdn.example.com&port=443&address=1.1.1.1&port=2053
+```
+
+批量地址也可以使用 `POST application/json`。`addresses` 可传字符串数组（配合一个公共 `port`），也可传各自带端口的对象数组：
+
+```bash
+curl -X POST "https://sub.example.com/api/import" \
+  -H "X-API-Token: <API_TOKEN>" \
+  -H "Content-Type: application/json" \
+  --data '{"addresses":[{"address":"cdn.example.com","port":443},{"address":"1.1.1.1","port":2053}]}'
 ```
 
 也可以通过 `POST text/plain` 直接上传一个或多个完整节点。请求正文可原样填写 `vless://...`，无需 URL 编码；Token 通过 `X-API-Token` 请求头传入：
@@ -115,7 +125,7 @@ curl -X POST "https://sub.example.com/api/import" \
   --data-binary "vless://uuid@example.com:443?security=tls#API节点"
 ```
 
-请求正文中可用换行分隔多个完整节点。相同内容不会重复追加。一次调用会按模板行或完整节点行顺序追加，已有节点顺序保持不变。修改模板只影响之后生成的节点，不会改写已有节点。API 节点仅保存在 API 订阅数据中，不会写进主订阅编辑框；读取主订阅链接时，系统会把它们动态放在所有主订阅节点之后。
+请求正文中可用换行分隔多个完整节点；JSON 也可通过 `nodes` 字符串数组传入多个完整节点。每次最多导入 100 个地址或完整节点。相同内容不会重复追加。模板导入会按地址顺序、再按模板行顺序追加，完整节点按输入顺序追加；已有节点顺序保持不变。批次内任一输入无效时整批拒绝，不会写入部分结果。修改模板只影响之后生成的节点，不会改写已有节点。API 节点仅保存在 API 订阅数据中，不会写进主订阅编辑框；读取主订阅链接时，系统会把它们动态放在所有主订阅节点之后。
 
 配置 `TGTOKEN` 和 `TGID` 后，通过 API 实际新增节点以及保存主订阅内容都会发送 Telegram 通知。
 
