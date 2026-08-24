@@ -363,7 +363,13 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 				'CF-Connecting-IP': '198.51.100.20',
 				'User-Agent': 'admin-browser/1.0'
 			},
-			body: 'vless://saved@main.example.com:443#Saved'
+			body: [
+				'vless://saved@main.example.com:443#Saved',
+				'',
+				'not-a-node',
+				'https://upstream.example.com/sub',
+				''
+			].join('\n')
 		}), env, ctx);
 		assert.equal(saved.status, 200);
 		await Promise.all(pending);
@@ -376,7 +382,9 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 		assert.match(apiMessage, /^#API 订阅已修改\nIP: 203\.0\.113\.10\n国家: 日本\n城市: Chiyoda City\n组织: PCCW Global Japan corporation\.\nASN: AS31713 Gateway Communications\nUA: api-client\/1\.0\n域名: notify\.example\.com/m);
 		const mainMessage = telegramMessages.find(message => message.includes('#主订阅已修改'));
 		assert.ok(mainMessage);
-		assert.match(mainMessage, /节点与订阅源: 1 行/);
+		assert.match(mainMessage, /有效节点: 1 个/);
+		assert.match(mainMessage, /订阅源: 1 个/);
+		assert.doesNotMatch(mainMessage, /节点与订阅源:/);
 		assert.doesNotMatch(mainMessage, /数据大小:/);
 		assert.match(mainMessage, /^#主订阅已修改\nIP: 198\.51\.100\.20\n国家: 日本\n城市: Chiyoda City\n组织: PCCW Global Japan corporation\.\nASN: AS31713 Gateway Communications\nUA: admin-browser\/1\.0\n域名: notify\.example\.com/m);
 	} finally {
