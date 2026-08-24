@@ -89,6 +89,49 @@ test('重复调用不会重复追加，新增节点保留追加顺序', async ()
 	assert.deepEqual(nodes.map(node => node.address), ['one.example.com', '1.1.1.1']);
 });
 
+test('模板导入支持一次传入多个地址并按地址和模板顺序追加', async () => {
+	const kv = new MemoryKV();
+	const multiTemplateSettings = normalizeGeneratedNodeSettings({
+		token: 'abcdefghijklmnop',
+		nameTemplate: '{{address}}:{{port}}',
+		nodeTemplate: [
+			'vless://uuid@{{address}}:{{port}}#{{name}}',
+			'trojan://secret@{{address}}:{{port}}#{{name}}'
+		].join('\n')
+	});
+	const result = await appendGeneratedNodes(kv, multiTemplateSettings, {
+		addresses: [
+			{ address: 'one.example.com', port: 443 },
+			{ address: '1.1.1.1', port: 2053 },
+			{ address: 'one.example.com', port: 443 }
+		]
+	});
+	const nodes = await readGeneratedNodes(kv);
+	assert.equal(result.added.length, 4);
+	assert.equal(result.duplicateCount, 2);
+	assert.deepEqual(nodes.map(node => `${node.address}:${node.port}`), [
+		'one.example.com:443',
+		'one.example.com:443',
+		'1.1.1.1:2053',
+		'1.1.1.1:2053'
+	]);
+	assert.deepEqual(nodes.map(node => node.content.split('://')[0]), ['vless', 'trojan', 'vless', 'trojan']);
+});
+
+test('批量地址中任一项无效时不会写入部分节点', async () => {
+	const kv = new MemoryKV();
+	await assert.rejects(
+		appendGeneratedNodes(kv, settings, {
+			addresses: [
+				{ address: 'valid.example.com', port: 443 },
+				{ address: 'not an address', port: 443 }
+			]
+		}),
+		/第 2 个地址/
+	);
+	assert.deepEqual(await readGeneratedNodes(kv), []);
+});
+
 test('公开导入接口要求正确 Token 且只接受 address 参数', async () => {
 	const kv = new MemoryKV();
 	await kv.put('NODE2LINK.api-subscription.settings.json', JSON.stringify(settings));
@@ -121,6 +164,44 @@ test('公开导入接口要求正确 Token 且只接受 address 参数', async (
 	assert.equal(direct.status, 201);
 	assert.equal((await direct.json()).mode, 'direct');
 	assert.ok((await readGeneratedNodes(kv)).some(node => node.content === rawNode));
+});
+
+test('公开导入接口支持重复查询参数、JSON 地址数组和 JSON 节点数组', async () => {
+	const kv = new MemoryKV();
+	await kv.put('NODE2LINK.api-subscription.settings.json', JSON.stringify(settings));
+
+	const repeatedQuery = await handlePublicNodeImport(new Request(
+		'https://sub.example.com/api/import?token=abcdefghijklmnop&address=one.example.com&port=443&address=1.1.1.1&port=2053'
+	), { KV: kv });
+	assert.equal(repeatedQuery.status, 201);
+	assert.deepEqual((await repeatedQuery.json()).nodes.map(node => [node.address, node.port]), [
+		['one.example.com', 443],
+		['1.1.1.1', 2053]
+	]);
+
+	const jsonAddresses = await handlePublicNodeImport(new Request('https://sub.example.com/api/import', {
+		method: 'POST',
+		headers: { 'X-API-Token': 'abcdefghijklmnop', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ addresses: ['two.example.com', '8.8.8.8'], port: 8443 })
+	}), { KV: kv });
+	assert.equal(jsonAddresses.status, 201);
+	assert.deepEqual((await jsonAddresses.json()).nodes.map(node => [node.address, node.port]), [
+		['two.example.com', 8443],
+		['8.8.8.8', 8443]
+	]);
+
+	const directNodes = [
+		'vless://first@raw-one.example.com:443#节点一',
+		'trojan://second@raw-two.example.com:443#节点二'
+	];
+	const jsonNodes = await handlePublicNodeImport(new Request('https://sub.example.com/api/import', {
+		method: 'POST',
+		headers: { 'X-API-Token': 'abcdefghijklmnop', 'Content-Type': 'application/json' },
+		body: JSON.stringify({ nodes: directNodes })
+	}), { KV: kv });
+	assert.equal(jsonNodes.status, 201);
+	assert.equal((await jsonNodes.json()).added, 2);
+	assert.deepEqual((await readGeneratedNodes(kv)).slice(-2).map(node => node.content), directNodes);
 });
 
 test('登录后的模板配置、公开追加、主订阅隔离、分享候选和删除形成完整链路', async () => {
@@ -157,8 +238,8 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /\{\{type\}\}<\/code>根据 address 自动判断/);
 	assert.match(apiPageHTML, /复制 URL/);
 	assert.match(apiPageHTML, /复制命令/);
-	assert.match(apiPageHTML, /address=\{\{address\}\}&amp;port=\{\{port\}\}|address=\{\{address\}\}&port=\{\{port\}\}/);
-	assert.match(apiPageHTML, /--data-binary "\{\{node\}\}"/);
+	assert.match(apiPageHTML, /address=\{\{address1\}\}.*address=\{\{address2\}\}/);
+	assert.match(apiPageHTML, /--data-binary "\{\{node1\}\}\\n\{\{node2\}\}"/);
 	assert.match(apiPageHTML, /id="directExample"/);
 	assert.ok(apiPageHTML.indexOf('class="quick-api"') < apiPageHTML.indexOf('id="saveSettings"'));
 	assert.doesNotMatch(apiPageHTML, /\{\{rawAddress/);

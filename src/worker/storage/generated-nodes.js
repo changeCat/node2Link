@@ -4,6 +4,7 @@ const SUPPORTED_PROTOCOL = /^(vless|vmess|trojan|ss|ssr|hysteria|hysteria2|hy2|t
 const CLOUDFLARE_HTTPS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
 const MAX_NODES = 3000;
 const MAX_TEMPLATE_LINES = 20;
+const MAX_IMPORT_ITEMS = 100;
 const MAX_TEMPLATE_LINE_BYTES = 16 * 1024;
 const MAX_STORED_BYTES = 20 * 1024 * 1024;
 
@@ -27,6 +28,11 @@ function createId() {
 
 function cleanLines(value) {
 	return [...new Set(String(value || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean))];
+}
+
+function cleanBatchValues(value) {
+	const values = Array.isArray(value) ? value : [value];
+	return values.flatMap(item => typeof item === 'string' ? cleanLines(item) : item === undefined || item === null ? [] : [item]);
 }
 
 function isIPv4(value) {
@@ -63,6 +69,24 @@ function normalizeEndpoint(payload) {
 	const port = portInput ? Number(portInput) : randomCloudflareHTTPSPort();
 	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('port 参数必须是 1 到 65535 的整数');
 	return { kind: 'endpoint', addressType, address: input, port };
+}
+
+function normalizeEndpoints(payload) {
+	const input = payload?.addresses !== undefined ? payload.addresses : payload?.address;
+	const addresses = cleanBatchValues(input);
+	if (!addresses.length) throw new Error('请传入 address 参数');
+	if (addresses.length > MAX_IMPORT_ITEMS) throw new Error(`一次最多导入 ${MAX_IMPORT_ITEMS} 个地址`);
+	const ports = cleanBatchValues(payload?.port);
+	if (ports.length > 1 && ports.length !== addresses.length) throw new Error('多个 port 参数必须与 address 参数数量一致');
+	return addresses.map((item, index) => {
+		const isObject = item && typeof item === 'object' && !Array.isArray(item);
+		const address = isObject ? item.address : item;
+		const port = isObject && Object.prototype.hasOwnProperty.call(item, 'port')
+			? item.port
+			: ports.length > 1 ? ports[index] : ports[0];
+		try { return normalizeEndpoint({ address, port }); }
+		catch (error) { throw new Error(addresses.length > 1 ? `第 ${index + 1} 个地址：${error.message}` : error.message); }
+	});
 }
 
 function applyFilter(value, filter) {
@@ -155,6 +179,10 @@ export async function readGeneratedNodes(kv) {
 
 export function generateNodesFromEndpoint(settings, payload, createdAt = new Date().toISOString()) {
 	const endpoint = normalizeEndpoint(payload);
+	return generateNodesForEndpoint(settings, endpoint, createdAt);
+}
+
+function generateNodesForEndpoint(settings, endpoint, createdAt) {
 	const templates = cleanLines(settings.nodeTemplate);
 	if (!templates.length) throw new Error('管理员尚未配置节点模板');
 	const uriAddress = endpoint.addressType === 'ip' && endpoint.address.includes(':') ? `[${endpoint.address}]` : endpoint.address;
@@ -163,6 +191,10 @@ export function generateNodesFromEndpoint(settings, payload, createdAt = new Dat
 	if (!generatedName) throw new Error('节点名称格式生成了空名称');
 	const variables = { ...nameVariables, address: uriAddress, name: encodeURIComponent(generatedName) };
 	return templates.map(template => ({ id: createId(), ...endpoint, name: generatedName, content: applyVariables(template, variables), createdAt }));
+}
+
+export function generateNodesFromEndpoints(settings, payload, createdAt = new Date().toISOString()) {
+	return normalizeEndpoints(payload).flatMap(endpoint => generateNodesForEndpoint(settings, endpoint, createdAt));
 }
 
 function directNodeName(content, index) {
@@ -183,9 +215,9 @@ function directNodeEndpoint(content) {
 
 export function normalizeDirectNodes(payload, createdAt = new Date().toISOString()) {
 	const value = payload && (payload.node ?? payload.nodes ?? payload.content);
-	const lines = cleanLines(value);
+	const lines = [...new Set(cleanBatchValues(value).map(line => String(line).trim()).filter(Boolean))];
 	if (!lines.length) throw new Error('请传入完整节点参数 node');
-	if (lines.length > MAX_TEMPLATE_LINES) throw new Error(`一次最多上传 ${MAX_TEMPLATE_LINES} 个完整节点`);
+	if (lines.length > MAX_IMPORT_ITEMS) throw new Error(`一次最多上传 ${MAX_IMPORT_ITEMS} 个完整节点`);
 	return lines.map((content, index) => {
 		if (new TextEncoder().encode(content).length > MAX_TEMPLATE_LINE_BYTES) throw new Error(`完整节点第 ${index + 1} 行不能超过 16 KB`);
 		if (!SUPPORTED_PROTOCOL.test(content)) throw new Error(`完整节点第 ${index + 1} 行不是支持的节点链接`);
@@ -195,15 +227,32 @@ export function normalizeDirectNodes(payload, createdAt = new Date().toISOString
 
 export async function appendGeneratedNodes(kv, settings, payload) {
 	const isDirect = payload && (payload.node !== undefined || payload.nodes !== undefined || payload.content !== undefined);
-	const [existing, generated] = await Promise.all([readGeneratedNodes(kv), Promise.resolve(isDirect ? normalizeDirectNodes(payload) : generateNodesFromEndpoint(settings, payload))]);
+	const [existing, generated] = await Promise.all([readGeneratedNodes(kv), Promise.resolve(isDirect ? normalizeDirectNodes(payload) : generateNodesFromEndpoints(settings, payload))]);
 	const contents = new Set(existing.map(node => node.content));
-	const added = generated.filter(node => !contents.has(node.content));
+	const added = [];
+	let duplicateCount = 0;
+	for (const node of generated) {
+		if (contents.has(node.content)) duplicateCount += 1;
+		else {
+			contents.add(node.content);
+			added.push(node);
+		}
+	}
 	if (existing.length + added.length > MAX_NODES) throw new Error(`API 订阅最多保存 ${MAX_NODES} 个节点`);
 	const serialized = JSON.stringify([...existing, ...added]);
 	const bytes = new TextEncoder().encode(serialized).length;
 	if (bytes > MAX_STORED_BYTES) throw new Error('API 订阅节点数据已达到 20 MB 上限，请删除部分节点后重试');
 	if (added.length) await kv.put(NODES_KEY, serialized);
-	return { added, duplicateCount: generated.length - added.length, total: existing.length + added.length, bytes, mode: isDirect ? 'direct' : 'template' };
+	return { added, duplicateCount, total: existing.length + added.length, bytes, mode: isDirect ? 'direct' : 'template' };
+}
+
+function keyValueInput(entries) {
+	const input = Object.fromEntries(entries);
+	for (const key of ['address', 'port', 'node', 'nodes']) {
+		const values = entries.getAll(key);
+		if (values.length > 1) input[key] = values;
+	}
+	return input;
 }
 
 export async function handlePublicNodeImport(request, env, url = new URL(request.url)) {
@@ -212,12 +261,12 @@ export async function handlePublicNodeImport(request, env, url = new URL(request
 	try {
 		const contentType = request.headers.get('Content-Type') || '';
 		const input = request.method === 'GET'
-			? Object.fromEntries(url.searchParams)
+			? keyValueInput(url.searchParams)
 			: contentType.includes('application/json')
-				? await request.json()
+				? await request.json().then(value => Array.isArray(value) ? { addresses: value } : value)
 				: contentType.includes('text/plain')
 					? { node: await request.text() }
-					: Object.fromEntries(await request.formData());
+					: keyValueInput(await request.formData());
 		const settings = await readGeneratedNodeSettings(env.KV);
 		const token = String(input.token || request.headers.get('X-API-Token') || '');
 		if (!settings.token || token !== settings.token) return jsonResponse({ ok: false, message: 'API Token 无效' }, 401);
