@@ -328,6 +328,14 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = async input => {
 		const url = String(input);
+		if (url.startsWith('http://ip-api.com/json/')) {
+			return new Response(JSON.stringify({
+				country: '日本',
+				city: 'Chiyoda City',
+				org: 'PCCW Global Japan corporation.',
+				as: 'AS31713 Gateway Communications'
+			}), { headers: { 'Content-Type': 'application/json' } });
+		}
 		if (url.startsWith('https://api.telegram.org/')) {
 			telegramMessages.push(new URL(url).searchParams.get('text'));
 			return new Response('{"ok":true}', { headers: { 'Content-Type': 'application/json' } });
@@ -336,7 +344,9 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 	};
 	try {
 		const ctx = { waitUntil(task) { pending.push(task); } };
-		const imported = await worker.fetch(new Request(origin + '/api/import?token=abcdefghijklmnop&address=notify.example.com&port=443'), env, ctx);
+		const imported = await worker.fetch(new Request(origin + '/api/import?token=abcdefghijklmnop&address=notify.example.com&port=443', {
+			headers: { 'CF-Connecting-IP': '203.0.113.10', 'User-Agent': 'api-client/1.0' }
+		}), env, ctx);
 		assert.equal(imported.status, 201);
 		const login = await worker.fetch(new Request(origin + '/api/login', {
 			method: 'POST',
@@ -346,7 +356,13 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 		const cookie = login.headers.get('Set-Cookie').split(';')[0];
 		const saved = await worker.fetch(new Request(origin + '/', {
 			method: 'POST',
-			headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'text/plain;charset=UTF-8' },
+			headers: {
+				Origin: origin,
+				Cookie: cookie,
+				'Content-Type': 'text/plain;charset=UTF-8',
+				'CF-Connecting-IP': '198.51.100.20',
+				'User-Agent': 'admin-browser/1.0'
+			},
 			body: 'vless://saved@main.example.com:443#Saved'
 		}), env, ctx);
 		assert.equal(saved.status, 200);
@@ -355,14 +371,14 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 		assert.ok(apiMessage);
 		assert.match(apiMessage, /API 订阅节点: 1 个/);
 		assert.match(apiMessage, /本次新增: 1 个/);
-		assert.match(apiMessage, /数据大小: \d+ 字节/);
 		assert.match(apiMessage, /调用方式: 地址模板/);
-		assert.match(apiMessage, /操作 IP: Unknown/);
+		assert.doesNotMatch(apiMessage, /数据大小:/);
+		assert.match(apiMessage, /^#API 订阅已修改\nIP: 203\.0\.113\.10\n国家: 日本\n城市: Chiyoda City\n组织: PCCW Global Japan corporation\.\nASN: AS31713 Gateway Communications\nUA: api-client\/1\.0\n域名: notify\.example\.com/m);
 		const mainMessage = telegramMessages.find(message => message.includes('#主订阅已修改'));
 		assert.ok(mainMessage);
 		assert.match(mainMessage, /节点与订阅源: 1 行/);
-		assert.match(mainMessage, /数据大小: \d+ 字节/);
-		assert.match(mainMessage, /操作 IP: Unknown/);
+		assert.doesNotMatch(mainMessage, /数据大小:/);
+		assert.match(mainMessage, /^#主订阅已修改\nIP: 198\.51\.100\.20\n国家: 日本\n城市: Chiyoda City\n组织: PCCW Global Japan corporation\.\nASN: AS31713 Gateway Communications\nUA: admin-browser\/1\.0\n域名: notify\.example\.com/m);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

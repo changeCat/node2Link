@@ -64,10 +64,8 @@ export default {
 					if (result.added > 0) queueTelegram(ctx, sendActionMessage(runtime, 'API 订阅已修改', [
 						`API 订阅节点: ${result.total} 个`,
 						`本次新增: ${result.added} 个`,
-						`数据大小: ${result.bytes} 字节`,
-						`调用方式: ${result.mode === 'direct' ? '完整节点' : '地址模板'}`,
-						`操作 IP: ${request.headers.get('CF-Connecting-IP') || 'Unknown'}`
-					]));
+						`调用方式: ${result.mode === 'direct' ? '完整节点' : '地址模板'}`
+					], request));
 				} catch (error) { console.error('读取 API 导入结果失败:', error); }
 			}
 			return response;
@@ -965,33 +963,43 @@ function shouldSendSubscriptionNotification(request) {
 }
 
 async function sendMessage(runtime, subscriptionName, ip, details = {}) {
-	if (runtime.BotToken !== '' && runtime.ChatID !== '') {
-		let msg = "";
-		const title = `#获取订阅 ${escapeHTML(subscriptionName)}`;
-		const requestDetails = `UA: ${escapeHTML(details.userAgent || 'Unknown')}\n域名: ${escapeHTML(details.hostname || 'Unknown')}`;
-		const response = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN`);
-		if (response.status == 200) {
-			const ipInfo = await response.json();
-			msg = `${title}\nIP: ${escapeHTML(ip || 'Unknown')}\n国家: ${escapeHTML(ipInfo.country)}\n城市: ${escapeHTML(ipInfo.city)}\n组织: ${escapeHTML(ipInfo.org)}\nASN: ${escapeHTML(ipInfo.as)}\n${requestDetails}`;
-		} else {
-			msg = `${title}\nIP: ${escapeHTML(ip || 'Unknown')}\n${requestDetails}`;
-		}
-
-		let url = "https://api.telegram.org/bot" + runtime.BotToken + "/sendMessage?chat_id=" + runtime.ChatID + "&parse_mode=HTML&text=" + encodeURIComponent(msg);
-		return fetch(url, {
-			method: 'get',
-			headers: {
-				'Accept': 'text/html,application/xhtml+xml,application/xml;',
-				'Accept-Encoding': 'gzip, deflate, br',
-				'User-Agent': 'Mozilla/5.0 Chrome/90.0.4430.72'
-			}
-		});
-	}
+	return sendRequestMessage(runtime, `获取订阅 ${subscriptionName}`, ip, details);
 }
 
-async function sendActionMessage(runtime, title, detailLines = []) {
+async function sendActionMessage(runtime, title, detailLines = [], request) {
+	const url = request ? new URL(request.url) : null;
+	return sendRequestMessage(runtime, title, request?.headers.get('CF-Connecting-IP'), {
+		userAgent: request?.headers.get('User-Agent') || 'Unknown',
+		hostname: url?.hostname || 'Unknown'
+	}, detailLines);
+}
+
+async function sendRequestMessage(runtime, title, ip, details = {}, detailLines = []) {
 	if (!runtime.BotToken || !runtime.ChatID) return;
-	const text = [`#${title}`, ...detailLines].map(escapeHTML).join('\n');
+	const sourceLines = [`IP: ${ip || 'Unknown'}`];
+	if (ip && ip !== 'Unknown') {
+		try {
+			const response = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN`);
+			if (response.ok) {
+				const ipInfo = await response.json();
+				sourceLines.push(
+					`国家: ${ipInfo.country || 'Unknown'}`,
+					`城市: ${ipInfo.city || 'Unknown'}`,
+					`组织: ${ipInfo.org || 'Unknown'}`,
+					`ASN: ${ipInfo.as || 'Unknown'}`
+				);
+			}
+		} catch (error) {
+			console.error('查询 IP 信息失败:', error);
+		}
+	}
+	const text = [
+		`#${title}`,
+		...sourceLines,
+		`UA: ${details.userAgent || 'Unknown'}`,
+		`域名: ${details.hostname || 'Unknown'}`,
+		...detailLines
+	].map(escapeHTML).join('\n');
 	const url = 'https://api.telegram.org/bot' + runtime.BotToken + '/sendMessage?chat_id=' + runtime.ChatID + '&parse_mode=HTML&text=' + encodeURIComponent(text);
 	return fetch(url, { method: 'get', headers: { 'Accept': 'application/json', 'User-Agent': 'Node2Link/' + APP_VERSION } });
 }
@@ -1272,10 +1280,8 @@ async function KV(request, env, txt = 'ADD.txt', mainSubscriptionId, runtime, ct
 				}
 				await Promise.all(writes);
 				queueTelegram(ctx, sendActionMessage(runtime, '主订阅已修改', [
-					`节点与订阅源: ${metadata.lines} 行`,
-					`数据大小: ${metadata.bytes} 字节`,
-					`操作 IP: ${request.headers.get('CF-Connecting-IP') || 'Unknown'}`
-				]));
+					`节点与订阅源: ${metadata.lines} 行`
+				], request));
 				return new Response(JSON.stringify({ ok: true, metadata }), {
 					headers: { "Content-Type": "application/json;charset=utf-8" }
 				});
