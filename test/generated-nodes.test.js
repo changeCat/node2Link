@@ -211,6 +211,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
+		API_SUBSCRIPTION_ENABLED: 'true',
 		REQUESTLOG: '0'
 	};
 	await env.KV.put('LINK.txt', 'vless://manual-id@manual.example.com:443#Manual');
@@ -239,6 +240,11 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /复制 URL/);
 	assert.match(apiPageHTML, /复制命令/);
 	assert.match(apiPageHTML, /address=\{\{address1\}\}.*address=\{\{address2\}\}/);
+	assert.match(apiPageHTML, /id="nodeExample"/);
+	assert.match(apiPageHTML, /data-build-node-url/);
+	assert.match(apiPageHTML, /粘贴并复制/);
+	assert.match(apiPageHTML, /'&node='\+encodeURIComponent\(node\)/);
+	assert.match(apiPageHTML, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
 	assert.match(apiPageHTML, /--data-binary "\{\{node1\}\}\\n\{\{node2\}\}"/);
 	assert.match(apiPageHTML, /id="directExample"/);
 	assert.ok(apiPageHTML.indexOf('class="quick-api"') < apiPageHTML.indexOf('id="saveSettings"'));
@@ -311,6 +317,138 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.equal(remaining.length, 2);
 });
 
+test('分享可保存上游订阅链接，并在访问生成链接时合并上游节点', async () => {
+	const origin = 'https://share.example.com';
+	const env = {
+		KV: new MemoryKV(),
+		ADMIN_USERNAME: 'admin',
+		ADMIN_PASSWORD: 'test-password',
+		SESSION_SECRET: 'test-session-secret',
+		API_SUBSCRIPTION_ENABLED: 'true',
+		REQUESTLOG: '0'
+	};
+	const ctx = { waitUntil() {} };
+	const dispatch = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, ctx);
+	const login = await dispatch('/api/login', {
+		method: 'POST',
+		headers: { Origin: origin, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ username: 'admin', password: 'test-password' })
+	});
+	const cookie = login.headers.get('Set-Cookie').split(';')[0];
+	const apiHeaders = { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' };
+
+	const directNode = 'vless://direct@direct.example.com:443#Direct';
+	const upstreamURL = 'https://upstream.example.com/subscription';
+	const createdResponse = await dispatch('/api/shares', {
+		method: 'POST',
+		headers: apiHeaders,
+		body: JSON.stringify({
+			name: '混合分享',
+			content: [directNode, upstreamURL, upstreamURL].join('\n')
+		})
+	});
+	assert.equal(createdResponse.status, 201);
+	const created = (await createdResponse.json()).share;
+	assert.equal(created.nodeCount, 1);
+	assert.equal(created.sourceCount, 1);
+	assert.equal(created.content, [directNode, upstreamURL].join('\n'));
+	const clashURL = 'https://upstream.example.com/mihomo';
+	const singboxURL = 'https://upstream.example.com/singbox';
+	const structuredResponse = await dispatch('/api/shares', {
+		method: 'POST',
+		headers: apiHeaders,
+		body: JSON.stringify({ name: '专属格式分享', content: [clashURL, singboxURL].join('\n') })
+	});
+	assert.equal(structuredResponse.status, 201);
+	const structured = (await structuredResponse.json()).share;
+
+	const invalidResponse = await dispatch('/api/shares', {
+		method: 'POST',
+		headers: apiHeaders,
+		body: JSON.stringify({ name: '无效分享', content: 'ftp://upstream.example.com/subscription' })
+	});
+	assert.equal(invalidResponse.status, 400);
+	assert.match((await invalidResponse.json()).message, /节点或订阅链接/);
+
+	const upstreamNode = 'trojan://upstream@edge.example.com:443#Upstream';
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async input => {
+		const requestURL = input instanceof Request ? input.url : String(input);
+		if (requestURL === upstreamURL) return new Response(upstreamNode);
+		if (requestURL === clashURL) return new Response('proxy-providers:\n  provider: {type: http, url: https://provider.example.com/nodes}');
+		if (requestURL === singboxURL) return new Response('{"outbounds":[{"type":"shadowsocks","tag":"proxy"}]}');
+		if (requestURL.startsWith('https://SUBAPI.cmliussss.net/sub?')) {
+			const convertedNodes = 'ss://converted-mihomo#Mihomo\ntrojan://converted-singbox@singbox.example.com:443#Singbox';
+			return new Response(Buffer.from(convertedNodes).toString('base64'));
+		}
+		return originalFetch(input);
+	};
+	try {
+		const encoded = await (await dispatch(`/s/${created.id}?base64`, {
+			headers: { 'User-Agent': 'v2rayN' }
+		})).text();
+		const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+		assert.match(decoded, /direct\.example\.com:443/);
+		assert.match(decoded, /edge\.example\.com:443/);
+		const structuredEncoded = await (await dispatch(`/s/${structured.id}?base64`, {
+			headers: { 'User-Agent': 'v2rayN' }
+		})).text();
+		const structuredDecoded = Buffer.from(structuredEncoded, 'base64').toString('utf8');
+		assert.match(structuredDecoded, /converted-mihomo/);
+		assert.match(structuredDecoded, /singbox\.example\.com:443/);
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+
+	const shareHTML = await (await dispatch('/shares', { headers: { Cookie: cookie } })).text();
+	assert.match(shareHTML, /节点与订阅源/);
+	assert.match(shareHTML, /支持 HTTP\/HTTPS 订阅链接/);
+	assertInlineScriptsParse(shareHTML);
+});
+
+test('API 订阅默认关闭并隐藏页面、接口、节点来源和主订阅附加内容', async () => {
+	const origin = 'https://disabled.example.com';
+	const env = {
+		KV: new MemoryKV(),
+		ADMIN_USERNAME: 'admin',
+		ADMIN_PASSWORD: 'test-password',
+		SESSION_SECRET: 'test-session-secret',
+		REQUESTLOG: '0'
+	};
+	await env.KV.put('LINK.txt', 'vless://manual@manual.example.com:443#Manual');
+	await appendGeneratedNodes(env.KV, settings, { address: 'api.example.com', port: 8443 });
+	const ctx = { waitUntil() {} };
+	const dispatch = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, ctx);
+	const login = await dispatch('/api/login', {
+		method: 'POST',
+		headers: { Origin: origin, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ username: 'admin', password: 'test-password' })
+	});
+	const cookie = login.headers.get('Set-Cookie').split(';')[0];
+	const authenticatedHeaders = { Cookie: cookie };
+
+	const rootResponse = await dispatch('/', { headers: authenticatedHeaders });
+	const rootHTML = await rootResponse.text();
+	assert.doesNotMatch(rootHTML, /href="\/api-subscriptions"/);
+	const mainPath = rootHTML.match(/\/s\/[A-Za-z0-9_-]{12,64}/)?.[0];
+	assert.ok(mainPath);
+	const decoded = Buffer.from(await (await dispatch(mainPath + '?base64')).text(), 'base64').toString('utf8');
+	assert.match(decoded, /manual\.example\.com:443/);
+	assert.doesNotMatch(decoded, /api\.example\.com:8443/);
+
+	assert.equal((await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).status, 404);
+	assert.equal((await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).status, 404);
+	assert.equal((await dispatch('/api/import?token=abcdefghijklmnop&address=new.example.com')).status, 404);
+
+	const candidates = await (await dispatch('/api/node-candidates', { headers: authenticatedHeaders })).json();
+	assert.deepEqual(candidates.nodes.map(node => node.source), ['main']);
+	const shareHTML = await (await dispatch('/shares', { headers: authenticatedHeaders })).text();
+	assert.doesNotMatch(shareHTML, /href="\/api-subscriptions"/);
+	assert.doesNotMatch(shareHTML, /option value="api"/);
+	assert.doesNotMatch(shareHTML, /API 订阅节点/);
+	assertInlineScriptsParse(shareHTML);
+});
+
 test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', async () => {
 	const origin = 'https://notify.example.com';
 	const env = {
@@ -318,6 +456,7 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
+		API_SUBSCRIPTION_ENABLED: 'true',
 		TGTOKEN: '123:abc',
 		TGID: '456',
 		REQUESTLOG: '0'
