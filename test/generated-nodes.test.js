@@ -231,7 +231,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /API 订阅/);
 	assert.match(apiPageHTML, /模板使用样例/);
 	assert.match(apiPageHTML, /API 调用/);
-	assert.match(apiPageHTML, /原始节点无需转码/);
+	assert.match(apiPageHTML, /原始 vless:\/\/ 节点无需转码/);
 	assert.doesNotMatch(apiPageHTML, /class="placeholder-help"/);
 	assert.match(apiPageHTML, /\{\{address\}\}<\/code>域名、IPv4 或 IPv6/);
 	assert.match(apiPageHTML, /\{\{port\}\}<\/code>API 传入的端口/);
@@ -240,11 +240,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /复制 URL/);
 	assert.match(apiPageHTML, /复制命令/);
 	assert.match(apiPageHTML, /address=\{\{address1\}\}.*address=\{\{address2\}\}/);
-	assert.match(apiPageHTML, /id="nodeExample"/);
-	assert.match(apiPageHTML, /data-build-node-url/);
-	assert.match(apiPageHTML, /粘贴并复制/);
-	assert.match(apiPageHTML, /'&node='\+encodeURIComponent\(node\)/);
-	assert.match(apiPageHTML, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+	assert.match(apiPageHTML, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
 	assert.match(apiPageHTML, /--data-binary "\{\{node1\}\}\\n\{\{node2\}\}"/);
 	assert.match(apiPageHTML, /id="directExample"/);
 	assert.ok(apiPageHTML.indexOf('class="quick-api"') < apiPageHTML.indexOf('id="saveSettings"'));
@@ -295,7 +291,11 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.ok(decoded.indexOf('manual.example.com:443') < decoded.indexOf('edge.example.com:8443'));
 
 	const directNode = 'vless://direct-id@direct.example.com:443?security=tls#Direct';
-	const directImport = await dispatch(`/api/import?token=${replacementToken}&node=${encodeURIComponent(directNode)}`);
+	const directImport = await dispatch('/api/import', {
+		method: 'POST',
+		headers: { 'X-API-Token': replacementToken, 'Content-Type': 'text/plain;charset=UTF-8' },
+		body: directNode
+	});
 	assert.equal(directImport.status, 201);
 	assert.equal((await directImport.json()).mode, 'direct');
 	const decodedWithDirect = Buffer.from(await (await dispatch(mainPath + '?base64')).text(), 'base64').toString('utf8');
@@ -372,9 +372,13 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 
 	const upstreamNode = 'trojan://upstream@edge.example.com:443#Upstream';
 	const originalFetch = globalThis.fetch;
+	let upstreamRequest;
 	globalThis.fetch = async input => {
 		const requestURL = input instanceof Request ? input.url : String(input);
-		if (requestURL === upstreamURL) return new Response(upstreamNode);
+		if (requestURL === upstreamURL) {
+			upstreamRequest = input;
+			return new Response(upstreamNode);
+		}
 		if (requestURL === clashURL) return new Response('proxy-providers:\n  provider: {type: http, url: https://provider.example.com/nodes}');
 		if (requestURL === singboxURL) return new Response('{"outbounds":[{"type":"shadowsocks","tag":"proxy"}]}');
 		if (requestURL.startsWith('https://SUBAPI.cmliussss.net/sub?')) {
@@ -385,11 +389,23 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 	};
 	try {
 		const encoded = await (await dispatch(`/s/${created.id}?base64`, {
-			headers: { 'User-Agent': 'v2rayN' }
+			headers: {
+				'User-Agent': 'v2rayN',
+				Cookie: 'private=session',
+				Authorization: 'Bearer private',
+				'CF-Connecting-IP': '203.0.113.20'
+			}
 		})).text();
 		const decoded = Buffer.from(encoded, 'base64').toString('utf8');
 		assert.match(decoded, /direct\.example\.com:443/);
 		assert.match(decoded, /edge\.example\.com:443/);
+		assert.ok(upstreamRequest instanceof Request);
+		assert.equal(upstreamRequest.method, 'GET');
+		assert.equal(upstreamRequest.signal.aborted, false);
+		assert.match(upstreamRequest.headers.get('User-Agent'), /^v2rayN\/6\.45 cmliu\/CF-Workers-SUB/);
+		assert.equal(upstreamRequest.headers.has('Cookie'), false);
+		assert.equal(upstreamRequest.headers.has('Authorization'), false);
+		assert.equal(upstreamRequest.headers.has('CF-Connecting-IP'), false);
 		const structuredEncoded = await (await dispatch(`/s/${structured.id}?base64`, {
 			headers: { 'User-Agent': 'v2rayN' }
 		})).text();
