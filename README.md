@@ -76,7 +76,7 @@ Root directory: 留空
 7. 在“订阅请求”中分别查看主订阅及当前分享订阅近 30 天的请求记录；已删除分享不再展示；
 8. 分享内容修改后原链接保持不变；删除后该链接失效（Cloudflare KV 跨区域同步可能有短暂延迟）。
 
-分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前配置的订阅转换后端处理，因此需要保证上游地址和至少一个转换后端可访问。
+分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前配置的订阅转换后端处理，因此需要保证上游地址和至少一个转换后端可访问。上游订阅和转换请求均设有 8 秒超时；不可达或限制 Cloudflare 访问的提供商会被跳过，避免拖到客户端连接超时。
 
 ### API 订阅调用
 
@@ -119,13 +119,7 @@ curl -X POST "https://sub.example.com/api/import" \
   --data '{"addresses":[{"address":"cdn.example.com","port":443},{"address":"1.1.1.1","port":2053}]}'
 ```
 
-完整节点也可以通过 GET 的 `node` 参数上传。协议层仍要求对节点内容进行 URL 编码，尤其是其中的 `?`、`&` 和 `#`；管理页可点击“粘贴并复制”，粘贴原始节点后自动完成编码并复制最终 URL，无需手工转换：
-
-```text
-https://sub.example.com/api/import?token=<API_TOKEN>&node=vless%3A%2F%2Fuuid%40example.com%3A443%3Fsecurity%3Dtls%23API%E8%8A%82%E7%82%B9
-```
-
-也可以通过 `POST text/plain` 直接上传一个或多个完整节点。请求正文可原样填写 `vless://...`，无需 URL 编码；Token 通过 `X-API-Token` 请求头传入：
+完整节点仅通过 `POST text/plain` 上传。请求正文可原样填写 `vless://...`，无需 URL 编码；Token 通过 `X-API-Token` 请求头传入：
 
 ```bash
 curl -X POST "https://sub.example.com/api/import" \

@@ -246,11 +246,14 @@ export async function appendGeneratedNodes(kv, settings, payload) {
 	return { added, duplicateCount, total: existing.length + added.length, bytes, mode: isDirect ? 'direct' : 'template' };
 }
 
-function keyValueInput(entries) {
-	const input = Object.fromEntries(entries);
-	for (const key of ['address', 'port', 'node', 'nodes']) {
+function keyValueInput(entries, allowedKeys = ['address', 'port', 'node', 'nodes', 'content']) {
+	const input = {};
+	const token = entries.get('token');
+	if (token !== null) input.token = token;
+	for (const key of allowedKeys) {
 		const values = entries.getAll(key);
-		if (values.length > 1) input[key] = values;
+		if (values.length === 1) input[key] = values[0];
+		else if (values.length > 1) input[key] = values;
 	}
 	return input;
 }
@@ -261,7 +264,7 @@ export async function handlePublicNodeImport(request, env, url = new URL(request
 	try {
 		const contentType = request.headers.get('Content-Type') || '';
 		const input = request.method === 'GET'
-			? keyValueInput(url.searchParams)
+			? keyValueInput(url.searchParams, ['address', 'port'])
 			: contentType.includes('application/json')
 				? await request.json().then(value => Array.isArray(value) ? { addresses: value } : value)
 				: contentType.includes('text/plain')
