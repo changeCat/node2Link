@@ -8,7 +8,7 @@ import {
 	normalizeGeneratedNodeSettings,
 	readGeneratedNodes
 } from '../src/worker/storage/generated-nodes.js';
-import worker from '../src/worker/app.js';
+import worker, { normalizeV2rayNSubscription } from '../src/worker/app.js';
 
 class MemoryKV {
 	constructor() { this.values = new Map(); }
@@ -32,6 +32,35 @@ function assertInlineScriptsParse(html) {
 		if (match[1].trim()) assert.doesNotThrow(() => new Function(match[1]));
 	}
 }
+
+test('v2rayN 兼容处理补全 AnyTLS SNI 并过滤不支持的 SS TLS 混淆', () => {
+	const normalSs = 'ss://YWVzLTEyOC1nY206cGFzcw@normal.example.com:8388#Normal';
+	const httpObfs = 'ss://YWVzLTEyOC1nY206cGFzcw@http.example.com:8388?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dcdn.example.com#HTTP';
+	const tlsObfs = 'ss://YWVzLTEyOC1nY206cGFzcw@tls.example.com:8388?plugin=obfs-local%3Bobfs%3Dtls%3Bobfs-host%3Dcdn.example.com#TLS';
+	const simpleTlsObfs = 'ss://YWVzLTEyOC1nY206cGFzcw@simple.example.com:8388?plugin=simple-obfs%3Bobfs%3Dtls#Simple';
+	const anytlsPeer = 'anytls://secret@anytls.example.com:443?peer=cover.example.com&alpn=h2%2Chttp%2F1.1#AnyTLS';
+	const anytlsSni = 'anytls://secret@ready.example.com:443?peer=ignored.example.com&sni=ready.example.com#Ready';
+
+	const result = normalizeV2rayNSubscription([
+		normalSs,
+		httpObfs,
+		tlsObfs,
+		simpleTlsObfs,
+		anytlsPeer,
+		anytlsSni
+	].join('\n'));
+
+	assert.equal(result.filteredSsObfsTls, 2);
+	assert.equal(result.normalizedAnytlsSni, 1);
+	assert.match(result.content, /normal\.example\.com/);
+	assert.match(result.content, /http\.example\.com/);
+	assert.doesNotMatch(result.content, /@tls\.example\.com/);
+	assert.doesNotMatch(result.content, /@simple\.example\.com/);
+	const anytlsLines = result.content.split('\n').filter(line => line.startsWith('anytls://')).map(line => new URL(line));
+	assert.equal(anytlsLines[0].searchParams.get('peer'), 'cover.example.com');
+	assert.equal(anytlsLines[0].searchParams.get('sni'), 'cover.example.com');
+	assert.equal(anytlsLines[1].searchParams.get('sni'), 'ready.example.com');
+});
 
 test('address 域名会替换地址、端口和固定名称', () => {
 	const [node] = generateNodesFromEndpoint(settings, { address: 'CDN.Example.COM.', port: '8443' }, '2026-01-01T00:00:00.000Z');
@@ -399,7 +428,12 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		if (requestURL === singboxURL) return new Response('{"outbounds":[{"type":"shadowsocks","tag":"proxy"}]}');
 		if (requestURL.startsWith('https://SUBAPI.cmliussss.net/sub?')) {
 			converterSources.push(new URL(requestURL).searchParams.get('url'));
-			const convertedNodes = 'ss://converted-mihomo#Mihomo\ntrojan://converted-singbox@singbox.example.com:443#Singbox';
+			const convertedNodes = [
+				'ss://converted-mihomo#Mihomo',
+				'trojan://converted-singbox@singbox.example.com:443#Singbox',
+				'ss://YWVzLTEyOC1nY206cGFzcw@unsupported.example.com:8388?plugin=obfs-local%3Bobfs%3Dtls%3Bobfs-host%3Dcdn.example.com#Unsupported',
+				'anytls://secret@anytls.example.com:443?peer=cover.example.com&insecure=1#AnyTLS'
+			].join('\n');
 			return new Response(Buffer.from(convertedNodes).toString('base64'));
 		}
 		if (requestURL.startsWith('https://custom.example.com/xray?')) {
@@ -427,13 +461,27 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		assert.equal(upstreamRequest.headers.has('Cookie'), false);
 		assert.equal(upstreamRequest.headers.has('Authorization'), false);
 		assert.equal(upstreamRequest.headers.has('CF-Connecting-IP'), false);
-		const structuredEncoded = await (await dispatch(`/s/${structured.id}?base64`, {
+		const structuredSubscriptionResponse = await dispatch(`/s/${structured.id}?base64`, {
 			headers: { 'User-Agent': 'v2rayN' }
-		})).text();
+		});
+		const structuredEncoded = await structuredSubscriptionResponse.text();
 		const structuredDecoded = Buffer.from(structuredEncoded, 'base64').toString('utf8');
 		assert.match(structuredDecoded, /converted-mihomo/);
 		assert.match(structuredDecoded, /singbox\.example\.com:443/);
+		assert.doesNotMatch(structuredDecoded, /unsupported\.example\.com/);
+		const anytlsLine = structuredDecoded.split('\n').find(line => line.startsWith('anytls://'));
+		assert.equal(new URL(anytlsLine).searchParams.get('sni'), 'cover.example.com');
+		assert.equal(structuredSubscriptionResponse.headers.get('X-Node2Link-Filtered'), 'ss-obfs-tls=1');
+		assert.equal(structuredSubscriptionResponse.headers.get('X-Node2Link-Normalized'), 'anytls-sni=1');
 		assert.deepEqual(converterSources, [[clashURL, singboxURL].join('|')]);
+
+		const otherClientEncoded = await (await dispatch(`/s/${structured.id}?base64`, {
+			headers: { 'User-Agent': 'v2rayNG' }
+		})).text();
+		const otherClientDecoded = Buffer.from(otherClientEncoded, 'base64').toString('utf8');
+		assert.match(otherClientDecoded, /unsupported\.example\.com/);
+		const otherAnytlsLine = otherClientDecoded.split('\n').find(line => line.startsWith('anytls://'));
+		assert.equal(new URL(otherAnytlsLine).searchParams.get('sni'), null);
 
 		const persistedSettings = JSON.parse(await env.KV.get('NODE2LINK.settings.json') || '{}');
 		await env.KV.put('NODE2LINK.settings.json', JSON.stringify({
@@ -446,7 +494,7 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		})).text();
 		assert.match(Buffer.from(customEncoded, 'base64').toString('utf8'), /custom\.example\.com:443/);
 		assert.deepEqual(customConverterSources, [[clashURL, singboxURL].join('\n')]);
-		assert.equal(converterSources.length, 1);
+		assert.equal(converterSources.length, 2);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

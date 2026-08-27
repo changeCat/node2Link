@@ -231,7 +231,12 @@ async function serveSubscription(request, env, ctx, runtime, sourceData, access,
 
 		if (includeWarp && env.WARP) converterSourceURL += '|' + (await ADD(env.WARP)).join('|');
 		const text = new TextDecoder().decode(new TextEncoder().encode(requestData));
-		const result = [...new Set(text.split('\n'))].join('\n');
+		let result = [...new Set(text.split('\n'))].join('\n');
+		let compatibility = null;
+		if (subscriptionFormat === 'base64' && isV2rayNUserAgent(userAgentHeader)) {
+			compatibility = normalizeV2rayNSubscription(result);
+			result = compatibility.content;
+		}
 		let base64Data;
 		try { base64Data = btoa(result); }
 		catch (error) { base64Data = encodeBase64(result); }
@@ -246,6 +251,8 @@ async function serveSubscription(request, env, ctx, runtime, sourceData, access,
 		if (!userAgent.includes('mozilla')) {
 			responseHeaders['Content-Disposition'] = `attachment; filename*=utf-8''${encodeURIComponent(effectiveSubscriptionName)}`;
 		}
+		if (compatibility?.filteredSsObfsTls) responseHeaders['X-Node2Link-Filtered'] = `ss-obfs-tls=${compatibility.filteredSsObfsTls}`;
+		if (compatibility?.normalizedAnytlsSni) responseHeaders['X-Node2Link-Normalized'] = `anytls-sni=${compatibility.normalizedAnytlsSni}`;
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = usedConverter;
 		if (subscriptionFormat === 'base64') return new Response(base64Data, { headers: responseHeaders });
 
@@ -954,6 +961,57 @@ function encodeBase64(data) {
 	}
 	const padding = 3 - (binary.length % 3 || 3);
 	return base64.slice(0, base64.length - padding) + '=='.slice(0, padding);
+}
+
+function isV2rayNUserAgent(value) {
+	return /(?:^|[^a-z0-9])v2rayn(?:$|[^a-z0-9])/i.test(String(value || ''));
+}
+
+export function normalizeV2rayNSubscription(content) {
+	let filteredSsObfsTls = 0;
+	let normalizedAnytlsSni = 0;
+	const lines = String(content || '').split('\n');
+	const compatibleLines = [];
+
+	for (const originalLine of lines) {
+		const line = originalLine.trim();
+		if (/^ss:\/\//i.test(line)) {
+			try {
+				const plugin = new URL(line).searchParams.get('plugin') || '';
+				const parts = plugin.split(';').map(part => part.trim().toLowerCase()).filter(Boolean);
+				const pluginName = parts[0] === 'simple-obfs' ? 'obfs-local' : parts[0];
+				if (pluginName === 'obfs-local' && parts.includes('obfs=tls')) {
+					filteredSsObfsTls += 1;
+					continue;
+				}
+			} catch (error) {
+				// 无法解析的节点保持原样，由客户端决定是否接受。
+			}
+		}
+
+		if (/^anytls:\/\//i.test(line)) {
+			try {
+				const parsed = new URL(line);
+				const peer = parsed.searchParams.get('peer');
+				if (peer && !parsed.searchParams.get('sni')) {
+					parsed.searchParams.set('sni', peer);
+					compatibleLines.push(parsed.toString());
+					normalizedAnytlsSni += 1;
+					continue;
+				}
+			} catch (error) {
+				// 无法解析的节点保持原样，由客户端决定是否接受。
+			}
+		}
+
+		compatibleLines.push(originalLine);
+	}
+
+	return {
+		content: compatibleLines.join('\n'),
+		filteredSsObfsTls,
+		normalizedAnytlsSni
+	};
 }
 
 
