@@ -225,6 +225,19 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.equal(login.status, 303);
 	const cookie = login.headers.get('Set-Cookie').split(';')[0];
 	const authenticatedHeaders = { Cookie: cookie };
+	const settingsHTML = await (await dispatch('/settings', { headers: authenticatedHeaders })).text();
+	assert.match(settingsHTML, /当前使用的转换后端/);
+	assert.match(settingsHTML, /id="activeConverterMode"/);
+	assert.match(settingsHTML, /id="activeConverterValue"/);
+	assert.match(settingsHTML, /当前使用的规则配置/);
+	assert.match(settingsHTML, /id="activeRuleMode"/);
+	assert.match(settingsHTML, /id="activeRuleValue"/);
+	assert.match(settingsHTML, /defaultConverterURLs/);
+	assert.match(settingsHTML, /defaultSubConfig/);
+	assert.match(settingsHTML, /urlInput\.addEventListener\('input',syncModes\)/);
+	assert.match(settingsHTML, /ruleURLInput\.addEventListener\('input',syncModes\)/);
+	assert.doesNotMatch(settingsHTML, /当前默认转换后端|当前默认规则配置|默认服务后端（仅默认模式使用）/);
+	assertInlineScriptsParse(settingsHTML);
 
 	const initial = await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json();
 	const apiPageHTML = await (await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).text();
@@ -373,6 +386,8 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 	const upstreamNode = 'trojan://upstream@edge.example.com:443#Upstream';
 	const originalFetch = globalThis.fetch;
 	let upstreamRequest;
+	const converterSources = [];
+	const customConverterSources = [];
 	globalThis.fetch = async input => {
 		const requestURL = input instanceof Request ? input.url : String(input);
 		if (requestURL === upstreamURL) {
@@ -382,8 +397,13 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		if (requestURL === clashURL) return new Response('proxy-providers:\n  provider: {type: http, url: https://provider.example.com/nodes}');
 		if (requestURL === singboxURL) return new Response('{"outbounds":[{"type":"shadowsocks","tag":"proxy"}]}');
 		if (requestURL.startsWith('https://SUBAPI.cmliussss.net/sub?')) {
+			converterSources.push(new URL(requestURL).searchParams.get('url'));
 			const convertedNodes = 'ss://converted-mihomo#Mihomo\ntrojan://converted-singbox@singbox.example.com:443#Singbox';
 			return new Response(Buffer.from(convertedNodes).toString('base64'));
+		}
+		if (requestURL.startsWith('https://custom.example.com/xray?')) {
+			customConverterSources.push(new URL(requestURL).searchParams.get('config'));
+			return new Response(Buffer.from('vless://custom@custom.example.com:443#Custom').toString('base64'));
 		}
 		return originalFetch(input);
 	};
@@ -412,6 +432,20 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		const structuredDecoded = Buffer.from(structuredEncoded, 'base64').toString('utf8');
 		assert.match(structuredDecoded, /converted-mihomo/);
 		assert.match(structuredDecoded, /singbox\.example\.com:443/);
+		assert.deepEqual(converterSources, [[clashURL, singboxURL].join('|')]);
+
+		const persistedSettings = JSON.parse(await env.KV.get('NODE2LINK.settings.json') || '{}');
+		await env.KV.put('NODE2LINK.settings.json', JSON.stringify({
+			...persistedSettings,
+			converterMode: 'custom',
+			customConverterURL: 'https://custom.example.com'
+		}));
+		const customEncoded = await (await dispatch(`/s/${structured.id}?base64`, {
+			headers: { 'User-Agent': 'v2rayN' }
+		})).text();
+		assert.match(Buffer.from(customEncoded, 'base64').toString('utf8'), /custom\.example\.com:443/);
+		assert.deepEqual(customConverterSources, [[clashURL, singboxURL].join('\n')]);
+		assert.equal(converterSources.length, 1);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
