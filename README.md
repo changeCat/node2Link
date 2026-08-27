@@ -76,7 +76,7 @@ Root directory: 留空
 7. 在“订阅请求”中分别查看主订阅及当前分享订阅近 30 天的请求记录；已删除分享不再展示；
 8. 分享内容修改后原链接保持不变；删除后该链接失效（Cloudflare KV 跨区域同步可能有短暂延迟）。
 
-分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前选择的转换后端处理；默认 Subconverter 可转换为 v2rayN 使用的节点订阅，自建 Sublink Worker 的 `/xray` 仅聚合原始节点或通用 Base64 订阅，因此使用自建服务时应填写提供商的原始节点、通用 Base64 或 Servers-only 链接。上游订阅和转换请求均设有 8 秒超时；不可达或限制 Cloudflare 访问的提供商会被跳过，避免拖到客户端连接超时。
+分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前选择的转换后端处理；默认 Subconverter 可转换为 v2rayN 使用的节点订阅，自建 Sublink Worker 的 `/xray` 仅聚合原始节点或通用 Base64 订阅，因此使用自建服务时应填写提供商的原始节点、通用 Base64 或 Servers-only 链接。v2rayN 获取 Base64 订阅时，项目会为只有 `peer` 的 AnyTLS 节点补充同值 `sni`，并过滤当前 v2rayN 无法解析的 `obfs-local;obfs=tls` Shadowsocks 节点；Clash/Mihomo、Sing-box 和其他客户端的结果保持原样。上游订阅和转换请求均设有 8 秒超时；不可达或限制 Cloudflare 访问的提供商会被跳过，避免拖到客户端连接超时。
 
 ### API 订阅调用
 
