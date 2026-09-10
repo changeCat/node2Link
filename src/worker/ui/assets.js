@@ -7,3 +7,8 @@ export function assetURL(name) {
 export function basePageStyles() {
 	return `@import url("${assetURL('base.css')}");`;
 }
+
+export function pageScript(name, data = {}) {
+	const json = JSON.stringify(data).replace(/</g, '\\u003c');
+	return `<script type="application/json" id="page-data-${name}">${json}</script><script src="${assetURL(name + '.js')}" defer></script>`;
+}

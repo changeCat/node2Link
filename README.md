@@ -2,6 +2,8 @@
 
 这是一个以 Cloudflare Pages Git 集成为主要部署方式的节点与订阅汇聚工具。管理端使用账号密码登录，不再使用 `域名/token` 或 `?token=` 进入管理页；`TOKEN` 只作为主订阅入口，确保已有设备无需修改订阅地址。
 
+模块划分、KV 一致性边界及新版存储的回滚说明见 [架构与数据兼容性](ARCHITECTURE.md)。现有 Pages Git 自动部署方式不变，无需新增绑定。
+
 ## 功能
 
 - 账号密码登录管理端，会话 Cookie 使用 `HttpOnly`、`Secure`、`SameSite=Strict`；
@@ -63,7 +65,7 @@ Root directory: 留空
 
 项目会将模块化 Worker 源码打包到 `dist/_worker.js`，公共 CSS、精简后的 Lucide 图标和 QRCode 放在 `dist/assets`。静态资源绕过 Worker 并由 Pages 缓存；管理页面、API 和订阅响应继续禁止缓存。
 
-分享列表只读取摘要索引，点击“修改”时才按 ID 读取完整节点内容；旧版 ID 索引会在首次访问时自动补充摘要。请求统计单次最多扫描最近 500 条事件。管理页面响应包含 `Server-Timing`，可在浏览器开发者工具中查看 Worker 总处理时间。
+分享列表优先使用记录 metadata 中的摘要，点击“修改”时才读取完整节点内容；旧索引缺失摘要时按需读取旧详情，不在 GET 中改写旧索引。请求统计单次最多扫描最近 500 条事件。管理页面响应包含 `Server-Timing`，可在浏览器开发者工具中查看 Worker 总处理时间。
 
 ## 使用方式
 
@@ -148,13 +150,13 @@ https://sub.example.com/s/<id>?loon     # Loon
 
 ## 数据与安全说明
 
-- 主节点保存在 `LINK.txt`；设置保存在 `NODE2LINK.settings.json`；API 订阅设置和节点分别保存在 `NODE2LINK.api-subscription.settings.json`、`NODE2LINK.api-subscription.nodes.json`；分享记录保存在 `NODE2LINK.share.*`；
+- 旧主节点、设置、API 节点和分享键继续兼容读取；新版主订阅、分区设置、API 节点与分享修改保存在 `NODE2LINK.v2.*`，API 模板与 Token 仍保存在 `NODE2LINK.api-subscription.settings.json`；完整键布局见架构文档；
 - API Token 是外部追加节点的写入凭证，请勿公开；如发生泄露，可在“API 订阅”页重新生成并保存，旧调用地址随即失效；
 - 分享 ID 使用加密安全随机数生成，无法从管理账号或节点内容推导；
 - 分享链接本身就是访问凭证，请只发送给需要的人；如发生泄露，可直接重置为新的随机链接；
-- 删除分享会删除对应 KV 内容，无法从管理页恢复；边缘节点可能在 KV 同步完成前短暂返回旧内容；
+- 删除分享会发布删除标记，使链接失效，无法从管理页恢复；历史记录仍保留，边缘节点可能在 KV 同步完成前短暂返回旧内容；
 - 修改 `ADMIN_PASSWORD` 或 `SESSION_SECRET` 会使已有登录会话立即失效，但不会改变订阅链接；
-- 每次保存主节点前会保留最近一版到 `LINK.backup.txt`，不是完整历史记录；
+- 新版主订阅正文与元数据保存在 `NODE2LINK.v2.main.*`，管理页继续提供最近一次保存版本恢复；旧 `LINK.txt` 与 `LINK.backup.txt` 保持兼容读取；
 - 转换非 Base64 格式时，节点来源会提交给已配置的转换服务，请使用你信任的服务；订阅响应及向转换服务发起的请求均带有禁止缓存指令，但转换服务本身仍需正确遵守这些指令。
 
 ## 致谢

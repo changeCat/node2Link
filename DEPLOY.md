@@ -2,6 +2,8 @@
 
 本项目以当前仓库的 `main` 分支为唯一代码主线，不再同步已经归档的上游仓库。GitHub 推送仍由 Cloudflare Pages 的 Git 集成自动部署。
 
+本次模块与存储重构不改变现有部署设置：已经使用 `npm run pages:build`、输出 `dist`、绑定 `KV` 的项目直接推送即可，不需要新增绑定或执行迁移命令。旧链接与数据继续兼容读取。新版期间的修改使用追加记录保存，回滚到不识别新格式的旧代码前请阅读 [架构与数据兼容性](ARCHITECTURE.md#校验与回滚)。
+
 ## 一、重构后的部署链路
 
 ```text
@@ -9,8 +11,9 @@ push main
   → Cloudflare Pages 拉取代码
   → npm ci 安装 package-lock.json 中的固定版本依赖
   → npm run pages:build
-  → 语法检查
+  → 全部源码语法与模块依赖检查、回归测试
   → 生成 dist/_worker.js 和 dist/assets/*
+  → 对构建产物运行页面、静态脚本和核心 API 冒烟检查
   → 全部通过后发布 dist
 ```
 

@@ -5,28 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import worker from '../dist/_worker.js';
 
-class MemoryKV {
-	constructor() {
-		this.values = new Map();
-	}
-	async get(key) {
-		return this.values.has(key) ? this.values.get(key).value : null;
-	}
-	async put(key, value, options = {}) {
-		this.values.set(key, { value: String(value), metadata: options.metadata });
-	}
-	async delete(key) {
-		this.values.delete(key);
-	}
-	async list(options = {}) {
-		const prefix = options.prefix || '';
-		const keys = [...this.values.entries()]
-			.filter(([key]) => key.startsWith(prefix))
-			.map(([name, entry]) => ({ name, metadata: entry.metadata }))
-			.slice(0, options.limit || 1000);
-		return { keys, list_complete: true, cursor: '' };
-	}
-}
+import { MemoryKV } from './lib/memory-kv.mjs';
 
 const distDirectory = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
 const port = Number(process.env.NODE2LINK_DEV_PORT || 8788);
@@ -35,7 +14,8 @@ const env = {
 	ADMIN_USERNAME: process.env.NODE2LINK_DEV_USERNAME || 'admin',
 	ADMIN_PASSWORD: process.env.NODE2LINK_DEV_PASSWORD || 'dev-password',
 	SESSION_SECRET: process.env.NODE2LINK_DEV_SESSION_SECRET || 'dev-session-secret',
-	REQUESTLOG: '0'
+	API_SUBSCRIPTION_ENABLED: process.env.API_SUBSCRIPTION_ENABLED || process.env.NODE2LINK_DEV_API_SUBSCRIPTION_ENABLED || 'false',
+	REQUESTLOG: process.env.NODE2LINK_DEV_REQUESTLOG || '0'
 };
 const mimeTypes = {
 	'.css': 'text/css;charset=utf-8',

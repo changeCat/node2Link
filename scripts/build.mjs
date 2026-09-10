@@ -8,6 +8,9 @@ const dist = new URL('dist/', root);
 const assets = new URL('dist/assets/', root);
 const pathOf = url => fileURLToPath(url);
 
+if (new URL('../', dist).href !== root.href || !pathOf(dist).endsWith('dist' + (process.platform === 'win32' ? '\\' : '/'))) {
+	throw new Error('Build output must remain inside this project');
+}
 await rm(dist, { recursive: true, force: true });
 await mkdir(assets, { recursive: true });
 await cp(new URL('public/', root), dist, { recursive: true });
@@ -27,7 +30,15 @@ await build({
 	legalComments: 'none'
 });
 
+const pageScripts = ['home', 'settings', 'generated-nodes', 'share-confirm', 'share-picker', 'shares', 'requests'];
+await Promise.all(pageScripts.map(name => build({
+ entryPoints: [pathOf(new URL('src/client/' + name + '.js', root))],
+ outfile: pathOf(new URL(name + '.js', assets)), bundle: true, format: 'iife',
+ platform: 'browser', target: 'es2020', minify: true, legalComments: 'none'
+})));
+
 const versionInputs = await Promise.all([
+ ...pageScripts.map(name => readFile(new URL(name + '.js', assets))),
 	readFile(new URL('base.css', assets)),
 	readFile(new URL('lucide.js', assets)),
 	readFile(new URL('qrcode.min.js', assets)),
