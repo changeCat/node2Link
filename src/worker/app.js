@@ -3,6 +3,8 @@ import { createRuntimeConfig, isSubscriptionTokenRequest } from './config.js';
 import { jsonResponse, textResponse, requestHasSameOrigin } from './http.js';
 import { readPersistedSettings } from './storage/settings.js';
 import { StorageError } from './storage/kv.js';
+import { RequestBodyError } from './request-body.js';
+import { isShareAvailable } from './domain/shares.js';
 import { clearSessionCookie, isAuthenticated } from './auth.js';
 import { serveSubscription } from './services/subscription.js';
 import { handleNodeCandidates } from './services/candidates.js';
@@ -25,7 +27,8 @@ export default {
 		try { return withServerTiming(await dispatch(request, env, ctx), startedAt); }
 		catch (error) {
 			console.error(JSON.stringify({ event: 'request.failed', type: error.name || 'Error' }));
-			return jsonResponse({ ok: false, message: error instanceof StorageError ? error.message : '服务器暂时无法处理请求' }, error instanceof StorageError ? 503 : 500);
+			const expected = error instanceof StorageError || error instanceof RequestBodyError;
+			return jsonResponse({ ok: false, message: expected ? error.message : '服务器暂时无法处理请求' }, expected ? error.status : 500);
 		}
 	}
 };
@@ -63,6 +66,7 @@ async function dispatch(request, env, ctx) {
 		if (!env.KV) return textResponse('分享链接不存在', 404);
 		const shared = await readShare(env.KV, shareId);
 		if (!shared) return textResponse('分享链接不存在或已被删除', 404);
+		if (!isShareAvailable(shared)) return textResponse('分享已暂停或已到期', 410);
 		return serveSubscription(request, env, ctx, runtime, shared.content, 'share', false, shareId, shared.name);
 	}
 

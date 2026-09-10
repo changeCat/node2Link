@@ -1,6 +1,7 @@
 import { jsonResponse, requestHasSameOrigin } from '../http.js';
 import { saveSettingsSections } from '../storage/settings.js';
 import { StorageError } from '../storage/kv.js';
+import { readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
 import { normalizeSublinkConverter } from '../adapters/converters.js';
 import { sanitizeSubscriptionName, sanitizePageTitle, normalizeBrowserIconURL, sanitizeSubscriptionToken, normalizeHTTPURL, normalizeDisplayFormats, DEFAULT_FILE_NAME, DEFAULT_PAGE_TITLE, LEGACY_DEFAULT_PAGE_TITLE, DEFAULT_SUB_CONFIG, DEFAULT_DISPLAY_FORMATS } from '../config.js';
 
@@ -8,7 +9,7 @@ export async function saveSettings(request, env, currentSettings) {
 	if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
 	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	try {
-		const payload = await request.json();
+		const payload = await readJSONBody(request, BODY_LIMITS.settings);
 		const section = ['display', 'entry', 'conversion', 'clients'].includes(payload.section) ? payload.section : 'all';
 		const settings = { ...currentSettings };
 
@@ -53,6 +54,6 @@ export async function saveSettings(request, env, currentSettings) {
 		await saveSettingsSections(env.KV, settings, section);
 		return jsonResponse({ ok: true, section, settings });
 	} catch (error) {
-		return jsonResponse({ ok: false, message: '保存失败：' + error.message }, error instanceof StorageError ? 503 : 400);
+		return jsonResponse({ ok: false, message: '保存失败：' + error.message }, error instanceof StorageError ? 503 : error instanceof RequestBodyError ? error.status : 400);
 	}
 }

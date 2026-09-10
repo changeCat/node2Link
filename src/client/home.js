@@ -1,4 +1,5 @@
 const pageData = JSON.parse(document.getElementById('page-data-home').textContent);
+var savedRevision = pageData.revision;
 var toastTimer;
 					var originalContent = "";
 					var undoStack = [];
@@ -309,10 +310,11 @@ var toastTimer;
 						button.disabled = true;
 						button.querySelector("span").textContent = "保存中";
 						setSaveState("正在保存…", "");
-						return fetch(window.location.href, { method: "POST", body: contentToSave, headers: { "Content-Type": "text/plain;charset=UTF-8" }, cache: "no-cache" })
-							.then(function (response) { if (!response.ok) throw new Error("HTTP " + response.status); return response.json(); })
+						return fetch(window.location.href, { method: "POST", body: contentToSave, headers: { "Content-Type": "text/plain;charset=UTF-8", ...(savedRevision ? { "X-Node2Link-Revision": savedRevision } : {}) }, cache: "no-cache" })
+							.then(function (response) { return response.json().then(function (result) { if (!response.ok) throw new Error(result.message || "HTTP " + response.status); return result; }); })
 							.then(function (result) {
 								originalContent = contentToSave;
+								savedRevision = result.metadata.revision;
 								updateSavedMetadata(result.metadata);
 								if (textarea.value === contentToSave) {
 									clearLocalDraft();

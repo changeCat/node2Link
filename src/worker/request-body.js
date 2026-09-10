@@ -1,6 +1,22 @@
 // Large enough for 100 x 16 KiB nodes even with JSON/unicode escaping.
 export const MAX_IMPORT_BODY_BYTES = 12 * 1024 * 1024;
 export const IMPORT_BODY_TIMEOUT_MS = 15000;
+export const BODY_LIMITS = {
+	main: 20 * 1024 * 1024,
+	share: 7 * 1024 * 1024, // 1 MiB of content with worst-case JSON escaping.
+	settings: 256 * 1024,
+	apiSettings: 2 * 1024 * 1024,
+	login: 16 * 1024
+};
+
+export async function readJSONBody(request, limit) {
+	const bytes = await readBoundedBody(request, limit);
+	try {
+		const value = JSON.parse(new TextDecoder().decode(bytes));
+		if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+		return value;
+	} catch { throw new RequestBodyError('请求内容必须是有效的 JSON 对象', 400); }
+}
 
 export class RequestBodyError extends Error {
 	constructor(message, status) { super(message); this.status = status; }

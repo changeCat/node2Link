@@ -1,6 +1,7 @@
 import { jsonResponse, requestHasSameOrigin } from '../http.js';
 import { StorageError } from '../storage/kv.js';
-import { normalizeSharePayload } from '../domain/shares.js';
+import { normalizeSharePayload, normalizeShareAvailability } from '../domain/shares.js';
+import { readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
 import { createShareId, readShare, listShareSummaries, saveShare, deleteShare } from '../storage/shares.js';
 
 export async function handleSharesAPI(request, env, url = new URL(request.url)) {
@@ -14,7 +15,8 @@ export async function handleSharesAPI(request, env, url = new URL(request.url)) 
 		}
 		if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);
 		if (!requestHasSameOrigin(request, { allowMissing: false })) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
-		const payload = await request.json();
+		const payload = await readJSONBody(request, BODY_LIMITS.share);
+		if (request.method === 'PATCH' && payload.action !== undefined && !['availability', 'reset'].includes(payload.action)) return jsonResponse({ ok: false, message: '未知的分享操作' }, 400);
 		if (request.method === 'POST') {
 			const now = new Date().toISOString();
 			const share = { id: createShareId(), ...normalizeSharePayload(payload), createdAt: now, updatedAt: now };
@@ -29,12 +31,13 @@ export async function handleSharesAPI(request, env, url = new URL(request.url)) 
 		}
 		const share = {
 			...previous,
-			...(request.method === 'PUT' ? normalizeSharePayload(payload) : { id: createShareId() }),
+			...(request.method === 'PUT' ? normalizeSharePayload(payload, previous)
+				: payload.action === 'availability' ? normalizeShareAvailability(payload, previous) : { id: createShareId() }),
 			updatedAt: new Date().toISOString()
 		};
 		await saveShare(env.KV, share, previous.id);
 		return jsonResponse({ ok: true, share });
 	} catch (error) {
-		return jsonResponse({ ok: false, message: error.message || '操作失败' }, error instanceof StorageError ? 503 : 400);
+		return jsonResponse({ ok: false, message: error.message || '操作失败' }, error instanceof StorageError ? 503 : error instanceof RequestBodyError ? error.status : 400);
 	}
 }
