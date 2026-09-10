@@ -333,3 +333,70 @@ test('picker offers retry and keeps local nodes when the upstream request fails'
 	expect(fullRequests).toBe(3);
 	await page.screenshot({ path: test.info().outputPath('node-picker.png'), fullPage: true });
 });
+
+test('expiry field opens its picker from the date area and can be cleared', async ({ page }) => {
+	await page.goto('/shares');
+	const input = page.locator('#shareExpiresAt');
+	await input.evaluate(element => {
+		const original = element.showPicker.bind(element);
+		window.pickerOpens = 0;
+		element.showPicker = () => { window.pickerOpens++; original(); };
+	});
+	await input.click({ position: { x: 35, y: 18 } });
+	expect(await page.evaluate(() => window.pickerOpens)).toBe(1);
+	await page.keyboard.press('Escape');
+	const bounds = await input.boundingBox();
+	expect(bounds.width).toBeLessThanOrEqual(330);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+	await input.fill('2099-01-01T12:00');
+	await page.locator('#clearShareExpiry').click();
+	await expect(input).toHaveValue('');
+	// Browsers without showPicker keep ordinary native editing.
+	await input.evaluate(element => { element.showPicker = undefined; });
+	await input.click({ position: { x: 35, y: 18 } });
+	await input.fill('2099-01-01T12:00');
+	await expect(input).toHaveValue('2099-01-01T12:00');
+});
+
+test('personal dashboard displays saved data and remembers collapsed panels', async ({ page }) => {
+	await saveMain(page, first + '\n' + second + '\n' + first + '\nhttps://source.example.com/sub');
+	const expiry = new Date(Date.now() + 3 * 86400000).toISOString();
+	const ids = await page.evaluate(async ({ content, expiry }) => {
+		const ids = [];
+		for (const payload of [
+			{ name: 'Dashboard expiring', content, expiresAt: expiry },
+			{ name: 'Dashboard paused', content, paused: true },
+			{ name: 'Dashboard expired', content, expiresAt: '2000-01-01T00:00:00Z' }
+		]) {
+			const response = await fetch('/api/shares', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+			if (!response.ok) throw new Error('Dashboard fixture failed');
+			ids.push((await response.json()).share.id);
+		}
+		return ids;
+	}, { content: first, expiry });
+	try {
+		await page.locator('.header-tabs').getByRole('link', { name: '仪表盘', exact: true }).click();
+		await expect(page).toHaveURL(/\/dashboard$/);
+		await expect(page.locator('[data-stat="nodes"]')).toHaveText('2');
+		await expect(page.locator('[data-stat="sources"]')).toHaveText('1');
+		await expect(page.locator('[data-stat="shares"]')).toHaveText('1');
+		await expect(page.locator('[data-stat="expiring"]')).toHaveText('1');
+		await expect(page.locator('[data-share-state="paused"]')).toHaveText('1');
+		await expect(page.locator('[data-share-state="expired"]')).toHaveText('1');
+		await expect(page.locator('[data-dashboard-panel="expiry"]')).toContainText('Dashboard expiring');
+		await expect(page.locator('[data-dashboard-panel="recent"]')).toContainText('主订阅');
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+		await page.screenshot({ path: test.info().outputPath('dashboard.png'), fullPage: true });
+		const protocols = page.locator('[data-dashboard-panel="protocols"]');
+		await protocols.locator('summary').click();
+		await expect(protocols).not.toHaveAttribute('open');
+		await page.reload();
+		await expect(protocols).not.toHaveAttribute('open');
+		await protocols.locator('summary').click();
+		await expect(protocols).toHaveAttribute('open');
+	} finally {
+		await page.evaluate(async ids => {
+			for (const id of ids) await fetch('/api/shares', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+		}, ids);
+	}
+});

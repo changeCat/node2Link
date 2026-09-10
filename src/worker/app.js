@@ -18,6 +18,7 @@ export { normalizeV2rayNSubscription } from './domain/nodes.js';
 
 // 管理端使用账号密码登录；订阅通过不可猜测的 /s/<id> 链接访问。
 
+import { renderDashboardPage } from './ui/dashboard.js';
 import { timed } from './timing.js';
 import { readShare } from './storage/shares.js';
 import { handleGeneratedNodesAPI, handlePublicNodeImport } from './routes/generated-nodes.js';
@@ -98,6 +99,7 @@ async function dispatch(request, env, ctx, timings) {
 	}
 
 	if (url.pathname === '/api/settings' && request.method === 'POST') return saveSettings(request, env, persistedSettings);
+	if (url.pathname === '/dashboard' && request.method === 'GET') return timed(timings, 'dashboard', () => renderDashboardPage(env, runtime));
 	if (url.pathname === '/settings' && request.method === 'GET') return renderSettingsPage(request, runtime);
 	if (url.pathname === '/api-subscriptions' && request.method === 'GET') return renderGeneratedNodesPage(request, env, runtime);
 	if (url.pathname === '/shares' && request.method === 'GET') return renderSharesPage(request, env, runtime);
