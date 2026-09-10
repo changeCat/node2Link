@@ -36,11 +36,14 @@ async function recordSubscriptionRequest(kv, details) {
 		: Math.random().toString(36).slice(2) + now.toString(36);
 	const metadata = {
 		client: String(details.client || '其他客户端').slice(0, 40),
-		userAgent: String(details.userAgent || 'Unknown').slice(0, 240),
+		userAgent: String(details.userAgent || 'Unknown').slice(0, 120),
 		format: String(details.format || 'base64').slice(0, 20),
 		access: details.access === 'share' ? 'share' : 'main',
 		subscriptionId: isValidShareId(details.subscriptionId) ? details.subscriptionId : '',
-		requestedAt: new Date(now).toISOString()
+		requestedAt: new Date(now).toISOString(),
+		status: Number(details.status) || 200,
+		durationMs: Math.max(0, Number(details.durationMs) || 0),
+		upstreamFailures: Math.max(0, Number(details.upstreamFailures) || 0)
 	};
 	await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
 		metadata,
@@ -90,6 +93,7 @@ export async function readSubscriptionRequestStats(kv) {
 		}
 		return {
 			total: records.length,
+			failed: records.filter(event => Number(event.status) >= 400).length,
 			clients: [...clients.values()].sort((a, b) => b.count - a.count || b.lastRequestedAt.localeCompare(a.lastRequestedAt))
 		};
 	};

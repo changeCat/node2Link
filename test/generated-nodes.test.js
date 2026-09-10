@@ -1,25 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { handlePublicNodeImport } from '../src/worker/routes/generated-nodes.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-	appendGeneratedNodes,
-	generateNodesFromEndpoint,
-	handlePublicNodeImport,
-	normalizeGeneratedNodeSettings,
-	readGeneratedNodes
-} from '../src/worker/storage/generated-nodes.js';
+import { readGeneratedNodes } from '../src/worker/storage/generated-nodes.js';
+import { generateNodesFromEndpoint, normalizeGeneratedNodeSettings } from '../src/worker/domain/generated-nodes.js';
+import { appendGeneratedNodes } from '../src/worker/services/generated-nodes.js';
 import worker, { normalizeV2rayNSubscription } from '../src/worker/app.js';
 
-class MemoryKV {
-	constructor() { this.values = new Map(); }
-	async get(key) { return this.values.has(key) ? this.values.get(key) : null; }
-	async put(key, value) { this.values.set(key, String(value)); }
-	async delete(key) { this.values.delete(key); }
-	async list(options = {}) {
-		const prefix = options.prefix || '';
-		return { keys: [...this.values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true, cursor: '' };
-	}
-}
+import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
 
 const settings = normalizeGeneratedNodeSettings({
 	token: 'abcdefghijklmnop',
@@ -29,7 +18,8 @@ const settings = normalizeGeneratedNodeSettings({
 
 function assertInlineScriptsParse(html) {
 	for (const match of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)) {
-		if (match[1].trim()) assert.doesNotThrow(() => new Function(match[1]));
+		if (match[0].includes('application/json')) assert.doesNotThrow(() => JSON.parse(match[1]));
+		else if (match[1].trim()) assert.doesNotThrow(() => new Function(match[1]));
 	}
 }
 
@@ -254,7 +244,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.equal(login.status, 303);
 	const cookie = login.headers.get('Set-Cookie').split(';')[0];
 	const authenticatedHeaders = { Cookie: cookie };
-	const settingsHTML = await (await dispatch('/settings', { headers: authenticatedHeaders })).text();
+	const settingsHTML = await (await dispatch('/settings', { headers: authenticatedHeaders })).text() + readFileSync(new URL('../src/client/settings.js', import.meta.url), 'utf8');
 	assert.match(settingsHTML, /当前使用的转换后端/);
 	assert.match(settingsHTML, /id="activeConverterMode"/);
 	assert.match(settingsHTML, /id="activeConverterValue"/);
@@ -270,7 +260,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assertInlineScriptsParse(settingsHTML);
 
 	const initial = await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json();
-	const apiPageHTML = await (await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).text();
+	const apiPageHTML = await (await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).text() + readFileSync(new URL('../src/client/generated-nodes.js', import.meta.url), 'utf8');
 	assert.match(apiPageHTML, /API 订阅/);
 	assert.match(apiPageHTML, /模板使用样例/);
 	assert.match(apiPageHTML, /API 调用/);
