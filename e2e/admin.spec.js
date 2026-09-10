@@ -127,6 +127,65 @@ test('settings sections save independently and failed saves retain input', async
 	await expect(page.locator('#displayForm button[type="submit"]')).toBeEnabled();
 });
 
+test('stale tabs keep their edits on conflict and clearing the editor stays empty', async ({ page, context }) => {
+	await saveMain(page, first);
+	const stale = await context.newPage();
+	try {
+		await stale.goto('/');
+		await saveMain(page, second);
+		await stale.locator('#content').fill(first + '\n' + second);
+		await stale.locator('#saveButton').click();
+		await expect(stale.locator('#saveStatus')).toContainText('已在其他页面更新');
+		await expect(stale.locator('#content')).toHaveValue(first + '\n' + second);
+		await expect(stale.locator('#saveButton')).toBeEnabled();
+		// The older edit was rejected; the current tab can still publish its version.
+		await saveMain(page, '');
+		const link = await page.locator('[onclick^="copySubscription"]').first().getAttribute('data-url');
+		const response = await page.request.get(link + (link.includes('?') ? '&' : '?') + 'base64');
+		expect(response.status()).toBe(200);
+		expect(await response.text()).toBe('');
+		await page.reload();
+		await expect(page.locator('#content')).toHaveValue('');
+	} finally { await stale.close(); }
+});
+
+test('share pause, expiry and renewal retain the same link', async ({ page }) => {
+	await page.goto('/shares');
+	await page.locator('#shareName').fill('Temporary personal share');
+	await page.locator('#shareContent').fill(first);
+	await page.locator('#shareExpiresAt').fill('2099-01-01T12:00');
+	await page.locator('#submitShare').click();
+	const card = page.locator('.share-card').filter({ hasText: 'Temporary personal share' });
+	await expect(card).toContainText('使用中');
+	const link = await card.locator('[data-copy]').getAttribute('data-copy');
+	await card.locator('[data-toggle]').click();
+	await expect(card).toContainText('已暂停');
+	await page.reload();
+	await expect(card).toContainText('已暂停');
+	await page.screenshot({ path: test.info().outputPath('paused-share.png'), fullPage: true });
+	expect((await page.request.get(link)).status()).toBe(410);
+	await card.locator('[data-toggle]').click();
+	await expect(card).toContainText('使用中');
+	expect((await page.request.get(link + '?base64')).status()).toBe(200);
+	await card.locator('[data-edit]').click();
+	await expect(page.locator('#formTitle')).toHaveText('修改分享');
+	await expect(page.locator('#shareExpiresAt')).toHaveValue('2099-01-01T12:00');
+	await page.locator('#shareExpiresAt').fill('2000-01-01T12:00');
+	await page.locator('#submitShare').click();
+	await expect(card).toContainText('已到期');
+	expect((await page.request.get(link)).status()).toBe(410);
+	await card.locator('[data-edit]').click();
+	await expect(page.locator('#formTitle')).toHaveText('修改分享');
+	await page.locator('#shareExpiresAt').fill('');
+	await page.locator('#submitShare').click();
+	await expect(card).toContainText('长期有效');
+	expect(await card.locator('[data-copy]').getAttribute('data-copy')).toBe(link);
+	expect((await page.request.get(link + '?base64')).status()).toBe(200);
+	await card.locator('[data-delete]').click();
+	await page.locator('#sharePromptAccept').click();
+	await expect(card).toHaveCount(0);
+});
+
 test('API template save, token rotation, import, copy and deletion', async ({ page }) => {
 	await page.goto('/api-subscriptions');
 	await expect(page.locator('#apiToken')).toHaveValue(/^[A-Za-z0-9_-]{16,128}$/);

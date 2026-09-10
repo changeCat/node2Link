@@ -84,6 +84,8 @@ export function normalizeShareSummary(share) {
 	return {
 		id: share.id,
 		name,
+		paused: share.paused === true,
+		expiresAt: String(share.expiresAt || ''),
 		nodeCount: Math.max(0, Number.parseInt(share.nodeCount, 10) || 0),
 		sourceCount: Math.max(0, Number.parseInt(share.sourceCount, 10) || 0),
 		createdAt: String(share.createdAt || ''),

@@ -2,6 +2,7 @@ import { requestHasSameOrigin, textResponse } from '../http.js';
 import { adminPassword, adminUsername, safeEqual, createSessionCookie } from '../auth.js';
 import { ensureMainIdentity } from '../storage/settings.js';
 import { renderLoginPage } from '../ui/pages.js';
+import { readBoundedBody, readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
 
 export async function handleLogin(request, env, runtime, persistedSettings) {
 	if (!requestHasSameOrigin(request)) return textResponse('Invalid origin', 403);
@@ -11,11 +12,14 @@ export async function handleLogin(request, env, runtime, persistedSettings) {
 	let password = '';
 	const contentType = request.headers.get('Content-Type') || '';
 	if (contentType.includes('application/json')) {
-		const body = await request.json();
+		const body = await readJSONBody(request, BODY_LIMITS.login);
 		username = body.username;
 		password = body.password;
 	} else {
-		const form = await request.formData();
+		const body = await readBoundedBody(request, BODY_LIMITS.login);
+		let form;
+		try { form = await new Response(body, { headers: { 'Content-Type': contentType } }).formData(); }
+		catch { throw new RequestBodyError('登录表单格式无效', 400); }
 		username = form.get('username');
 		password = form.get('password');
 	}

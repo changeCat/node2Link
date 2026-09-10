@@ -2,7 +2,7 @@ import { appendGeneratedNodes } from '../services/generated-nodes.js';
 import { normalizeGeneratedNodeSettings } from '../domain/generated-nodes.js';
 import { jsonResponse, requestHasSameOrigin } from '../http.js';
 import { safeEqual } from '../auth.js';
-import { readBoundedBody, RequestBodyError } from '../request-body.js';
+import { readBoundedBody, readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
 import { StorageError } from '../storage/kv.js';
 import { deleteNodeRecord } from '../storage/node-records.js';
 import { readGeneratedNodeSettings, readGeneratedNodes, saveGeneratedNodeSettings, initializeGeneratedNodeSettings } from '../storage/generated-nodes.js';
@@ -57,7 +57,7 @@ export async function handleGeneratedNodesAPI(request, env) {
 	}
 	if (!requestHasSameOrigin(request, { allowMissing: false })) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
 	try {
-		const payload = await request.json();
+		const payload = await readJSONBody(request, BODY_LIMITS.apiSettings);
 		if (request.method === 'POST' && payload.action === 'initialize') {
 			return jsonResponse({ ok: true, settings: await initializeGeneratedNodeSettings(env) });
 		}
@@ -76,5 +76,5 @@ export async function handleGeneratedNodesAPI(request, env) {
 			return jsonResponse({ ok: true });
 		}
 		return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);
-	} catch (error) { return jsonResponse({ ok: false, message: error.message || '操作失败' }, error instanceof StorageError ? 503 : 400); }
+	} catch (error) { return jsonResponse({ ok: false, message: error.message || '操作失败' }, error instanceof StorageError ? 503 : error instanceof RequestBodyError ? error.status : 400); }
 }

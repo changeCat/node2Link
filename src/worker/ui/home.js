@@ -339,7 +339,7 @@ export function renderMainPage(request, runtime, record, hasKV) {
 				</dialog>
 				<div class="toast" id="toast" role="status" aria-live="polite"><i data-lucide="circle-check"></i><span id="toastText">已复制</span></div>
 
-				${pageScript('home', { savedMetadata, supportedProtocols: SUPPORTED_NODE_PROTOCOLS })}
+				${pageScript('home', { savedMetadata, revision: record.revision, supportedProtocols: SUPPORTED_NODE_PROTOCOLS })}
 			</body>
 			</html>`;
 
