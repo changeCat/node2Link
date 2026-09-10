@@ -335,10 +335,13 @@ var toastTimer;
 						localizeRequestTimes();
 						var textarea = document.getElementById("content");
 						if (textarea) {
-							originalContent = textarea.value;
+							// The live value may already contain edits made before deferred scripts
+							// finished loading. Only the server-rendered value is the saved baseline.
+							originalContent = textarea.defaultValue;
 							updateEditorInsights();
 							updateSavedMetadata(savedMetadata);
-							restoreLocalDraft(textarea);
+							if (textarea.value !== originalContent) markEditorDirty("有未保存更改");
+							else restoreLocalDraft(textarea);
 							textarea.addEventListener("input", function () {
 								markEditorDirty("有未保存更改");
 							});
@@ -346,6 +349,7 @@ var toastTimer;
 								restoreBackup(event.target.files[0]);
 								event.target.value = "";
 							});
+							document.getElementById("saveButton").disabled = false;
 						}
 						var qrDialog = document.getElementById("qrDialog");
 						var toolDialog = document.getElementById("toolDialog");

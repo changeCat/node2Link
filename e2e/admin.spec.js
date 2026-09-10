@@ -26,6 +26,25 @@ async function saveMain(page, content) {
 	await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
 }
 
+test('edits entered while the client script is loading remain unsaved until published', async ({ page }) => {
+	await page.waitForLoadState('domcontentloaded');
+	let releaseScript;
+	const scriptReady = new Promise(resolve => { releaseScript = resolve; });
+	await page.route('**/assets/home.js?*', async route => { await scriptReady; await route.continue(); });
+	const content = 'vless://uuid@slow-load.example.com:443#Early-' + Date.now();
+	try {
+		await page.reload({ waitUntil: 'commit' });
+		await page.locator('#content').fill(content);
+		await expect(page.locator('#saveButton')).toBeDisabled();
+	} finally { releaseScript(); }
+	await page.waitForLoadState('domcontentloaded');
+	await expect(page.locator('#saveStatus')).toHaveText('有未保存更改');
+	await page.locator('#saveButton').click();
+	await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
+	await page.reload();
+	await expect(page.locator('#content')).toHaveValue(content);
+});
+
 test('manual save, reload, version restore, local draft, copy and QR', async ({ page }) => {
 	await saveMain(page, first);
 	await saveMain(page, second);

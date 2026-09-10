@@ -290,7 +290,7 @@ export function renderMainPage(request, runtime, record, hasKV) {
 										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份</span></button>
 										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
 										<input id="restoreInput" type="file" accept=".txt,.conf,.list,text/plain" hidden>
-										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()"><i data-lucide="save"></i><span>保存更改</span></button>
+										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存更改</span></button>
 									</div>
 								</div>
 								<div class="editor-insights" aria-label="内容统计">
