@@ -70,7 +70,7 @@ export function renderMainPage(request, runtime, record, hasKV) {
 					button, input, textarea { font: inherit; }
 					button { letter-spacing: 0; }
 					button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid rgba(23, 107, 73, .2); outline-offset: 2px; }
-					main { width: calc(100% - 48px); margin: 0 auto; padding: 18px 0 48px; }
+					main { margin: 0 auto; padding: 18px 0 48px; }
 					.token-chip { max-width: 360px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--muted); font-size: 12px; }
 					.token-chip svg { flex: 0 0 auto; width: 16px; height: 16px; color: var(--green); }
 					.token-chip code { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: nowrap; }

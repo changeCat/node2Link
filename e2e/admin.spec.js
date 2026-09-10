@@ -358,6 +358,48 @@ test('expiry field opens its picker from the date area and can be cleared', asyn
 	await expect(input).toHaveValue('2099-01-01T12:00');
 });
 
+test('dashboard layout matches tab pages and keeps navigation usable', async ({ page }, testInfo) => {
+	const widths = testInfo.project.name === 'desktop' ? [1920, 1365, 900, 800, 761, 760] : [390, 320];
+	for (const width of widths) {
+		await page.setViewportSize({ width, height: 900 });
+		await page.goto('/dashboard');
+		const dashboard = await page.locator('main').boundingBox();
+		const panels = {};
+		for (const id of ['protocols', 'shares', 'expiry', 'recent']) {
+			panels[id] = await page.locator(`[data-dashboard-panel="${id}"]`).boundingBox();
+		}
+		expect(panels.shares.x).toBe(panels.protocols.x);
+		expect(panels.expiry.x).toBe(panels.protocols.x);
+		expect(panels.shares.y).toBeGreaterThanOrEqual(panels.protocols.y + panels.protocols.height);
+		expect(panels.expiry.y).toBeGreaterThanOrEqual(panels.shares.y + panels.shares.height);
+		if (width > 620) {
+			expect(panels.recent.x).toBeGreaterThanOrEqual(panels.protocols.x + panels.protocols.width);
+			expect(panels.recent.y).toBe(panels.protocols.y);
+		} else {
+			expect(panels.recent.x).toBe(panels.protocols.x);
+			expect(panels.recent.y).toBeGreaterThanOrEqual(panels.expiry.y + panels.expiry.height);
+		}
+		await page.screenshot({ path: testInfo.outputPath(`dashboard-${width}.png`), fullPage: true });
+		for (const path of ['/dashboard', '/', '/api-subscriptions', '/shares', '/requests']) {
+			if (path !== '/dashboard') await page.goto(path);
+			const main = await page.locator('main').boundingBox();
+			expect(main.x, `${path} at ${width}px`).toBe(dashboard.x);
+			expect(main.width, `${path} at ${width}px`).toBe(dashboard.width);
+			const overflow = await page.locator('.header-tabs').evaluate(element => ({
+				x: element.scrollWidth > element.clientWidth,
+				y: element.scrollHeight > element.clientHeight,
+				page: document.documentElement.scrollWidth > innerWidth
+			}));
+			expect(overflow.page, `${path} at ${width}px`).toBe(false);
+			expect(overflow.y, `${path} at ${width}px`).toBe(false);
+			if (width >= 900) expect(overflow.x, `${path} at ${width}px`).toBe(false);
+			const lastTab = page.locator('.header-tabs a').last();
+			await lastTab.scrollIntoViewIfNeeded();
+			await expect(lastTab).toBeInViewport({ ratio: 1 });
+		}
+	}
+});
+
 test('personal dashboard displays saved data and remembers collapsed panels', async ({ page }) => {
 	await saveMain(page, first + '\n' + second + '\n' + first + '\nhttps://source.example.com/sub');
 	const expiry = new Date(Date.now() + 3 * 86400000).toISOString();
