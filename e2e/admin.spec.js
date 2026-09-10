@@ -395,9 +395,28 @@ test('dashboard layout matches tab pages and keeps navigation usable', async ({ 
 			if (width >= 900) expect(overflow.x, `${path} at ${width}px`).toBe(false);
 			const lastTab = page.locator('.header-tabs a').last();
 			await lastTab.scrollIntoViewIfNeeded();
-			await expect(lastTab).toBeInViewport({ ratio: 1 });
+			// Fractional font metrics and scroll rounding can clip a subpixel on Linux.
+			await expect(lastTab).toBeInViewport({ ratio: 0.99 });
+			await lastTab.click({ trial: true });
 		}
 	}
+});
+
+test('dashboard saves panel state when leaving before queued toggle events run', async ({ page }) => {
+	await page.goto('/dashboard');
+	const preferences = await page.evaluate(() => {
+		const key = 'node2link:dashboard-panels:' + location.host;
+		localStorage.removeItem(key);
+		document.querySelector('[data-dashboard-panel="protocols"]').open = false;
+		document.querySelector('[data-dashboard-panel="shares"]').open = false;
+		// Leave in the same task, before the browser can dispatch either toggle event.
+		window.dispatchEvent(new PageTransitionEvent('pagehide'));
+		return JSON.parse(localStorage.getItem(key));
+	});
+	expect(preferences).toMatchObject({ protocols: false, shares: false, expiry: true, recent: true });
+	await page.reload();
+	await expect(page.locator('[data-dashboard-panel="protocols"]')).not.toHaveAttribute('open');
+	await expect(page.locator('[data-dashboard-panel="shares"]')).not.toHaveAttribute('open');
 });
 
 test('personal dashboard displays saved data and remembers collapsed panels', async ({ page }) => {
