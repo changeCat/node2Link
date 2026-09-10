@@ -1,14 +1,15 @@
 import { appendRecord, listKeys, mapConcurrent, readJSON, readRequiredJSON, writeJSON, StorageError, isObject } from './kv.js';
 import { normalizeStoredNode } from '../domain/generated-nodes.js';
+import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 
 const LEGACY_KEY = 'NODE2LINK.api-subscription.nodes.json';
 const PREFIX = 'NODE2LINK.v2.nodes.';
 const CACHE_KEY = 'NODE2LINK.cache.nodes.v2';
 
-export async function readNodeRecords(kv, normalize, { deduplicate = true } = {}) {
+export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh = true } = {}) {
 	if (!kv) return [];
 	const [legacy, keys, cached] = await Promise.all([
-		readJSON(kv, LEGACY_KEY, [], Array.isArray), listKeys(kv, PREFIX),
+		readJSON(kv, LEGACY_KEY, [], Array.isArray), cachedView(kv, PREFIX, () => listKeys(kv, PREFIX), { fresh, cacheable: keys => keys.length <= MAX_CACHED_KEYS }),
 		// Only this derived cache may be discarded on failure. The authoritative
 		// legacy value and immutable records must always be read successfully.
 		readJSON(kv, CACHE_KEY, null, value => isObject(value) && value.schemaVersion === 2 && Array.isArray(value.applied) && Array.isArray(value.entries) && value.entries.every(entry => typeof entry.revision === 'string' && normalize(entry.node)) && Array.isArray(value.deleted)).catch(() => null)
@@ -44,12 +45,17 @@ export async function readNodeRecords(kv, normalize, { deduplicate = true } = {}
 }
 
 export async function appendNodeBatch(kv, nodes) {
-	if (nodes.length) await appendRecord(kv, PREFIX, { schemaVersion: 2, nodes });
+	if (!nodes.length) return;
+	invalidateView(kv, PREFIX);
+	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, nodes }); }
+	finally { invalidateView(kv, PREFIX); }
 }
 
 export async function deleteNodeRecord(kv, id) {
 	const nodes = await readNodeRecords(kv, normalizeStoredNode, { deduplicate: false });
 	const target = nodes.find(node => node.id === id);
 	const deletedIds = target ? nodes.filter(node => node.content === target.content).map(node => node.id) : [id];
-	await appendRecord(kv, PREFIX, { schemaVersion: 2, deletedIds });
+	invalidateView(kv, PREFIX);
+	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, deletedIds }); }
+	finally { invalidateView(kv, PREFIX); }
 }

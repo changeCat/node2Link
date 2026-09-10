@@ -14,6 +14,18 @@ var settings=pageData.settings;
 		function render(){document.getElementById('nodeCount').textContent=nodes.length+' 个';if(!nodes.length){list.innerHTML='<div class="empty-list">尚无节点。请通过 GET 地址接口或 POST 完整节点接口从外部追加。</div>';return}list.innerHTML=nodes.map(function(node){var meta=node.address?(esc(node.address)+(node.port?':'+node.port:'')):'完整节点';return '<article class="node-card"><div class="node-main"><div class="node-head"><span class="node-kind">'+(node.kind==='raw'?'完整节点':'模板生成')+'</span><strong title="'+esc(node.name)+'">'+esc(node.name)+'</strong></div><div class="node-meta">'+meta+' · '+new Date(node.createdAt).toLocaleString()+'</div><div class="node-content" title="'+esc(node.content)+'">'+esc(node.content)+'</div></div><div class="node-actions"><button class="button" type="button" data-copy-node="'+node.id+'">复制</button><button class="button danger-button" type="button" data-delete="'+node.id+'">删除</button></div></article>'}).join('')}
 		function apiCall(method,body){return fetch('/api/generated-nodes',{method:method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(response){return response.json().then(function(data){if(!response.ok)throw new Error(data.message||'操作失败');return data})})}
 		tokenInput.value=settings.token;nameInput.value=settings.nameTemplate;templateInput.value=settings.nodeTemplate;syncExamples();render();
+		if (!settings.token) {
+			var controls = form.querySelectorAll('input, textarea, button');
+			controls.forEach(function(control) { control.disabled = true; });
+			apiCall('POST', { action: 'initialize' }).then(function(data) {
+				settings = data.settings;
+				tokenInput.value = settings.token;
+				syncExamples();
+				controls.forEach(function(control) { control.disabled = false; });
+			}).catch(function(error) {
+				document.getElementById('settingsMessage').textContent = error.message + '，请刷新页面重试';
+			});
+		}
 		document.getElementById('regenerateToken').addEventListener('click',function(){askConfirm('保存新 Token 后，旧 Token 和旧调用 URL 会立即失效。','重新生成 API Token').then(function(accepted){if(!accepted)return;tokenInput.value=randomToken();syncExamples();document.getElementById('settingsMessage').textContent='新 Token 尚未保存'})});
 		document.querySelectorAll('[data-copy-example]').forEach(function(button){button.addEventListener('click',function(){copyText(document.getElementById(button.dataset.copyExample).textContent).then(function(){var original=button.textContent;button.textContent='已复制';setTimeout(function(){button.textContent=original},1200)})})});
 		form.addEventListener('submit',function(event){event.preventDefault();var button=document.getElementById('saveSettings');var message=document.getElementById('settingsMessage');button.disabled=true;message.textContent='正在保存…';apiCall('PUT',{token:tokenInput.value,nameTemplate:nameInput.value,nodeTemplate:templateInput.value}).then(function(data){settings=data.settings;tokenInput.value=settings.token;nameInput.value=settings.nameTemplate;templateInput.value=settings.nodeTemplate;syncExamples();message.textContent='模板与唯一 Token 已保存';message.className='success'}).catch(function(error){message.textContent=error.message;message.className='message'}).finally(function(){button.disabled=false})});

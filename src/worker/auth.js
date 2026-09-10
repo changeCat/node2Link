@@ -57,8 +57,14 @@ export function readCookie(request, name) {
 export async function createSessionCookie(env) {
 	const expires = Math.floor(Date.now() / 1000) + SESSION_TTL;
 	const payload = adminUsername(env) + '.' + expires;
-	const signature = await hmacBase64Url(payload, sessionSecret(env));
+	const signature = await hmacBase64Url(payload, await sessionSigningKey(env));
 	return `${SESSION_COOKIE}=${encodeURIComponent(payload + '.' + signature)}; Path=/; Max-Age=${SESSION_TTL}; HttpOnly; Secure; SameSite=Strict`;
+}
+
+// Bind sessions to current credentials even when SESSION_SECRET is fixed.
+// This key never leaves the Worker; cookies contain only the payload/signature.
+async function sessionSigningKey(env) {
+	return hmacBase64Url(JSON.stringify(['node2link-session-v2', adminUsername(env), adminPassword(env)]), sessionSecret(env));
 }
 
 export function clearSessionCookie() {
@@ -79,5 +85,5 @@ export async function isAuthenticated(request, env) {
 	const username = payload.slice(0, split);
 	const expires = Number(payload.slice(split + 1));
 	if (username !== adminUsername(env) || !Number.isFinite(expires) || expires < Math.floor(Date.now() / 1000)) return false;
-	return safeEqual(signature, await hmacBase64Url(payload, sessionSecret(env)));
+	return safeEqual(signature, await hmacBase64Url(payload, await sessionSigningKey(env)));
 }

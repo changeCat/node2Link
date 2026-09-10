@@ -1,4 +1,5 @@
 import { appendRecord, listKeys, readJSON, readRequiredJSON, mapConcurrent, StorageError, isObject } from './kv.js';
+import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 
 const PREFIX = 'NODE2LINK.v2.shares.';
 const LEGACY_PREFIX = 'NODE2LINK.share.';
@@ -13,11 +14,12 @@ async function shareView(kv) {
 		const id = key.name.slice(LEGACY_PREFIX.length);
 		return [id, { key: key.name, summary: summaries.get(id) }];
 	}));
+	const revoked = new Set();
 	for (const event of events) {
 		const metadata = event.metadata || (await readRequiredJSON(kv, event.name)).index;
 		if (!Array.isArray(metadata?.changes)) throw new StorageError('分享索引格式异常');
 		for (const change of metadata.changes) {
-			if (change.deleted) entries.delete(change.id);
+			if (change.deleted) revoked.add(change.id);
 			else {
 				const summary = normalizeShareSummary(change);
 				if (!summary) throw new StorageError('分享摘要格式异常');
@@ -25,6 +27,9 @@ async function shareView(kv) {
 			}
 		}
 	}
+	// Revocation is terminal, irrespective of event ordering. A late edit cannot
+	// restore a deleted/reset ID, including IDs originally stored in legacy KV.
+	for (const id of revoked) entries.delete(id);
 	return entries;
 }
 
@@ -41,9 +46,9 @@ export async function readShare(kv, id) {
 	return entry ? readEntry(kv, id, entry) : null;
 }
 
-export async function listShareSummaries(kv) {
+export async function listShareSummaries(kv, { fresh = false } = {}) {
 	if (!kv) return [];
-	const entries = await shareView(kv);
+	const entries = await cachedView(kv, PREFIX, () => shareView(kv), { fresh, cacheable: entries => entries.size <= MAX_CACHED_KEYS });
 	const summaries = await mapConcurrent([...entries], 6, async ([id, entry]) => entry.summary || normalizeShareSummary(await readEntry(kv, id, entry)));
 	return summaries.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
@@ -56,12 +61,16 @@ export async function saveShare(kv, share, previousId) {
 	const changes = [normalizeShareSummary(share)];
 	if (previousId && previousId !== share.id) changes.unshift({ id: previousId, deleted: true });
 	const index = { changes };
-	await appendRecord(kv, PREFIX, { schemaVersion: 2, share, index }, index);
+	invalidateView(kv, PREFIX);
+	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, share, index }, index); }
+	finally { invalidateView(kv, PREFIX); }
 }
 
 export async function deleteShare(kv, id) {
 	const index = { changes: [{ id, deleted: true }] };
-	await appendRecord(kv, PREFIX, { schemaVersion: 2, index }, index);
+	invalidateView(kv, PREFIX);
+	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, index }, index); }
+	finally { invalidateView(kv, PREFIX); }
 }
 
 export function isValidShareId(value) {
