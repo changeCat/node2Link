@@ -1,6 +1,8 @@
 const pageData = JSON.parse(document.getElementById('page-data-home').textContent);
 var savedRevision = pageData.revision;
 var toastTimer;
+var editorTimer;
+var editorWorkPending = false;
 					var originalContent = "";
 					var undoStack = [];
 					var pendingDedupeContent = "";
@@ -179,6 +181,8 @@ var toastTimer;
 					}
 
 					function clearLocalDraft() {
+						clearTimeout(editorTimer);
+						editorWorkPending = false;
 						try { window.localStorage.removeItem(draftStorageKey); }
 						catch (error) { console.warn("无法清除本地草稿:", error); }
 					}
@@ -201,11 +205,21 @@ var toastTimer;
 						}
 					}
 
-					function markEditorDirty(message) {
+					function flushEditorWork() {
+						if (!editorWorkPending) return;
+						clearTimeout(editorTimer);
+						editorWorkPending = false;
 						updateEditorInsights();
-						setSaveState(message || "有未保存更改", "dirty");
 						var textarea = document.getElementById("content");
-						if (textarea) storeLocalDraft(textarea.value);
+						if (textarea.value !== originalContent) storeLocalDraft(textarea.value);
+						else clearLocalDraft();
+					}
+
+					function markEditorDirty(message) {
+						setSaveState(message || "有未保存更改", "dirty");
+						editorWorkPending = true;
+						clearTimeout(editorTimer);
+						editorTimer = setTimeout(flushEditorWork, 250);
 					}
 
 					function applyDedupe() {
@@ -305,6 +319,7 @@ var toastTimer;
 						var textarea = document.getElementById("content");
 						var button = document.getElementById("saveButton");
 						if (!textarea || !button || button.disabled) return Promise.resolve();
+						flushEditorWork();
 						if (textarea.value === originalContent) { setSaveState("已同步", ""); return Promise.resolve(); }
 						var contentToSave = textarea.value;
 						button.disabled = true;
@@ -369,7 +384,10 @@ var toastTimer;
 						if (event.key === "Escape" && document.getElementById("mainConfirmDialog").open) resolveMainConfirm(false);
 					});
 
+					window.addEventListener('pagehide', flushEditorWork);
+					document.addEventListener('visibilitychange', function () { if (document.hidden) flushEditorWork(); });
 					window.addEventListener("beforeunload", function (event) {
+						flushEditorWork();
 						var textarea = document.getElementById("content");
 						if (textarea && textarea.value !== originalContent) {
 							event.preventDefault();

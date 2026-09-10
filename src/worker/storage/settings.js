@@ -4,6 +4,20 @@ import { isValidShareId } from './shares.js';
 export const SETTINGS_KEY = 'NODE2LINK.settings.json';
 const PREFIX = 'NODE2LINK.v2.settings.';
 const IDENTITY_KEY = 'NODE2LINK.identity.json';
+// Journal records are immutable. Cache only their bodies, never the latest-key
+// lookup, legacy settings or identity; token changes still read the current KV view.
+const snapshotCaches = new WeakMap();
+async function readSnapshot(kv, key) {
+	let cache = snapshotCaches.get(kv);
+	if (!cache) snapshotCaches.set(kv, cache = new Map());
+	if (cache.has(key)) return cache.get(key);
+	const record = await readRequiredJSON(kv, key);
+	if (new TextEncoder().encode(JSON.stringify(record)).length <= 64 * 1024) {
+		if (cache.size >= 8) cache.delete(cache.keys().next().value);
+		cache.set(key, record);
+	}
+	return record;
+}
 export const SETTING_SECTIONS = {
 	display: ['subscriptionName', 'pageTitle', 'browserIconURL'],
 	entry: ['subscriptionToken'],
@@ -19,17 +33,18 @@ export async function readPersistedSettings(env) {
 	]);
 	const settings = { ...legacy, ...identity };
 	const latest = new Map();
-	for (const key of keys) {
+	for (const key of keys.reverse()) {
 		const sections = key.metadata?.sections;
 		if (!Array.isArray(sections)) {
-			const record = await readRequiredJSON(env.KV, key.name);
-			for (const section of record.sections) latest.set(section, key.name);
-		} else for (const section of sections) latest.set(section, key.name);
+			const record = await readSnapshot(env.KV, key.name);
+			for (const section of record.sections) if (SETTING_SECTIONS[section] && !latest.has(section)) latest.set(section, key.name);
+		} else for (const section of sections) if (SETTING_SECTIONS[section] && !latest.has(section)) latest.set(section, key.name);
+		if (latest.size === Object.keys(SETTING_SECTIONS).length) break;
 	}
-	const records = new Map(await Promise.all([...new Set(latest.values())].map(async key => [key, await readRequiredJSON(env.KV, key)])));
+	const records = new Map(await Promise.all([...new Set(latest.values())].map(async key => [key, await readSnapshot(env.KV, key)])));
 	for (const [section, key] of latest) {
 		const record = records.get(key);
-		for (const field of SETTING_SECTIONS[section] || []) if (Object.hasOwn(record.settings, field)) settings[field] = record.settings[field];
+		for (const field of SETTING_SECTIONS[section] || []) if (Object.hasOwn(record.settings, field)) settings[field] = structuredClone(record.settings[field]);
 		settings.savedAt = [settings.savedAt || '', record.settings.savedAt || ''].sort().at(-1);
 	}
 	return settings;

@@ -337,7 +337,8 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 
 	const shareHTML = await (await dispatch('/shares', { headers: authenticatedHeaders })).text();
 	assert.match(shareHTML, /从已有节点选择/);
-	assert.match(shareHTML, /CF-IP-8\.8\.8\.8:2053/);
+	assert.doesNotMatch(shareHTML, /CF-IP-8\.8\.8\.8:2053/); // Candidates load when the picker opens.
+	assert.ok(candidates.nodes.some(node => node.name === 'CF-IP-8.8.8.8:2053'));
 	assertInlineScriptsParse(shareHTML);
 
 	const nodes = (await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json()).nodes;

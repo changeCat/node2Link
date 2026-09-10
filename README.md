@@ -160,6 +160,21 @@ https://sub.example.com/s/<id>?quanx    # Quantumult X
 https://sub.example.com/s/<id>?loon     # Loon
 ```
 
+## 页面响应与订阅超时排查
+
+编辑器输入后立即显示未保存状态，统计和本地草稿在停止输入 250 ms 后更新；保存、切换到后台或离开页面时补齐待写草稿。分享页只在打开“从已有节点选择”时加载候选，先显示本地节点，再补充上游节点。列表每批显示 100 条，搜索覆盖全部候选；“选择当前结果”会选中全部筛选结果，包括尚未显示的部分。上游读取失败时保留已加载节点，可点击重试。
+
+在浏览器开发者工具的 Network 中查看响应头 `Server-Timing`：`settings` 是站点设置读取，`main_read` / `nodes_read` 是节点读取，`upstream` 是上游获取，`conversion` 是格式转换，`app` 是 Worker 总耗时。阶段可能嵌套，不应简单相加；只显示本次执行的阶段。若总等待明显大于 Worker 耗时，需要继续检查客户端网络、连接与传输。
+
+v2rayN 通过代理更新正常、直连超时，不一定是项目处理慢。可以在有问题的电脑上，关闭 TUN 后用以下命令分别测试 IPv4 / IPv6；只填写域名，登录页无需提供订阅凭证：
+
+```powershell
+curl.exe -4 --noproxy "*" --connect-timeout 5 --max-time 15 -sS -o NUL -D - "https://你的域名/login"
+curl.exe -6 --noproxy "*" --connect-timeout 5 --max-time 15 -sS -o NUL -D - "https://你的域名/login"
+```
+
+IPv4 成功而 IPv6 超时，说明需要检查 IPv6 路径和客户端回退行为；两者都失败则还需检查 DNS 与直连路由。建立连接前的失败不能由 Worker、订阅参数或 HTTP 重定向修复。本轮优化不修改 DNS、代理设置或客户端网络配置。
+
 ## 数据与安全说明
 
 - 旧主节点、设置、API 节点和分享键继续兼容读取；新版主订阅、分区设置、API 节点与分享修改保存在 `NODE2LINK.v2.*`，API 模板与已保存 Token 仍使用 `NODE2LINK.api-subscription.settings.json`，首次 Token 初始化使用独立 bootstrap 记录；完整键布局见架构文档；
