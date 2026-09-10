@@ -8,13 +8,16 @@
     "check": "node scripts/check.mjs",
     "test": "node --test",
     "pages:build": "npm run check && npm test && npm run build && npm run smoke",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "test:e2e": "playwright test",
+    "benchmark": "node scripts/benchmark-storage.mjs"
   },
   "dependencies": {
     "@keeex/qrcodejs-kx": "1.0.2",
     "lucide": "1.31.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "esbuild": "0.28.2"
   }
 }

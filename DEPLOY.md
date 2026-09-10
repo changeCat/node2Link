@@ -173,7 +173,9 @@ push 后 GitHub Verify 和 Cloudflare Pages 都会自动运行。Pages 成功后
 2. 找到上一个成功版本。
 3. 使用 Cloudflare 提供的回滚/重新部署功能恢复它。
 
-分享索引同时保存旧版 ID 和新版摘要，旧部署仍能识别分享列表。订阅内容和分享详情仍保存在原 KV 键中，构建部署不会清空 KV。
+构建部署不会清空 KV。但不支持 `NODE2LINK.v2.*` 的旧部署无法看到新版期间的修改；回滚前请阅读 `ARCHITECTURE.md` 的存储兼容性说明并备份完整 KV。不要删除历史记录或撤销标记来回滚。
+
+本次会话签名升级后管理员需重新登录一次，已有订阅链接和 API Token 保留。GitHub Verify 另外运行桌面/手机浏览器回归测试；Cloudflare Pages 的构建命令仍为 `npm run pages:build`，不需要安装 Chromium 或新增绑定。
 
 ### 静态资源返回 404
 

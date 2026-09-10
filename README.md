@@ -67,6 +67,8 @@ Root directory: 留空
 
 分享列表优先使用记录 metadata 中的摘要，点击“修改”时才读取完整节点内容；旧索引缺失摘要时按需读取旧详情，不在 GET 中改写旧索引。请求统计单次最多扫描最近 500 条事件。管理页面响应包含 `Server-Timing`，可在浏览器开发者工具中查看 Worker 总处理时间。
 
+开发验证可运行 `npm run pages:build`。安装浏览器（`npx playwright install chromium`）后，运行 `npm run test:e2e` 检查桌面和手机交互；`npm run benchmark` 查看本地 KV 读取次数。浏览器测试由 GitHub Actions 单独执行，不改变 Pages 的构建命令。
+
 ## 使用方式
 
 1. 打开部署域名根路径，例如 `https://sub.example.com/`；
@@ -121,7 +123,7 @@ curl -X POST "https://sub.example.com/api/import" \
   --data '{"addresses":[{"address":"cdn.example.com","port":443},{"address":"1.1.1.1","port":2053}]}'
 ```
 
-完整节点仅通过 `POST text/plain` 上传。请求正文可原样填写 `vless://...`，无需 URL 编码；Token 通过 `X-API-Token` 请求头传入：
+完整节点可通过 `POST text/plain` 上传。请求正文可原样填写 `vless://...`，无需 URL 编码；Token 通过 `X-API-Token` 请求头传入：
 
 ```bash
 curl -X POST "https://sub.example.com/api/import" \
@@ -133,6 +135,8 @@ curl -X POST "https://sub.example.com/api/import" \
 请求正文中可用换行分隔多个完整节点；JSON 也可通过 `nodes` 字符串数组传入多个完整节点。每次最多导入 100 个地址或完整节点。相同内容不会重复追加。模板导入会按地址顺序、再按模板行顺序追加，完整节点按输入顺序追加；已有节点顺序保持不变。批次内任一输入无效时整批拒绝，不会写入部分结果。修改模板只影响之后生成的节点，不会改写已有节点。API 节点仅保存在 API 订阅数据中，不会写进主订阅编辑框；读取主订阅链接时，系统会把它们动态放在所有主订阅节点之后。
 
 配置 `TGTOKEN` 和 `TGID` 后，通过 API 实际新增节点以及保存主订阅内容都会发送 Telegram 通知。
+
+POST 导入最多接收 12 MiB 请求体，读取超时为 15 秒，分别返回 413 / 408。请求头 Token 会在读取正文前校验；继续兼容 JSON 和表单中的 Token。多处同时传递时，以请求头、URL、正文的顺序取值。
 
 升级已有部署时不需要新建或重新绑定 KV。原来的 `LINK.txt` 节点数据会直接复用；只需增加登录密码，保留原 `TOKEN` 即可让已有设备继续更新订阅。
 
@@ -150,12 +154,12 @@ https://sub.example.com/s/<id>?loon     # Loon
 
 ## 数据与安全说明
 
-- 旧主节点、设置、API 节点和分享键继续兼容读取；新版主订阅、分区设置、API 节点与分享修改保存在 `NODE2LINK.v2.*`，API 模板与 Token 仍保存在 `NODE2LINK.api-subscription.settings.json`；完整键布局见架构文档；
+- 旧主节点、设置、API 节点和分享键继续兼容读取；新版主订阅、分区设置、API 节点与分享修改保存在 `NODE2LINK.v2.*`，API 模板与已保存 Token 仍使用 `NODE2LINK.api-subscription.settings.json`，首次 Token 初始化使用独立 bootstrap 记录；完整键布局见架构文档；
 - API Token 是外部追加节点的写入凭证，请勿公开；如发生泄露，可在“API 订阅”页重新生成并保存，旧调用地址随即失效；
 - 分享 ID 使用加密安全随机数生成，无法从管理账号或节点内容推导；
 - 分享链接本身就是访问凭证，请只发送给需要的人；如发生泄露，可直接重置为新的随机链接；
 - 删除分享会发布删除标记，使链接失效，无法从管理页恢复；历史记录仍保留，边缘节点可能在 KV 同步完成前短暂返回旧内容；
-- 修改 `ADMIN_PASSWORD` 或 `SESSION_SECRET` 会使已有登录会话立即失效，但不会改变订阅链接；
+- 修改 `ADMIN_PASSWORD` 或 `SESSION_SECRET` 会使使用新配置的实例拒绝旧登录会话，但不会改变订阅链接；会话签名升级后管理员需重新登录一次；
 - 新版主订阅正文与元数据保存在 `NODE2LINK.v2.main.*`，管理页继续提供最近一次保存版本恢复；旧 `LINK.txt` 与 `LINK.backup.txt` 保持兼容读取；
 - 转换非 Base64 格式时，节点来源会提交给已配置的转换服务，请使用你信任的服务；订阅响应及向转换服务发起的请求均带有禁止缓存指令，但转换服务本身仍需正确遵守这些指令。
 

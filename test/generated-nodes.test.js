@@ -259,7 +259,8 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.doesNotMatch(settingsHTML, /客户端展示|clientsForm|clientList|clientSelect|displayFormats|formatCatalog/);
 	assertInlineScriptsParse(settingsHTML);
 
-	const initial = await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json();
+	assert.equal((await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json()).settings.token, '');
+	const initial = await (await dispatch('/api/generated-nodes', { method: 'POST', headers: { ...authenticatedHeaders, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'initialize' }) })).json();
 	const apiPageHTML = await (await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).text() + readFileSync(new URL('../src/client/generated-nodes.js', import.meta.url), 'utf8');
 	assert.match(apiPageHTML, /API 订阅/);
 	assert.match(apiPageHTML, /模板使用样例/);

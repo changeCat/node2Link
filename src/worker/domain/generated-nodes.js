@@ -105,7 +105,7 @@ export function hasVariable(template, names) {
 	return new RegExp(`\\{\\{(?:${names.join('|')})(?:\\|[^{}|]+)*\\}\\}`).test(template);
 }
 
-export function normalizeGeneratedNodeSettings(payload = {}, previous = {}) {
+export function normalizeGeneratedNodeSettings(payload = {}, previous = {}, { generateToken = true } = {}) {
 	const tokenInput = String(payload.token ?? previous.token ?? '').trim();
 	if (tokenInput && !/^[A-Za-z0-9_-]{16,128}$/.test(tokenInput)) throw new Error('API Token 只能包含字母、数字、下划线或短横线，长度为 16–128 位');
 	const nodeTemplates = cleanLines(payload.nodeTemplate ?? previous.nodeTemplate ?? '');
@@ -122,7 +122,7 @@ export function normalizeGeneratedNodeSettings(payload = {}, previous = {}) {
 	if (!nameTemplate) throw new Error('请输入节点名称格式');
 	if (!hasVariable(nameTemplate, ['address'])) throw new Error('节点名称格式必须包含 {{address}}');
 	applyVariables(nameTemplate, { address: '', port: '', name: '', type: '' });
-	return { token: tokenInput || createId(), nodeTemplate: nodeTemplates.join('\n'), nameTemplate, savedAt: String(previous.savedAt || '') };
+	return { token: tokenInput || (generateToken ? createId() : ''), nodeTemplate: nodeTemplates.join('\n'), nameTemplate, savedAt: String(previous.savedAt || '') };
 }
 
 export function normalizeStoredNode(node) {

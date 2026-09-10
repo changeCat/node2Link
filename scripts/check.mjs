@@ -7,7 +7,7 @@ async function files(directory) {
 	return (await Promise.all(entries.map(entry => entry.isDirectory() ? files(directory + '/' + entry.name) : [directory + '/' + entry.name]))).flat();
 }
 
-for (const file of (await Promise.all(['src', 'scripts', 'test'].map(files))).flat().filter(file => /\.m?js$/.test(file))) {
+for (const file of [...(await Promise.all(['src', 'scripts', 'test', 'e2e'].map(files))).flat(), 'playwright.config.mjs'].filter(file => /\.m?js$/.test(file))) {
 	const result = spawnSync(process.execPath, ['--check', file], { stdio: 'inherit', windowsHide: true });
 	if (result.status !== 0) process.exit(result.status || 1);
 }

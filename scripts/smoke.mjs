@@ -29,11 +29,11 @@ for (const path of ['/', '/settings', '/shares', '/requests', '/api-subscription
 	}
 }
 for (const asset of assets) new Function(await readFile(new URL('../dist/assets/' + asset, import.meta.url), 'utf8'));
-for (const required of ['home.js', 'settings.js', 'shares.js', 'share-confirm.js', 'share-picker.js', 'generated-nodes.js', 'requests.js']) assert.ok(assets.has(required), required);
+for (const required of ['home.js', 'settings.js', 'shares.js', 'share-picker.js', 'generated-nodes.js', 'requests.js']) assert.ok(assets.has(required), required);
 
 const manual = 'trojan://manual@manual.example.com:443#Manual';
 assert.equal((await request('/', { method: 'POST', headers, body: manual })).status, 200);
-const settings = await (await request('/api/generated-nodes', { headers })).json();
+const settings = await (await request('/api/generated-nodes', { method: 'POST', headers, body: JSON.stringify({ action: 'initialize' }) })).json();
 const generated = 'vless://generated@api.example.com:443#Generated';
 assert.equal((await request('/api/import', { method: 'POST', headers: { 'X-API-Token': settings.settings.token, 'Content-Type': 'text/plain' }, body: generated })).status, 201);
 const subscription = await request(mainPath + '?base64');
