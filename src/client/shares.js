@@ -4,6 +4,19 @@ var shares = pageData.shares;
 var origin = window.location.origin;
 var form = document.getElementById("shareForm");
 var list = document.getElementById("shareList");
+const expiryInput = document.getElementById('shareExpiresAt');
+expiryInput.addEventListener('click', function(event) {
+  if (typeof expiryInput.showPicker !== 'function') return;
+  try {
+    expiryInput.focus();
+    expiryInput.showPicker();
+    event.preventDefault();
+  } catch { /* Keep native editing available when the browser cannot open its picker. */ }
+});
+document.getElementById('clearShareExpiry').addEventListener('click', function() {
+  expiryInput.value = '';
+  expiryInput.dispatchEvent(new Event('input', { bubbles: true }));
+});
 var shareIcon = '<span class="share-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 3-1.4 3.6L7 8l3.6 1.4L12 13l1.4-3.6L17 8l-3.6-1.4L12 3Z"/><path d="m5 14-.9 2.1L2 17l2.1.9L5 20l.9-2.1L8 17l-2.1-.9L5 14Z"/><path d="m19 13-1 2.5-2.5 1L18 17.5l1 2.5 1-2.5 2.5-1-2.5-1L19 13Z"/></svg></span>';
 var copyIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 var qrIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="6" height="6"/><rect x="15" y="3" width="6" height="6"/><rect x="3" y="15" width="6" height="6"/><path d="M15 15h2v2h-2zM19 15h2v6h-6v-2"/></svg>';

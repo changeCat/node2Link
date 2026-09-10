@@ -30,7 +30,7 @@ await build({
 	legalComments: 'none'
 });
 
-const pageScripts = ['home', 'settings', 'generated-nodes', 'share-picker', 'shares', 'requests'];
+const pageScripts = ['home', 'settings', 'generated-nodes', 'share-picker', 'shares', 'requests', 'dashboard'];
 await Promise.all(pageScripts.map(name => build({
  entryPoints: [pathOf(new URL('src/client/' + name + '.js', root))],
  outfile: pathOf(new URL(name + '.js', assets)), bundle: true, format: 'iife',
@@ -40,6 +40,7 @@ await Promise.all(pageScripts.map(name => build({
 const versionInputs = await Promise.all([
  ...pageScripts.map(name => readFile(new URL(name + '.js', assets))),
 	readFile(new URL('base.css', assets)),
+	readFile(new URL('dashboard.css', assets)),
 	readFile(new URL('lucide.js', assets)),
 	readFile(new URL('qrcode.min.js', assets)),
 	readFile(new URL('src/client/qrcode-loader.js', root))

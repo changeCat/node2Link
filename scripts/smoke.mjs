@@ -15,7 +15,7 @@ const cookie = login.headers.get('Set-Cookie').split(';')[0];
 const headers = { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' };
 const assets = new Set();
 let mainPath;
-for (const path of ['/', '/settings', '/shares', '/requests', '/api-subscriptions']) {
+for (const path of ['/', '/settings', '/shares', '/requests', '/api-subscriptions', '/dashboard']) {
 	const response = await request(path, { headers });
 	assert.equal(response.status, 200, path);
 	assert.match(response.headers.get('Server-Timing'), /app;dur=/);
@@ -29,7 +29,7 @@ for (const path of ['/', '/settings', '/shares', '/requests', '/api-subscription
 	}
 }
 for (const asset of assets) new Function(await readFile(new URL('../dist/assets/' + asset, import.meta.url), 'utf8'));
-for (const required of ['home.js', 'settings.js', 'shares.js', 'share-picker.js', 'generated-nodes.js', 'requests.js']) assert.ok(assets.has(required), required);
+for (const required of ['home.js', 'settings.js', 'shares.js', 'share-picker.js', 'generated-nodes.js', 'requests.js', 'dashboard.js']) assert.ok(assets.has(required), required);
 
 const manual = 'trojan://manual@manual.example.com:443#Manual';
 assert.equal((await request('/', { method: 'POST', headers, body: manual })).status, 200);
@@ -47,4 +47,4 @@ assert.equal((await request('/s/' + created.share.id)).status, 404);
 assert.equal((await request('/s/' + reset.share.id + '?base64')).status, 200);
 assert.equal((await request('/api/shares', { method: 'DELETE', headers, body: JSON.stringify({ id: reset.share.id }) })).status, 200);
 assert.equal((await request('/s/' + reset.share.id)).status, 404);
-console.log(`Built Worker smoke check passed: 5 management pages, ${assets.size} scripts, main/API subscriptions and share lifecycle.`);
+console.log(`Built Worker smoke check passed: 6 management pages, ${assets.size} scripts, main/API subscriptions and share lifecycle.`);
