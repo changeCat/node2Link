@@ -8,11 +8,15 @@ try {
 	const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
 	if (saved && typeof saved === 'object' && !Array.isArray(saved)) preferences = saved;
 } catch { /* Panels remain usable when local storage is unavailable. */ }
-for (const panel of document.querySelectorAll('[data-dashboard-panel]')) {
+const panels = document.querySelectorAll('[data-dashboard-panel]');
+function savePanels() {
+	for (const panel of panels) preferences[panel.dataset.dashboardPanel] = panel.open;
+	try { localStorage.setItem(storageKey, JSON.stringify(preferences)); } catch {}
+}
+for (const panel of panels) {
 	const name = panel.dataset.dashboardPanel;
 	if (typeof preferences[name] === 'boolean') panel.open = preferences[name];
-	panel.addEventListener('toggle', () => {
-		preferences[name] = panel.open;
-		try { localStorage.setItem(storageKey, JSON.stringify(preferences)); } catch {}
-	});
+	panel.addEventListener('toggle', savePanels);
 }
+// Native toggle events are queued; a quick reload can leave before they run.
+window.addEventListener('pagehide', savePanels);
