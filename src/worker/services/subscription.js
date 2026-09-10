@@ -1,3 +1,4 @@
+import { timed } from '../timing.js';
 import { selectSubscriptionFormat } from '../domain/formats.js';
 import { sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
 import { ADD, encodeBase64, isV2rayNUserAgent, normalizeV2rayNSubscription, clashFix } from '../domain/nodes.js';
@@ -72,15 +73,15 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 
 		const uniqueSubscriptionLinks = [...new Set(urls)].filter(item => item?.trim?.());
 		if (uniqueSubscriptionLinks.length > 0 && subscriptionFormat === 'base64' && !directSource) {
-			const subscriptionResponses = await getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader, options);
+			const subscriptionResponses = await timed(options.timings, 'upstream', () => getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader, options));
 			upstreamFailures = subscriptionResponses.failures || 0;
 			requestData += subscriptionResponses[0].join('\n');
 			if (subscriptionResponses[1]) converterSourceURL += '|' + subscriptionResponses[1];
 			if (subscriptionFormat === 'base64' && !isSubConverterRequest && subscriptionResponses[1].includes('://')) {
 				const mixedInit = { signal: request.signal, headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB (https://github.com/cmliu/CF-Workers-SUB)' } };
-				const mixedResult = customSublinkConverter
-					? await fetchSublinkSubscription(customSublinkConverter, 'base64', subscriptionResponses[1], mixedInit, options)
-					: await fetchConvertedSubscription(runtime.subConverters, 'mixed', subscriptionResponses[1], runtime.subConfig, mixedInit, options);
+				const mixedResult = await timed(options.timings, 'conversion', () => customSublinkConverter
+					? fetchSublinkSubscription(customSublinkConverter, 'base64', subscriptionResponses[1], mixedInit, options)
+					: fetchConvertedSubscription(runtime.subConverters, 'mixed', subscriptionResponses[1], runtime.subConfig, mixedInit, options));
 				if (mixedResult) {
 					try {
 						requestData += '\n' + atob(await mixedResult.response.text());
@@ -95,7 +96,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 
 		// API 订阅节点不写入主订阅编辑内容，只在读取主订阅时动态追加到所有主节点之后。
 		if (access === 'main' && env.KV && runtime.apiSubscriptionEnabled) {
-			const generatedNodes = await readGeneratedNodes(env.KV);
+			const generatedNodes = await timed(options.timings, 'nodes_read', () => readGeneratedNodes(env.KV));
 			if (generatedNodes.length) requestData += '\n' + generatedNodes.map(node => node.content).join('\n');
 		}
 
@@ -127,11 +128,11 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (subscriptionFormat === 'base64') return finish(base64Data, responseHeaders);
 
 		const conversionInit = { signal: request.signal, headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' } };
-		const conversionResult = customSublinkConverter
+		const conversionResult = await timed(options.timings, 'conversion', () => customSublinkConverter
 			? supportsSublinkTarget(subscriptionFormat)
-				? await fetchSublinkSubscription(customSublinkConverter, subscriptionFormat, converterSourceURL, conversionInit, options)
+				? fetchSublinkSubscription(customSublinkConverter, subscriptionFormat, converterSourceURL, conversionInit, options)
 				: null
-			: await fetchConvertedSubscription(runtime.subConverters, subscriptionFormat, converterSourceURL, runtime.subConfig, conversionInit, options);
+			: fetchConvertedSubscription(runtime.subConverters, subscriptionFormat, converterSourceURL, runtime.subConfig, conversionInit, options));
 		if (!conversionResult) return finish('订阅转换失败，请稍后重试或在管理页检查转换服务配置', responseHeaders, 502);
 
 		responseHeaders['X-Subconverter-Used'] = conversionResult.converter;

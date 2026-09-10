@@ -33,6 +33,10 @@ export const SUPPORTED_NODE_PROTOCOLS = ['vless', 'vmess', 'trojan', 'ss', 'ssr'
 export const REMOTE_FETCH_TIMEOUT_MS = 8 * 1000;
 export const APP_VERSION = globalThis.__NODE2LINK_VERSION__ || 'dev';
 
+export function isAPISubscriptionEnabled(env) {
+	return String(env.API_SUBSCRIPTION_ENABLED || '').trim().toLowerCase() === 'true';
+}
+
 export async function createRuntimeConfig(env, persistedSettings = {}) {
 	const updateTime = Number(env.SUBUPTIME);
 	const persistedCustomConverterURL = normalizeSublinkConverter(persistedSettings.customConverterURL);
@@ -70,7 +74,7 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 				: sanitizeSubscriptionToken(env.TOKEN || '')),
 		browserIconURL: normalizeBrowserIconURL(persistedSettings.browserIconURL),
 		displayFormats: normalizeDisplayFormats(persistedSettings.displayFormats),
-		apiSubscriptionEnabled: String(env.API_SUBSCRIPTION_ENABLED || '').trim().toLowerCase() === 'true',
+		apiSubscriptionEnabled: isAPISubscriptionEnabled(env),
 		requestLogEnabled: String(env.REQUESTLOG ?? '1') !== '0'
 	};
 }

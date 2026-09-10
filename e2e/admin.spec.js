@@ -23,7 +23,16 @@ test.afterEach(async ({ page }, testInfo) => {
 async function saveMain(page, content) {
 	await page.locator('#content').fill(content);
 	await page.locator('#saveButton').click();
-	await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
+	await expect(page.locator('#saveStatus')).toHaveText(/^(刚刚已保存|已同步)$/);
+	// Filtered runs may already have this content. Verify storage rather than
+	// requiring a redundant write, and never mistake a false "synced" UI for a save.
+	const stored = await page.evaluate(async () => {
+		// Use the browser's authenticated request path, including its localhost cookie handling.
+		const response = await fetch('/', { cache: 'no-store' });
+		if (!response.ok) throw new Error('Saved content read failed: ' + response.status);
+		return new DOMParser().parseFromString(await response.text(), 'text/html').getElementById('content')?.value;
+	});
+	expect(stored).toBe(content);
 }
 
 test('edits entered while the client script is loading remain unsaved until published', async ({ page }) => {
@@ -212,4 +221,115 @@ test('API template save, token rotation, import, copy and deletion', async ({ pa
 	await card.locator('[data-delete]').click();
 	await page.locator('#confirmAccept').click();
 	await expect(card).toHaveCount(0);
+});
+
+test('editor coalesces draft writes and flushes the latest edit before reload or save', async ({ page }) => {
+	await saveMain(page, first);
+	const latest = first + '\n' + second;
+	const immediate = await page.evaluate(content => {
+		window.draftWrites = 0;
+		const original = Storage.prototype.setItem;
+		Storage.prototype.setItem = function(key, value) {
+			if (key.startsWith('node2link:draft:')) window.draftWrites++;
+			return original.call(this, key, value);
+		};
+		const editor = document.getElementById('content');
+		for (let i = 0; i < 20; i++) {
+			editor.value = content + i;
+			editor.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+		return { writes: window.draftWrites, status: document.getElementById('saveStatus').textContent };
+	}, latest);
+	expect(immediate).toEqual({ writes: 0, status: '有未保存更改' });
+	await expect.poll(() => page.evaluate(() => window.draftWrites)).toBe(1);
+	await expect(page.locator('#nodeCount')).toHaveText('2');
+	await page.locator('#content').fill(latest);
+	await page.reload();
+	await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
+	await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+	await expect(page.locator('#content')).toHaveValue(latest);
+	await saveMain(page, second);
+	// Advancing beyond the debounce must not resurrect a draft after successful save.
+	await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
+	expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
+});
+
+test('picker loads on demand and pages large results without limiting selection', async ({ page }) => {
+	let requests = 0;
+	const nodes = Array.from({ length: 250 }, (_, i) => ({ id: 'main-' + i, source: 'main', sourceName: '主订阅', name: 'Node ' + i, content: 'vless://id@node' + i + '.example.com:443#Node-' + i }));
+	await page.route('**/api/node-candidates*', route => {
+		requests++;
+		return route.fulfill({ json: { ok: true, nodes, hasUpstream: false } });
+	});
+	await page.goto('/shares');
+	expect(requests).toBe(0);
+	await page.locator('#openNodePicker').click();
+	await expect(page.locator('.picker-node')).toHaveCount(100);
+	await page.locator('#morePickerNodes').click();
+	await expect(page.locator('.picker-node')).toHaveCount(200);
+	await page.locator('#nodeSearch').fill('node249.example.com');
+	await expect(page.locator('.picker-node')).toHaveCount(1);
+	await page.locator('#selectVisibleNodes').click();
+	await expect(page.locator('#selectedNodeCount')).toHaveText('已选择 1 个');
+	await page.locator('#nodeSearch').fill('');
+	await page.locator('#selectVisibleNodes').click();
+	await expect(page.locator('#selectedNodeCount')).toHaveText('已选择 250 个');
+	await page.locator('#addSelectedNodes').click();
+	expect((await page.locator('#shareContent').inputValue()).split('\n')).toHaveLength(250);
+	expect(requests).toBe(1);
+});
+
+test('picker keeps local selections when slow upstream results arrive', async ({ page }) => {
+	let release;
+	const ready = new Promise(resolve => { release = resolve; });
+	const local = { id: 'main-0', source: 'main', sourceName: '主订阅', name: 'Local', content: first };
+	const remote = { ...local, name: 'Remote', content: second };
+	await page.route('**/api/node-candidates*', async route => {
+		if (new URL(route.request().url()).searchParams.get('source') === 'local') {
+			await route.fulfill({ json: { ok: true, nodes: [local], hasUpstream: true } });
+		} else {
+			await ready;
+			await route.fulfill({ json: { ok: true, nodes: [remote, { ...local, id: 'main-1' }], hasUpstream: true, upstreamFailures: 0 } });
+		}
+	});
+	try {
+		await page.goto('/shares');
+		await page.locator('#openNodePicker').click();
+		await expect(page.locator('#nodePickerStatus')).toContainText('本地节点已就绪');
+		await page.locator('.picker-node input').check();
+		await expect(page.locator('#selectedNodeCount')).toHaveText('已选择 1 个');
+	} finally { release(); }
+	await expect(page.locator('.picker-node')).toHaveCount(2);
+	await expect(page.locator('.picker-node').filter({ hasText: 'Local' }).locator('input')).toBeChecked();
+	await expect(page.locator('.picker-node').filter({ hasText: 'Remote' }).locator('input')).not.toBeChecked();
+	await page.locator('#addSelectedNodes').click();
+	await expect(page.locator('#shareContent')).toHaveValue(first);
+});
+
+test('picker offers retry and keeps local nodes when the upstream request fails', async ({ page }) => {
+	let fullRequests = 0;
+	const node = { id: 'main-0', source: 'main', sourceName: '主订阅', name: 'Local', content: first };
+	const remote = { ...node, id: 'main-1', name: 'Remote', content: second };
+	await page.route('**/api/node-candidates*', route => {
+		if (!new URL(route.request().url()).search) {
+			fullRequests++;
+			if (fullRequests === 2) return route.fulfill({ status: 503, json: { message: '暂时不可用' } });
+			return route.fulfill({ json: { ok: true, nodes: [node, remote], hasUpstream: true, upstreamFailures: fullRequests === 1 ? 1 : 0 } });
+		}
+		return route.fulfill({ json: { ok: true, nodes: [node], hasUpstream: true, upstreamFailures: 0 } });
+	});
+	await page.goto('/shares');
+	await page.locator('#openNodePicker').click();
+	await expect(page.locator('#retryNodePicker')).toBeVisible();
+	await expect(page.locator('.picker-node')).toHaveCount(2);
+	await page.locator('.picker-node').filter({ hasText: 'Remote' }).locator('input').check();
+	await page.locator('#retryNodePicker').click();
+	await expect(page.locator('#nodePickerStatus')).toContainText('暂时不可用');
+	await expect(page.locator('.picker-node').filter({ hasText: 'Remote' }).locator('input')).toBeChecked();
+	await page.locator('#retryNodePicker').click();
+	await expect(page.locator('#retryNodePicker')).toBeHidden();
+	await expect(page.locator('#nodePickerStatus')).toContainText('节点已加载');
+	await expect(page.locator('.picker-node').filter({ hasText: 'Remote' }).locator('input')).toBeChecked();
+	expect(fullRequests).toBe(3);
+	await page.screenshot({ path: test.info().outputPath('node-picker.png'), fullPage: true });
 });
