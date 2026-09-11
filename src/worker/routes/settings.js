@@ -10,7 +10,7 @@ export async function saveSettings(request, env, currentSettings) {
 	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	try {
 		const payload = await readJSONBody(request, BODY_LIMITS.settings);
-		const section = ['display', 'entry', 'conversion', 'clients'].includes(payload.section) ? payload.section : 'all';
+		const section = ['display', 'entry', 'conversion', 'clients', 'logging'].includes(payload.section) ? payload.section : 'all';
 		const settings = { ...currentSettings };
 
 		if (section === 'display' || section === 'all') {
@@ -48,6 +48,14 @@ export async function saveSettings(request, env, currentSettings) {
 			const displayFormats = normalizeDisplayFormats(payload.displayFormats ?? currentSettings.displayFormats ?? DEFAULT_DISPLAY_FORMATS, []);
 			if (!displayFormats.length) return jsonResponse({ ok: false, message: '请至少保留一种客户端订阅格式' }, 400);
 			settings.displayFormats = displayFormats;
+		}
+
+		if (section === 'logging' || section === 'all' && Object.hasOwn(payload, 'requestLogMode')) {
+			if (!['off', 'full', 'sample'].includes(payload.requestLogMode)) return jsonResponse({ ok: false, message: '请选择有效的记录模式' }, 400);
+			const rate = Number(payload.requestLogSampleRate ?? currentSettings.requestLogSampleRate ?? 0.1);
+			if (!Number.isFinite(rate) || rate < 0.01 || rate > 1) return jsonResponse({ ok: false, message: '采样比例须为 1% 到 100%' }, 400);
+			settings.requestLogMode = payload.requestLogMode;
+			settings.requestLogSampleRate = rate;
 		}
 
 		settings.savedAt = new Date().toISOString();

@@ -28,4 +28,4 @@ for (const history of [100, 1000, 10000]) {
 	}
 }
 console.table(results);
-console.log('Local MemoryKV only. Journal scans remain. Share summaries expire after 15 seconds; node indexes after 2 seconds. Public content and mutation reads bypass them. Full settings reads always check current keys; /s/ presentation settings may reuse a 60-second view.');
+console.log('Local MemoryKV only. Journal scans remain. Share summaries expire after 15 seconds; node indexes after 15 seconds. Public content and mutation reads bypass them. Full settings reads always check current keys; /s/ presentation settings may reuse a 60-second view.');

@@ -70,9 +70,7 @@ export async function handleGeneratedNodesAPI(request, env) {
 		}
 		if (request.method === 'DELETE') {
 			const id = String(payload.id || '');
-			const nodes = await readGeneratedNodes(env.KV);
-			if (!nodes.some(node => node.id === id)) return jsonResponse({ ok: false, message: '节点不存在' }, 404);
-			await deleteNodeRecord(env.KV, id);
+			if (!await deleteNodeRecord(env.KV, id, { requireExisting: true })) return jsonResponse({ ok: false, message: '节点不存在' }, 404);
 			return jsonResponse({ ok: true });
 		}
 		return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);

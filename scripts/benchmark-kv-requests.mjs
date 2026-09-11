@@ -16,7 +16,7 @@ for (const [label, path, api] of [
 ]) {
 	let counts;
 	const kv = new MemoryKV({ before(op) { if (counts) counts[op]++; } });
-	const env = { KV: kv, ADMIN_PASSWORD: 'local-password', SESSION_SECRET: 'local-secret', TOKEN: 'benchmark-token', API_SUBSCRIPTION_ENABLED: String(api) };
+	const env = { KV: kv, ADMIN_PASSWORD: 'local-password', SESSION_SECRET: 'local-secret', TOKEN: 'benchmark-token', REQUESTLOG: '1', API_SUBSCRIPTION_ENABLED: String(api) };
 	await kv.put('NODE2LINK.identity.json', JSON.stringify({ mainSubscriptionId: 'benchmark_main_id' }));
 	const content = 'trojan://local@node.example.com:443#Benchmark';
 	await saveMainRecord(kv, content);
@@ -31,4 +31,4 @@ for (const [label, path, api] of [
 	}
 }
 console.table(rows);
-console.log('Local operation counts only; warm means the same isolate within 60 seconds. Default request logging remains enabled. No production KV access.');
+console.log('Local operation counts only; warm means the same isolate within 60 seconds. Full request logging is explicitly enabled for deterministic counts. No production KV access.');

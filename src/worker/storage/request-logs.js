@@ -1,4 +1,5 @@
 import { isValidShareId } from './shares.js';
+import { cachedView, invalidateView } from './view-cache.js';
 
 const REQUEST_LOG_PREFIX = 'NODE2LINK.request.';
 const REQUEST_LOG_TTL = 30 * 24 * 60 * 60;
@@ -21,14 +22,19 @@ export function detectSubscriptionClient(userAgentHeader) {
 	return '其他客户端';
 }
 
-export function queueSubscriptionRequestLog(ctx, env, details) {
+export function queueSubscriptionRequestLog(ctx, env, details, logging = { requestLogMode: 'full', requestLogSampleRate: 1 }) {
 	if (!env.KV || typeof env.KV.put !== 'function') return;
-	const task = recordSubscriptionRequest(env.KV, details)
+	if (logging.requestLogMode === 'off') return;
+	const rate = logging.requestLogMode === 'sample' ? logging.requestLogSampleRate : 1;
+	const failed = Number(details.status) >= 400;
+	if (!failed && rate < 1 && Math.random() >= rate) return;
+	const task = recordSubscriptionRequest(env.KV, { ...details, sampleRate: failed ? 1 : rate, sampledMode: logging.requestLogMode === 'sample' })
 		.catch(error => console.error('记录订阅请求时发生错误:', error));
 	if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(task);
 }
 
 async function recordSubscriptionRequest(kv, details) {
+	invalidateView(kv, REQUEST_LOG_PREFIX);
 	const now = Date.now();
 	const reverseTimestamp = String(9999999999999 - now).padStart(13, '0');
 	const randomID = typeof crypto.randomUUID === 'function'
@@ -43,15 +49,24 @@ async function recordSubscriptionRequest(kv, details) {
 		requestedAt: new Date(now).toISOString(),
 		status: Number(details.status) || 200,
 		durationMs: Math.max(0, Number(details.durationMs) || 0),
-		upstreamFailures: Math.max(0, Number(details.upstreamFailures) || 0)
+		upstreamFailures: Math.max(0, Number(details.upstreamFailures) || 0),
+		sampleRate: Number(details.sampleRate) || 1,
+		sampledMode: details.sampledMode === true
 	};
-	await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
-		metadata,
-		expirationTtl: REQUEST_LOG_TTL
-	});
+	try {
+		await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
+			metadata, expirationTtl: REQUEST_LOG_TTL
+		});
+	} finally { invalidateView(kv, REQUEST_LOG_PREFIX); }
 }
 
 export async function readSubscriptionRequestStats(kv) {
+	return cachedView(kv, REQUEST_LOG_PREFIX, () => loadSubscriptionRequestStats(kv), {
+		fresh: false, ttlMs: 15_000, cacheable: value => !value.unavailable
+	});
+}
+
+async function loadSubscriptionRequestStats(kv) {
 	const empty = { total: 0, truncated: false, main: { total: 0, clients: [] }, shares: [] };
 	if (!kv || typeof kv.list !== 'function') return empty;
 	const events = [];
@@ -71,7 +86,7 @@ export async function readSubscriptionRequestStats(kv) {
 		} while (cursor && events.length < REQUEST_LOG_LIMIT);
 	} catch (error) {
 		console.error('读取订阅请求统计时发生错误:', error);
-		return empty;
+		return { ...empty, unavailable: true };
 	}
 
 	const summarize = records => {
@@ -108,6 +123,7 @@ export async function readSubscriptionRequestStats(kv) {
 	}
 	return {
 		total: events.length,
+		sampled: events.some(event => event.sampledMode || Number(event.sampleRate || 1) < 1),
 		truncated,
 		main: summarize(mainEvents),
 		shares: [...shareGroups.entries()]

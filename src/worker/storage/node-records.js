@@ -9,7 +9,7 @@ const CACHE_KEY = 'NODE2LINK.cache.nodes.v2';
 export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh = true } = {}) {
 	if (!kv) return [];
 	const [legacy, keys, cached] = await Promise.all([
-		readJSON(kv, LEGACY_KEY, [], Array.isArray), cachedView(kv, PREFIX, () => listKeys(kv, PREFIX), { fresh, cacheable: keys => keys.length <= MAX_CACHED_KEYS }),
+		readJSON(kv, LEGACY_KEY, [], Array.isArray), cachedView(kv, PREFIX, () => listKeys(kv, PREFIX), { fresh, ttlMs: 15_000, cacheable: keys => keys.length <= MAX_CACHED_KEYS }),
 		// Only this derived cache may be discarded on failure. The authoritative
 		// legacy value and immutable records must always be read successfully.
 		readJSON(kv, CACHE_KEY, null, value => isObject(value) && value.schemaVersion === 2 && Array.isArray(value.applied) && Array.isArray(value.entries) && value.entries.every(entry => typeof entry.revision === 'string' && normalize(entry.node)) && Array.isArray(value.deleted)).catch(() => null)
@@ -51,11 +51,12 @@ export async function appendNodeBatch(kv, nodes) {
 	finally { invalidateView(kv, PREFIX); }
 }
 
-export async function deleteNodeRecord(kv, id) {
+export async function deleteNodeRecord(kv, id, { requireExisting = false } = {}) {
 	const nodes = await readNodeRecords(kv, normalizeStoredNode, { deduplicate: false });
 	const target = nodes.find(node => node.id === id);
+	if (!target && requireExisting) return false;
 	const deletedIds = target ? nodes.filter(node => node.content === target.content).map(node => node.id) : [id];
 	invalidateView(kv, PREFIX);
-	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, deletedIds }); }
+	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, deletedIds }); return true; }
 	finally { invalidateView(kv, PREFIX); }
 }

@@ -1,5 +1,5 @@
 import { handleSharesAPI } from './routes/shares.js';
-import { createRuntimeConfig, isSubscriptionTokenRequest, isAPISubscriptionEnabled } from './config.js';
+import { createRuntimeConfig, isSubscriptionTokenRequest, isAPISubscriptionEnabled, couldBeSubscriptionTokenRequest } from './config.js';
 import { jsonResponse, textResponse, requestHasSameOrigin } from './http.js';
 import { readPersistedSettings, readPublicSubscriptionSettings } from './storage/settings.js';
 import { StorageError } from './storage/kv.js';
@@ -50,8 +50,10 @@ async function dispatch(request, env, ctx, timings) {
 	const shareMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{12,64})$/);
 	const publicShareRequest = Boolean(shareMatch && request.method === 'GET');
 	// Percent-encoded slashes can belong to an existing /<Token> entry.
-	const tokenCandidate = request.method === 'GET' && (url.pathname === '/'
-		? url.searchParams.has('token') : !url.pathname.slice(1).includes('/'));
+	const tokenCandidate = request.method === 'GET' && couldBeSubscriptionTokenRequest(url);
+	if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)
+		&& ['/', '/api/login', '/api/settings', '/api/shares', '/api/generated-nodes', '/api/logout'].includes(url.pathname)
+		&& !requestHasSameOrigin(request)) return textResponse('请求来源无效', 403);
 	if (!apiSubscriptionEnabled && ['/api/import', '/api/generated-nodes', '/api-subscriptions'].includes(url.pathname)) {
 		return url.pathname.startsWith('/api/')
 			? jsonResponse({ ok: false, message: '接口不存在' }, 404)

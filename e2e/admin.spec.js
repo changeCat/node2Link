@@ -461,3 +461,24 @@ test('personal dashboard displays saved data and remembers collapsed panels', as
 		}, ids);
 	}
 });
+
+test('request logging mode and sample percentage can be saved without changing subscription entry', async ({ page }) => {
+	await page.goto('/settings');
+	const token = await page.locator('#subscriptionToken').inputValue();
+	const form = page.locator('#loggingForm');
+	await form.locator('#requestLogMode').selectOption('sample');
+	await form.locator('#requestLogSampleRate').fill('25');
+	await form.getByRole('button', { name: '保存', exact: true }).click();
+	await expect(page.locator('#loggingMessage')).toHaveText('已保存');
+	await page.reload();
+	await expect(form.locator('#requestLogMode')).toHaveValue('sample');
+	await expect(form.locator('#requestLogSampleRate')).toHaveValue('25');
+	await expect(page.locator('#subscriptionToken')).toHaveValue(token);
+	await page.goto('/requests');
+	await expect(page.locator('main')).toContainText('25%');
+	await page.goto('/settings');
+	await form.locator('#requestLogMode').selectOption('off');
+	await expect(form.locator('#requestLogSampleRate')).toBeDisabled();
+	await form.getByRole('button', { name: '保存', exact: true }).click();
+	await expect(page.locator('#loggingMessage')).toHaveText('已保存');
+});

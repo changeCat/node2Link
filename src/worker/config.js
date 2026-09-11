@@ -75,8 +75,18 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 		browserIconURL: normalizeBrowserIconURL(persistedSettings.browserIconURL),
 		displayFormats: normalizeDisplayFormats(persistedSettings.displayFormats),
 		apiSubscriptionEnabled: isAPISubscriptionEnabled(env),
-		requestLogEnabled: String(env.REQUESTLOG ?? '1') !== '0'
+		...resolveRequestLogging(env, persistedSettings)
 	};
+}
+
+// Preserve explicit legacy switches; an unconfigured deployment now samples.
+export function resolveRequestLogging(env, settings = {}) {
+	const legacy = String(env.REQUESTLOG ?? '').trim().toLowerCase();
+	const fallback = legacy === '0' || legacy === 'off' ? 'off' : legacy === '1' || legacy === 'full' ? 'full' : 'sample';
+	const mode = ['off', 'full', 'sample'].includes(settings.requestLogMode) ? settings.requestLogMode : fallback;
+	const value = Number(settings.requestLogSampleRate ?? env.REQUESTLOG_SAMPLE_RATE ?? 0.1);
+	const sampleRate = Number.isFinite(value) && value > 0 && value <= 1 ? value : 0.1;
+	return { requestLogMode: mode, requestLogEnabled: mode !== 'off', requestLogSampleRate: sampleRate };
 }
 
 export function sanitizeSubscriptionName(value) {
@@ -98,6 +108,16 @@ export function normalizeDisplayFormats(value, fallback = DEFAULT_DISPLAY_FORMAT
 export function sanitizeSubscriptionToken(value) {
 	const token = String(value || '').trim();
 	return token && token.length <= 128 && !/[\u0000-\u001f\u007f]/.test(token) ? token : '';
+}
+
+export function couldBeSubscriptionTokenRequest(url) {
+	let value;
+	if (url.pathname === '/') value = url.searchParams.get('token');
+	else {
+		if (url.pathname.slice(1).includes('/')) return false;
+		try { value = decodeURIComponent(url.pathname.slice(1)); } catch { return false; }
+	}
+	return typeof value === 'string' && value.length > 0 && value === sanitizeSubscriptionToken(value);
 }
 
 export function isSubscriptionTokenRequest(url, subscriptionToken) {

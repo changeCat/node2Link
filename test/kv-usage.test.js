@@ -56,7 +56,7 @@ test('existing Token URLs including page names and encoded slashes survive routi
 test('public subscriptions reduce lists without suppressing request logs', async () => {
 	for (const kind of ['main', 'share']) {
 		const { kv, env, request } = fixture();
-		delete env.REQUESTLOG;
+		env.REQUESTLOG = '1';
 		await kv.put('NODE2LINK.identity.json', JSON.stringify({ mainSubscriptionId: mainId }));
 		await saveMainRecord(kv, node);
 		await saveShare(kv, share);
