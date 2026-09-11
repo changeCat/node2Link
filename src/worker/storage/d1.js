@@ -26,7 +26,10 @@ const bindings = new WeakMap();
 const isBlobKey = key => key.startsWith(MAIN_BODY_PREFIX) || key.startsWith(SHARE_BODY_PREFIX);
 
 function missingSchema(cause) {
-	return /no such table:\s*node2link_(?:records|nodes)/i.test(String(cause?.message || cause));
+	for (let current = cause, depth = 0; current && depth < 5; current = current.cause, depth++) {
+		if (/no such table:\s*node2link_(?:records|nodes)/i.test(String(current.message || current))) return true;
+	}
+	return false;
 }
 
 async function initializeSchema(db) {
