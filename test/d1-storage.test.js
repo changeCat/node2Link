@@ -59,6 +59,16 @@ test('D1 schema initialization recognizes Cloudflare errors with details in caus
 	assert.equal(db.metrics.exec, 1);
 });
 
+test('D1 initialization failures retain their actionable storage message', async () => {
+	const { storage } = fixture({ before(operation) {
+		if (operation === 'exec') throw new Error('database unavailable');
+	} });
+	await assert.rejects(
+		readPersistedSettings({ KV: storage }),
+		error => error instanceof StorageError && error.message === 'D1 初始化失败，请确认 DB 绑定可用'
+	);
+});
+
 test('ordinary shares stay entirely in D1 and reset atomically', async () => {
 	const { kv, db, storage } = fixture({ initialized: true });
 	const original = share('d1_original_share');
