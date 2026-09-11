@@ -1,7 +1,7 @@
 import { isValidShareId } from './shares.js';
 import { cachedView, invalidateView } from './view-cache.js';
 
-const REQUEST_LOG_PREFIX = 'NODE2LINK.request.';
+const REQUEST_LOG_PREFIX = 'requests.';
 const REQUEST_LOG_TTL = 30 * 24 * 60 * 60;
 const REQUEST_LOG_LIMIT = 500;
 
@@ -23,7 +23,7 @@ export function detectSubscriptionClient(userAgentHeader) {
 }
 
 export function queueSubscriptionRequestLog(ctx, env, details, logging = { requestLogMode: 'full', requestLogSampleRate: 1 }) {
-	if (!env.KV || typeof env.KV.put !== 'function') return;
+	if (typeof env.KV.put !== 'function') return;
 	if (logging.requestLogMode === 'off') return;
 	const rate = logging.requestLogMode === 'sample' ? logging.requestLogSampleRate : 1;
 	const failed = Number(details.status) >= 400;
@@ -113,13 +113,13 @@ async function loadSubscriptionRequestStats(kv) {
 		};
 	};
 
-	const mainEvents = events.filter(event => event.access !== 'share' && event.access !== 'guest');
-	const shareEvents = events.filter(event => event.access === 'share' || event.access === 'guest');
+	const mainEvents = events.filter(event => event.access !== 'share');
+	const shareEvents = events.filter(event => event.access === 'share');
 	const shareGroups = new Map();
 	for (const event of shareEvents) {
-		const id = isValidShareId(event.subscriptionId) ? event.subscriptionId : 'legacy';
-		if (!shareGroups.has(id)) shareGroups.set(id, []);
-		shareGroups.get(id).push(event);
+		if (!isValidShareId(event.subscriptionId)) continue;
+		if (!shareGroups.has(event.subscriptionId)) shareGroups.set(event.subscriptionId, []);
+		shareGroups.get(event.subscriptionId).push(event);
 	}
 	return {
 		total: events.length,

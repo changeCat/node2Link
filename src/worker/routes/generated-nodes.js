@@ -19,7 +19,6 @@ function keyValueInput(entries, allowedKeys = ['address', 'port', 'node', 'nodes
 }
 
 export async function handlePublicNodeImport(request, env, url = new URL(request.url), { onImported } = {}) {
-	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	if (!['GET', 'POST'].includes(request.method)) return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);
 	try {
 		const settings = await readGeneratedNodeSettings(env.KV);
@@ -50,7 +49,6 @@ export async function handlePublicNodeImport(request, env, url = new URL(request
 }
 
 export async function handleGeneratedNodesAPI(request, env) {
-	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	if (request.method === 'GET') {
 		const [settings, nodes] = await Promise.all([readGeneratedNodeSettings(env.KV), readGeneratedNodes(env.KV, { fresh: false })]);
 		return jsonResponse({ ok: true, settings, nodes });

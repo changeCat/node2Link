@@ -2,8 +2,8 @@ import { isObject, readJSON, readJSONMap, writeJSON, writeJSONBatch } from './kv
 import { isValidShareId } from './shares.js';
 import { cachedView, invalidateView } from './view-cache.js';
 
-export const SETTINGS_PREFIX = 'NODE2LINK.v3.settings.';
-const IDENTITY_KEY = 'NODE2LINK.identity.json';
+export const SETTINGS_PREFIX = 'settings.';
+const IDENTITY_KEY = 'identity';
 const PUBLIC_VIEW = 'settings:public-presentation';
 export const SETTING_SECTIONS = {
 	display: ['subscriptionName', 'pageTitle', 'browserIconURL'],
@@ -28,11 +28,10 @@ async function readSections(kv, sections, entry) {
 }
 
 export async function readSubscriptionEntry(env) {
-	return env.KV ? readJSON(env.KV, SETTINGS_PREFIX + 'entry', {}, isObject) : {};
+	return readJSON(env.KV, SETTINGS_PREFIX + 'entry', {}, isObject);
 }
 
 export async function readPersistedSettings(env, { entry } = {}) {
-	if (!env.KV) return {};
 	const [settings, identity] = await Promise.all([
 		readSections(env.KV, Object.keys(SETTING_SECTIONS), entry),
 		readJSON(env.KV, IDENTITY_KEY, {}, isObject)
@@ -43,7 +42,6 @@ export async function readPersistedSettings(env, { entry } = {}) {
 // Only presentation is cached. Credentials and main identity are always read
 // directly from KV; there is no persistent snapshot or additional auth cache.
 export async function readPublicSubscriptionSettings(env) {
-	if (!env.KV) return {};
 	const [settings, identity] = await Promise.all([
 		cachedView(env.KV, PUBLIC_VIEW, () => readSections(env.KV, ['display', 'conversion', 'clients', 'logging']), {
 			fresh: false, ttlMs: 60_000,
@@ -60,8 +58,7 @@ export async function saveSettingsSections(kv, settings, section) {
 	invalidateView(kv, PUBLIC_VIEW);
 	try {
 		// The UI saves one section at a time. Independent sections never replace
-		// each other. D1 publishes legacy bulk saves in one transaction; the
-		// temporary raw-KV fallback writes the fixed section keys sequentially.
+		// each other, while an all-section save is committed in one D1 batch.
 		const records = sections.map(name => {
 			const patch = { savedAt: settings.savedAt };
 			for (const field of SETTING_SECTIONS[name]) if (Object.hasOwn(settings, field)) patch[field] = settings[field];
@@ -71,8 +68,7 @@ export async function saveSettingsSections(kv, settings, section) {
 	} finally { invalidateView(kv, PUBLIC_VIEW); }
 }
 
-// The existing fixed identity has no legacy lookup cost and remains usable.
 export async function ensureMainIdentity(env, runtime, settings) {
-	if (!env.KV || isValidShareId(settings.mainSubscriptionId) || !isValidShareId(runtime.mainSubscriptionId)) return;
+	if (isValidShareId(settings.mainSubscriptionId) || !isValidShareId(runtime.mainSubscriptionId)) return;
 	await writeJSON(env.KV, IDENTITY_KEY, { mainSubscriptionId: runtime.mainSubscriptionId });
 }

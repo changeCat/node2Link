@@ -1,7 +1,7 @@
 import worker from '../src/worker/app.js';
 import { MemoryKV } from './lib/memory-kv.mjs';
 import { MemoryD1 } from './lib/memory-d1.mjs';
-import { withD1Storage } from '../src/worker/storage/d1.js';
+import { withStorageBindings } from '../src/worker/storage/d1.js';
 import { saveMainRecord } from '../src/worker/storage/main.js';
 import { saveShare } from '../src/worker/storage/shares.js';
 
@@ -21,9 +21,9 @@ for (const [label, path, api] of [
 	const increment = key => { if (counts) counts[key] = (counts[key] || 0) + 1; };
 	const kv = new MemoryKV({ before(op) { increment('kv' + op[0].toUpperCase() + op.slice(1)); } });
 	const db = new MemoryD1({ initialized: true, before(op) { increment('d1' + op[0].toUpperCase() + op.slice(1)); } });
-	const storage = withD1Storage({ KV: kv, DB: db }).KV;
+	const storage = withStorageBindings({ KV: kv, DB: db }).KV;
 	const env = { KV: kv, DB: db, ADMIN_PASSWORD: 'local-password', SESSION_SECRET: 'local-secret', TOKEN: 'benchmark-token', REQUESTLOG: '1', API_SUBSCRIPTION_ENABLED: String(api) };
-	await storage.put('NODE2LINK.identity.json', JSON.stringify({ mainSubscriptionId: 'benchmark_main_id' }));
+	await storage.put('identity', JSON.stringify({ mainSubscriptionId: 'benchmark_main_id' }));
 	const content = 'trojan://local@node.example.com:443#Benchmark';
 	await saveMainRecord(storage, content);
 	await saveShare(storage, { id: 'benchmark_share_id', name: 'Benchmark', content });
@@ -37,4 +37,4 @@ for (const [label, path, api] of [
 	}
 }
 console.table(rows);
-console.log('Local hybrid MemoryD1/MemoryKV operation counts only. Warm means the same isolate within 60 seconds. Full logging is enabled for deterministic counts; no production storage is accessed.');
+console.log('Local MemoryD1/MemoryKV operation counts only. Warm means the same isolate within 60 seconds. Full logging is enabled for deterministic counts; no production storage is accessed.');

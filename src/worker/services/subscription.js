@@ -3,7 +3,7 @@ import { selectSubscriptionFormat } from '../domain/formats.js';
 import { sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
 import { ADD, encodeBase64, isV2rayNUserAgent, normalizeV2rayNSubscription, clashFix } from '../domain/nodes.js';
 import { getSUB } from '../adapters/upstream.js';
-import { normalizeSublinkConverter, fetchSublinkSubscription, fetchConvertedSubscription, supportsSublinkTarget } from '../adapters/converters.js';
+import { fetchSublinkSubscription, fetchConvertedSubscription, supportsSublinkTarget } from '../adapters/converters.js';
 import { queueTelegram, sendMessage, shouldSendSubscriptionNotification } from '../adapters/telegram.js';
 import { detectSubscriptionClient, queueSubscriptionRequestLog } from '../storage/request-logs.js';
 import { readGeneratedNodes } from '../storage/generated-nodes.js';
@@ -15,13 +15,11 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		const effectiveSubscriptionName = access === 'share'
 			? sanitizeSubscriptionName(subscriptionName)
 			: runtime.FileName;
-		const customSublinkConverter = runtime.converterMode === 'custom'
-			? runtime.customConverterURL
-			: (!env.KV ? normalizeSublinkConverter(url.searchParams.get('converter')) : '');
+		const customSublinkConverter = runtime.converterMode === 'custom' ? runtime.customConverterURL : '';
 
 		let mainData = sourceData || '';
 		let urls = [];
-		if (access === 'main' && !env.KV && env.LINKSUB) urls = await ADD(env.LINKSUB);
+		if (access === 'main' && env.LINKSUB) urls = await ADD(env.LINKSUB);
 
 		const allLinks = await ADD(mainData + '\n' + urls.join('\n'));
 		let selfBuiltNodes = '';
@@ -95,7 +93,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		}
 
 		// API 订阅节点不写入主订阅编辑内容，只在读取主订阅时动态追加到所有主节点之后。
-		if (access === 'main' && env.KV && runtime.apiSubscriptionEnabled) {
+		if (access === 'main' && runtime.apiSubscriptionEnabled) {
 			const generatedNodes = await timed(options.timings, 'nodes_read', () => readGeneratedNodes(env.KV));
 			if (generatedNodes.length) requestData += '\n' + generatedNodes.map(node => node.content).join('\n');
 		}

@@ -11,6 +11,8 @@ import { appendGeneratedNodes } from '../src/worker/services/generated-nodes.js'
 import worker, { normalizeV2rayNSubscription } from '../src/worker/app.js';
 
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
+import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
+import { withStorageBindings } from '../src/worker/storage/d1.js';
 
 const settings = normalizeGeneratedNodeSettings({
 	token: 'abcdefghijklmnop',
@@ -155,7 +157,7 @@ test('批量地址中任一项无效时不会写入部分节点', async () => {
 
 test('公开导入接口要求正确 Token 且只接受 address 参数', async () => {
 	const kv = new MemoryKV();
-	await kv.put('NODE2LINK.api-subscription.settings.json', JSON.stringify(settings));
+	await kv.put('api.settings', JSON.stringify(settings));
 	const unauthorized = await handlePublicNodeImport(
 		new Request('https://sub.example.com/api/import?token=wrong&address=cdn.example.com&port=443'),
 		{ KV: kv }
@@ -189,7 +191,7 @@ test('公开导入接口要求正确 Token 且只接受 address 参数', async (
 
 test('公开导入接口支持重复查询参数、JSON 地址数组和 JSON 节点数组', async () => {
 	const kv = new MemoryKV();
-	await kv.put('NODE2LINK.api-subscription.settings.json', JSON.stringify(settings));
+	await kv.put('api.settings', JSON.stringify(settings));
 
 	const repeatedQuery = await handlePublicNodeImport(new Request(
 		'https://sub.example.com/api/import?token=abcdefghijklmnop&address=one.example.com&port=443&address=1.1.1.1&port=2053'
@@ -228,13 +230,14 @@ test('公开导入接口支持重复查询参数、JSON 地址数组和 JSON 节
 test('登录后的模板配置、公开追加、主订阅隔离、分享候选和删除形成完整链路', async () => {
 	const origin = 'https://sub.example.com';
 	const env = {
-		KV: new MemoryKV(),
+		KV: new MemoryKV(), DB: new MemoryD1(),
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
 		API_SUBSCRIPTION_ENABLED: 'true',
 		REQUESTLOG: '0'
 	};
+	env.KV = withStorageBindings(env).KV;
 	await saveMainRecord(env.KV, 'vless://manual-id@manual.example.com:443#Manual');
 	const ctx = { waitUntil() {} };
 	const dispatch = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, ctx);
@@ -357,13 +360,14 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 test('分享可保存上游订阅链接，并在访问生成链接时合并上游节点', async () => {
 	const origin = 'https://share.example.com';
 	const env = {
-		KV: new MemoryKV(),
+		KV: new MemoryKV(), DB: new MemoryD1(),
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
 		API_SUBSCRIPTION_ENABLED: 'true',
 		REQUESTLOG: '0'
 	};
+	env.KV = withStorageBindings(env).KV;
 	const ctx = { waitUntil() {} };
 	const dispatch = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, ctx);
 	const login = await dispatch('/api/login', {
@@ -500,12 +504,13 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 test('API 订阅默认关闭并隐藏页面、接口、节点来源和主订阅附加内容', async () => {
 	const origin = 'https://disabled.example.com';
 	const env = {
-		KV: new MemoryKV(),
+		KV: new MemoryKV(), DB: new MemoryD1(),
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
 		REQUESTLOG: '0'
 	};
+	env.KV = withStorageBindings(env).KV;
 	await saveMainRecord(env.KV, 'vless://manual@manual.example.com:443#Manual');
 	await appendGeneratedNodes(env.KV, settings, { address: 'api.example.com', port: 8443 });
 	const ctx = { waitUntil() {} };
@@ -543,7 +548,7 @@ test('API 订阅默认关闭并隐藏页面、接口、节点来源和主订阅�
 test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', async () => {
 	const origin = 'https://notify.example.com';
 	const env = {
-		KV: new MemoryKV(),
+		KV: new MemoryKV(), DB: new MemoryD1(),
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
@@ -552,7 +557,8 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 		TGID: '456',
 		REQUESTLOG: '0'
 	};
-	await env.KV.put('NODE2LINK.api-subscription.settings.json', JSON.stringify(settings));
+	env.KV = withStorageBindings(env).KV;
+	await env.KV.put('api.settings', JSON.stringify(settings));
 	const telegramMessages = [];
 	const pending = [];
 	const originalFetch = globalThis.fetch;
