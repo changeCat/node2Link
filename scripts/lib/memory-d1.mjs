@@ -45,6 +45,12 @@ export class MemoryD1 {
 	}
 
 	async execute(statement, operation) {
+		if (/^CREATE\s+(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS/i.test(statement.sql.trim())) {
+			await this.before?.(operation, statement.sql, statement.params);
+			this.metrics[operation]++;
+			this.initialized = true;
+			return { success: true, meta: { changes: 0 } };
+		}
 		this.assertInitialized();
 		await this.before?.(operation, statement.sql, statement.params);
 		this.metrics[operation]++;
