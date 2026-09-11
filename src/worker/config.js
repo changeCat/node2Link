@@ -68,18 +68,8 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 			: sanitizeSubscriptionToken(env.TOKEN || ''),
 		browserIconURL: normalizeBrowserIconURL(persistedSettings.browserIconURL),
 		displayFormats: normalizeDisplayFormats(persistedSettings.displayFormats),
-		apiSubscriptionEnabled: isAPISubscriptionEnabled(env),
-		...resolveRequestLogging(env, persistedSettings)
+		apiSubscriptionEnabled: isAPISubscriptionEnabled(env)
 	};
-}
-
-export function resolveRequestLogging(env, settings = {}) {
-	const configured = String(env.REQUESTLOG ?? '').trim().toLowerCase();
-	const fallback = configured === '0' || configured === 'off' ? 'off' : configured === '1' || configured === 'full' ? 'full' : 'sample';
-	const mode = ['off', 'full', 'sample'].includes(settings.requestLogMode) ? settings.requestLogMode : fallback;
-	const value = Number(settings.requestLogSampleRate ?? env.REQUESTLOG_SAMPLE_RATE ?? 0.1);
-	const sampleRate = Number.isFinite(value) && value > 0 && value <= 1 ? value : 0.1;
-	return { requestLogMode: mode, requestLogEnabled: mode !== 'off', requestLogSampleRate: sampleRate };
 }
 
 export function sanitizeSubscriptionName(value) {

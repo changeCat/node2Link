@@ -22,7 +22,7 @@ for (const [label, path, api] of [
 	const kv = new MemoryKV({ before(op) { increment('kv' + op[0].toUpperCase() + op.slice(1)); } });
 	const db = new MemoryD1({ initialized: true, before(op) { increment('d1' + op[0].toUpperCase() + op.slice(1)); } });
 	const storage = withStorageBindings({ KV: kv, DB: db }).KV;
-	const env = { KV: kv, DB: db, ADMIN_PASSWORD: 'local-password', SESSION_SECRET: 'local-secret', TOKEN: 'benchmark-token', REQUESTLOG: '1', API_SUBSCRIPTION_ENABLED: String(api) };
+	const env = { KV: kv, DB: db, ADMIN_PASSWORD: 'local-password', SESSION_SECRET: 'local-secret', TOKEN: 'benchmark-token', API_SUBSCRIPTION_ENABLED: String(api) };
 	await storage.put('identity', JSON.stringify({ mainSubscriptionId: 'benchmark_main_id' }));
 	const content = 'trojan://local@node.example.com:443#Benchmark';
 	await saveMainRecord(storage, content);

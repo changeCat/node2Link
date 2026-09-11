@@ -14,7 +14,7 @@ import { BODY_LIMITS } from '../src/worker/request-body.js';
 const origin = 'https://personal.example.com';
 const node = 'vless://uuid@example.com:443#Personal';
 async function fixture() {
-	const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'test-password', SESSION_SECRET: 'test-secret', API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0', TOKEN: 'personal-token' };
+	const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'test-password', SESSION_SECRET: 'test-secret', API_SUBSCRIPTION_ENABLED: 'true', TOKEN: 'personal-token' };
 	env.KV = withStorageBindings(env).KV;
 	const headers = { Cookie: (await createSessionCookie(env)).split(';')[0], Origin: origin, 'Content-Type': 'application/json' };
 	const request = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, { waitUntil() {} });

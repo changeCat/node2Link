@@ -57,7 +57,7 @@ test('administrative GET does not initialize API credentials', async () => {
 
 test('unavailable API configuration does not prevent administrator login', async () => {
 	const kv = new MemoryKV({ before(op, key) { if (op === 'get' && key === apiKey) throw new Error('API settings unavailable'); } });
-	const env = { ...credentials, KV: kv, DB: new MemoryD1(), API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
+	const env = { ...credentials, KV: kv, DB: new MemoryD1(), API_SUBSCRIPTION_ENABLED: 'true' };
 	const response = await worker.fetch(new Request('https://example.com/api/login', {
 		method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' },
 		body: JSON.stringify({ username: credentials.ADMIN_USERNAME, password: credentials.ADMIN_PASSWORD })
@@ -100,7 +100,7 @@ test('existing API credentials survive initialization and administrator credenti
 });
 
 test('bootstrap mutation is protected by login and same-origin checks', async () => {
-	const env = { ...credentials, KV: new MemoryKV(), DB: new MemoryD1(), API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
+	const env = { ...credentials, KV: new MemoryKV(), DB: new MemoryD1(), API_SUBSCRIPTION_ENABLED: 'true' };
 	const url = 'https://example.com/api/generated-nodes';
 	const body = JSON.stringify({ action: 'initialize' });
 	const anonymous = await worker.fetch(new Request(url, { method: 'POST', body }), env, {});

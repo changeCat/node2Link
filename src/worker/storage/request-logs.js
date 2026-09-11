@@ -22,12 +22,8 @@ export function detectSubscriptionClient(userAgentHeader) {
 	return '其他客户端';
 }
 
-export function queueSubscriptionRequestLog(ctx, env, details, logging = { requestLogMode: 'full', requestLogSampleRate: 1 }) {
-	if (logging.requestLogMode === 'off') return;
-	const rate = logging.requestLogMode === 'sample' ? logging.requestLogSampleRate : 1;
-	const failed = Number(details.status) >= 400;
-	if (!failed && rate < 1 && Math.random() >= rate) return;
-	const task = recordSubscriptionRequest(env.KV, { ...details, sampleRate: failed ? 1 : rate, sampledMode: logging.requestLogMode === 'sample' })
+export function queueSubscriptionRequestLog(ctx, env, details) {
+	const task = recordSubscriptionRequest(env.KV, details)
 		.catch(error => console.error('记录订阅请求时发生错误:', error));
 	if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(task);
 }
@@ -46,9 +42,7 @@ async function recordSubscriptionRequest(kv, details) {
 		requestedAt: new Date(now).toISOString(),
 		status: Number(details.status) || 200,
 		durationMs: Math.max(0, Number(details.durationMs) || 0),
-		upstreamFailures: Math.max(0, Number(details.upstreamFailures) || 0),
-		sampleRate: Number(details.sampleRate) || 1,
-		sampledMode: details.sampledMode === true
+		upstreamFailures: Math.max(0, Number(details.upstreamFailures) || 0)
 	};
 	try {
 		await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
@@ -119,7 +113,6 @@ async function loadSubscriptionRequestStats(kv) {
 	}
 	return {
 		total: events.length,
-		sampled: events.some(event => event.sampledMode || Number(event.sampleRate || 1) < 1),
 		truncated,
 		main: summarize(mainEvents),
 		shares: [...shareGroups.entries()]

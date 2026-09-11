@@ -374,14 +374,25 @@ test('dashboard layout matches tab pages and keeps navigation usable', async ({ 
 		for (const id of ['protocols', 'shares', 'expiry', 'recent']) {
 			panels[id] = await page.locator(`[data-dashboard-panel="${id}"]`).boundingBox();
 		}
-		expect(panels.shares.x).toBe(panels.protocols.x);
-		expect(panels.expiry.x).toBe(panels.protocols.x);
-		expect(panels.shares.y).toBeGreaterThanOrEqual(panels.protocols.y + panels.protocols.height);
-		expect(panels.expiry.y).toBeGreaterThanOrEqual(panels.shares.y + panels.shares.height);
+		for (const id of ['expiry', 'recent']) {
+			const scrolling = await page.locator(`[data-dashboard-panel="${id}"] .dashboard-panel-body`).evaluate(element => ({ overflowY: getComputedStyle(element).overflowY, maxHeight: getComputedStyle(element).maxHeight }));
+			expect(scrolling).toEqual({ overflowY: 'auto', maxHeight: '300px' });
+		}
 		if (width > 620) {
-			expect(panels.recent.x).toBeGreaterThanOrEqual(panels.protocols.x + panels.protocols.width);
-			expect(panels.recent.y).toBe(panels.protocols.y);
+			expect(panels.shares.x).toBeGreaterThanOrEqual(panels.protocols.x + panels.protocols.width);
+			expect(panels.shares.y).toBe(panels.protocols.y);
+			expect(Math.abs(panels.protocols.height - panels.shares.height)).toBeLessThan(1);
+			expect(panels.expiry.x).toBe(panels.protocols.x);
+			expect(panels.recent.x).toBe(panels.shares.x);
+			expect(panels.expiry.y).toBeGreaterThanOrEqual(panels.protocols.y + panels.protocols.height);
+			expect(panels.recent.y).toBe(panels.expiry.y);
+			expect(Math.abs(panels.expiry.height - panels.recent.height)).toBeLessThan(1);
+			expect(Math.abs(panels.expiry.y + panels.expiry.height - panels.recent.y - panels.recent.height)).toBeLessThan(1);
 		} else {
+			expect(panels.shares.x).toBe(panels.protocols.x);
+			expect(panels.shares.y).toBeGreaterThanOrEqual(panels.protocols.y + panels.protocols.height);
+			expect(panels.expiry.x).toBe(panels.protocols.x);
+			expect(panels.expiry.y).toBeGreaterThanOrEqual(panels.shares.y + panels.shares.height);
 			expect(panels.recent.x).toBe(panels.protocols.x);
 			expect(panels.recent.y).toBeGreaterThanOrEqual(panels.expiry.y + panels.expiry.height);
 		}
@@ -466,25 +477,4 @@ test('personal dashboard displays saved data and remembers collapsed panels', as
 			for (const id of ids) await fetch('/api/shares', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
 		}, ids);
 	}
-});
-
-test('request logging mode and sample percentage can be saved without changing subscription entry', async ({ page }) => {
-	await page.goto('/settings');
-	const token = await page.locator('#subscriptionToken').inputValue();
-	const form = page.locator('#loggingForm');
-	await form.locator('#requestLogMode').selectOption('sample');
-	await form.locator('#requestLogSampleRate').fill('25');
-	await form.getByRole('button', { name: '保存', exact: true }).click();
-	await expect(page.locator('#loggingMessage')).toHaveText('已保存');
-	await page.reload();
-	await expect(form.locator('#requestLogMode')).toHaveValue('sample');
-	await expect(form.locator('#requestLogSampleRate')).toHaveValue('25');
-	await expect(page.locator('#subscriptionToken')).toHaveValue(token);
-	await page.goto('/requests');
-	await expect(page.locator('main')).toContainText('25%');
-	await page.goto('/settings');
-	await form.locator('#requestLogMode').selectOption('off');
-	await expect(form.locator('#requestLogSampleRate')).toBeDisabled();
-	await form.getByRole('button', { name: '保存', exact: true }).click();
-	await expect(page.locator('#loggingMessage')).toHaveText('已保存');
 });

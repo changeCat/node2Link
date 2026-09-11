@@ -14,7 +14,7 @@ const node = 'vless://id@local.example.com:443#Local';
 async function fixture() {
 	const kv = new MemoryKV();
 	const db = new MemoryD1();
-	const env = { KV: kv, DB: db, ADMIN_PASSWORD: 'password', TOKEN: 'original-token', API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
+	const env = { KV: kv, DB: db, ADMIN_PASSWORD: 'password', TOKEN: 'original-token', API_SUBSCRIPTION_ENABLED: 'true' };
 	const storage = withStorageBindings(env).KV;
 	const headers = { Cookie: (await createSessionCookie(env)).split(';')[0], Origin: origin, 'Content-Type': 'application/json' };
 	const request = (path, init = {}) => worker.fetch(new Request(origin + path, { headers, ...init }), env, { waitUntil() {} });

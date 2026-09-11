@@ -62,7 +62,7 @@ test('dashboard reads existing records only and respects the API feature switch'
 });
 
 test('dashboard requires login, escapes names and never embeds node bodies', async () => {
-	const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'password', REQUESTLOG: '0' };
+	const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'password' };
 	env.KV = withStorageBindings(env).KV;
 	await saveMainRecord(env.KV, node);
 	await saveShare(env.KV, { id: 'dashboard_share_123', name: '<img src=x onerror=alert(1)>', content: node, updatedAt: date(0), expiresAt: date(1) });

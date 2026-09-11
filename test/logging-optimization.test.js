@@ -3,64 +3,44 @@ import assert from 'node:assert/strict';
 import worker from '../src/worker/app.js';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
 import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
-import { withStorageBindings } from '../src/worker/storage/d1.js';
-import { resolveRequestLogging, createRuntimeConfig } from '../src/worker/config.js';
+import { createRuntimeConfig } from '../src/worker/config.js';
 import { queueSubscriptionRequestLog, readSubscriptionRequestStats } from '../src/worker/storage/request-logs.js';
-import { createSessionCookie } from '../src/worker/auth.js';
-import { readPersistedSettings, readPublicSubscriptionSettings } from '../src/worker/storage/settings.js';
 import { renderRequestsPage } from '../src/worker/ui/pages.js';
 import { appendNodeBatch } from '../src/worker/storage/node-records.js';
 import { normalizeDirectNodes } from '../src/worker/domain/generated-nodes.js';
 import { handleGeneratedNodesAPI } from '../src/worker/routes/generated-nodes.js';
+import { saveSettings } from '../src/worker/routes/settings.js';
 
 const node = 'trojan://test@node.example.com:443#Saved';
-async function log(kv, mode, status = 200) {
+async function log(kv, status = 200) {
 	const pending = [];
-	queueSubscriptionRequestLog({ waitUntil(task) { pending.push(task); } }, { KV: kv }, { status, access: 'main' }, { requestLogMode: mode, requestLogSampleRate: 0.1 });
+	queueSubscriptionRequestLog({ waitUntil(task) { pending.push(task); } }, { KV: kv }, { status, access: 'main' });
 	await Promise.all(pending);
 }
 
-test('logging defaults to sampling and preserves the REQUESTLOG environment setting', () => {
-	assert.equal(resolveRequestLogging({}).requestLogMode, 'sample');
-	assert.equal(resolveRequestLogging({}).requestLogSampleRate, 0.1);
-	assert.equal(resolveRequestLogging({ REQUESTLOG: '1' }).requestLogMode, 'full');
-	assert.equal(resolveRequestLogging({ REQUESTLOG: '0' }).requestLogEnabled, false);
-	assert.equal(resolveRequestLogging({ REQUESTLOG: '0' }, { requestLogMode: 'full' }).requestLogMode, 'full');
-	assert.equal(resolveRequestLogging({ REQUESTLOG_SAMPLE_RATE: 'bad' }).requestLogSampleRate, 0.1);
-});
-
-test('sampling reduces normal writes, always keeps failures and never removes old logs', async () => {
+test('complete logging retains every successful and failed subscription request', async () => {
 	const kv = new MemoryKV();
-	const random = Math.random;
-	let draw = 0;
-	try {
-		Math.random = () => ((draw++ % 10) + 0.5) / 10;
-		for (let i = 0; i < 100; i++) await log(kv, 'sample');
-		assert.equal(kv.values.size, 10);
-		Math.random = () => 0.99;
-		await log(kv, 'sample', 502);
-		assert.equal(kv.values.size, 11);
-		await log(kv, 'full');
-		assert.equal(kv.values.size, 12);
-		await log(kv, 'off', 502);
-		assert.equal(kv.values.size, 12);
-		const stats = await readSubscriptionRequestStats(kv);
-		assert.equal(stats.total, 12);
-		assert.equal(stats.sampled, true);
-		assert.equal(stats.main.failed, 1);
-		const runtime = await createRuntimeConfig({});
-		assert.match(await (await renderRequestsPage(null, { KV: kv }, runtime)).text(), /10%/);
-	} finally { Math.random = random; }
+	await log(kv);
+	await log(kv);
+	await log(kv, 502);
+	assert.equal(kv.values.size, 3);
+	const stats = await readSubscriptionRequestStats(kv);
+	assert.equal(stats.total, 3);
+	assert.equal(stats.main.failed, 1);
+	assert.equal(Object.hasOwn(stats, 'sampled'), false);
+	const runtime = await createRuntimeConfig({});
+	const html = await (await renderRequestsPage(null, { KV: kv }, runtime)).text();
+	assert.doesNotMatch(html, /采样|关闭新请求记录/);
 });
 
 test('request statistics reuse short views, invalidate on writes and retry failed reads', async () => {
 	let lists = 0;
 	const kv = new MemoryKV({ before(op) { if (op === 'list') lists++; } });
-	await log(kv, 'full');
+	await log(kv);
 	assert.equal((await readSubscriptionRequestStats(kv)).total, 1);
 	assert.equal((await readSubscriptionRequestStats(kv)).total, 1);
 	assert.equal(lists, 1);
-	await log(kv, 'full');
+	await log(kv);
 	assert.equal((await readSubscriptionRequestStats(kv)).total, 2);
 	assert.equal(lists, 2);
 	const now = Date.now;
@@ -73,28 +53,13 @@ test('request statistics reuse short views, invalidate on writes and retry faile
 	} finally { Date.now = now; }
 });
 
-test('logging settings save independently, validate input and are honored by public reads', async () => {
-	const kv = new MemoryKV();
-	const env = { KV: kv, DB: new MemoryD1(), ADMIN_PASSWORD: 'password', SESSION_SECRET: 'secret' };
-	env.KV = withStorageBindings(env).KV;
-	const cookie = (await createSessionCookie(env)).split(';')[0];
-	const save = payload => worker.fetch(new Request('https://example.com/api/settings', {
-		method: 'POST', headers: { Cookie: cookie, Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-	}), env, {});
-	assert.equal((await save({ section: 'entry', subscriptionToken: 'kept-token' })).status, 200);
-	for (const mode of ['sample', 'full', 'off']) {
-		assert.equal((await save({ section: 'logging', requestLogMode: mode, requestLogSampleRate: 0.25 })).status, 200);
-		const settings = await readPersistedSettings(env);
-		assert.equal(settings.subscriptionToken, 'kept-token');
-		const runtime = await createRuntimeConfig(env, await readPublicSubscriptionSettings(env));
-		assert.equal(runtime.requestLogMode, mode);
-		assert.equal(runtime.requestLogSampleRate, 0.25);
-	}
-	const before = structuredClone(kv.values);
-	for (const [mode, rate] of [['unknown', 0.1], ['sample', 0], ['sample', 1.1], ['sample', 'bad']]) {
-		assert.equal((await save({ section: 'logging', requestLogMode: mode, requestLogSampleRate: rate })).status, 400);
-	}
-	assert.deepEqual(kv.values, before);
+test('removed logging settings are rejected without a storage write', async () => {
+	const kv = new MemoryKV({ before() { throw new Error('unexpected storage'); } });
+	const response = await saveSettings(new Request('https://example.com/api/settings', {
+		method: 'POST', headers: { Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: JSON.stringify({ section: 'logging', requestLogMode: 'off' })
+	}), { KV: kv }, {});
+	assert.equal(response.status, 400);
+	assert.match((await response.json()).message, /不存在/);
 });
 
 test('malformed/oversized Token candidates and cross-origin mutations avoid storage', async () => {

@@ -235,8 +235,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
-		API_SUBSCRIPTION_ENABLED: 'true',
-		REQUESTLOG: '0'
+		API_SUBSCRIPTION_ENABLED: 'true'
 	};
 	env.KV = withStorageBindings(env).KV;
 	await saveMainRecord(env.KV, 'vless://manual-id@manual.example.com:443#Manual');
@@ -263,6 +262,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(settingsHTML, /ruleURLInput\.addEventListener\('input',syncModes\)/);
 	assert.doesNotMatch(settingsHTML, /当前默认转换后端|当前默认规则配置|默认服务后端（仅默认模式使用）/);
 	assert.doesNotMatch(settingsHTML, /客户端展示|clientsForm|clientList|clientSelect|displayFormats|formatCatalog/);
+	assert.doesNotMatch(settingsHTML, /请求记录|loggingForm|requestLog/);
 	assertInlineScriptsParse(settingsHTML);
 
 	assert.equal((await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json()).settings.token, '');
@@ -369,8 +369,7 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
 		SESSION_SECRET: 'test-session-secret',
-		API_SUBSCRIPTION_ENABLED: 'true',
-		REQUESTLOG: '0'
+		API_SUBSCRIPTION_ENABLED: 'true'
 	};
 	env.KV = withStorageBindings(env).KV;
 	const ctx = { waitUntil() {} };
@@ -512,8 +511,7 @@ test('API 订阅默认关闭并隐藏页面、接口、节点来源和主订阅�
 		KV: new MemoryKV(), DB: new MemoryD1(),
 		ADMIN_USERNAME: 'admin',
 		ADMIN_PASSWORD: 'test-password',
-		SESSION_SECRET: 'test-session-secret',
-		REQUESTLOG: '0'
+		SESSION_SECRET: 'test-session-secret'
 	};
 	env.KV = withStorageBindings(env).KV;
 	await saveMainRecord(env.KV, 'vless://manual@manual.example.com:443#Manual');
@@ -559,8 +557,7 @@ test('API 新增节点和主订阅保存都会排队发送 Telegram 通知', asy
 		SESSION_SECRET: 'test-session-secret',
 		API_SUBSCRIPTION_ENABLED: 'true',
 		TGTOKEN: '123:abc',
-		TGID: '456',
-		REQUESTLOG: '0'
+		TGID: '456'
 	};
 	env.KV = withStorageBindings(env).KV;
 	await env.KV.put('api.settings', JSON.stringify(settings));

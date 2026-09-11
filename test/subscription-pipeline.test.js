@@ -54,7 +54,7 @@ test('explicit format parameters override missing and conflicting User-Agent', (
 });
 
 test('conversion passes a direct callback and upstream once; failures do not masquerade as another format', async () => {
-	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret', REQUESTLOG: '0' });
+	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' });
 	const content = 'trojan://secret@direct.example.com:443#direct\nhttps://upstream.example.com/private?token=secret';
 	const calls = [];
 	const options = { fetchImpl: async input => { calls.push(String(input)); return new Response('proxies: []'); } };
