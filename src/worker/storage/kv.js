@@ -9,7 +9,10 @@ export class StorageError extends Error {
 
 export async function readText(kv, key) {
 	try { return await kv.get(key); }
-	catch (cause) { throw new StorageError(undefined, { cause }); }
+	catch (cause) {
+		if (cause instanceof StorageError) throw cause;
+		throw new StorageError(undefined, { cause });
+	}
 }
 
 export async function readJSON(kv, key, fallback, validate = () => true) {
