@@ -9,7 +9,7 @@
 - D1 database binding：`DB`
 - KV namespace binding：`KV`
 
-绑定由你在 Cloudflare Dashboard 中手动创建。保存或更换绑定后，需要重新部署一次，新的 Worker 才能使用它们。缺少任一绑定时，应用返回 503 并指出缺少的变量名。
+绑定由你在 Cloudflare Dashboard 中手动创建。保存或更换绑定后，需要重新部署一次，新的 Worker 才能使用它们。缺少绑定或绑定类型错误时，应用返回 503 并指出不可用的 D1 或 KV。
 
 首次部署前必须在 D1 控制台完整执行 [0001_storage.sql](migrations/0001_storage.sql)。运行时代码不会执行 DDL、自动建表或升级 schema；以后新增 migration 时也必须先手工执行，再部署依赖该结构的代码。
 
@@ -97,9 +97,9 @@ npm run test:e2e
 
 ## 故障处理
 
-### 返回缺少 DB 或 KV
+### 返回 D1 或 KV 绑定不可用
 
-检查当前 Production 部署的 Bindings，确认变量名严格为 `DB` 和 `KV`，然后重新部署最新提交。
+检查当前 Production 部署的 Bindings，确认 `DB` 指向 D1 数据库、`KV` 指向 KV 命名空间，变量名大小写完全一致，然后重新部署最新提交。
 
 ### D1 读取或写入失败
 

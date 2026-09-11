@@ -31,6 +31,10 @@ export async function readSubscriptionEntry(env) {
 	return readJSON(env.KV, SETTINGS_PREFIX + 'entry', {}, isObject);
 }
 
+export async function readLoginPresentation(env) {
+	return readJSON(env.KV, SETTINGS_PREFIX + 'display', {}, isObject);
+}
+
 export async function readPersistedSettings(env, { entry } = {}) {
 	const [settings, identity] = await Promise.all([
 		readSections(env.KV, Object.keys(SETTING_SECTIONS), entry),

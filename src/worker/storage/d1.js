@@ -208,8 +208,12 @@ class AppStorage {
 
 export function withStorageBindings(env) {
 	if (env?.KV instanceof AppStorage) return env;
-	if (!env?.DB) throw new StorageError('未绑定 D1 数据库，请将数据库绑定为 DB');
-	if (!env?.KV) throw new StorageError('未绑定 KV 命名空间，请将命名空间绑定为 KV');
+	if (!env?.DB || typeof env.DB.prepare !== 'function' || typeof env.DB.batch !== 'function') {
+		throw new StorageError('D1 绑定不可用，请将数据库绑定为 DB 并手工建立所需表结构');
+	}
+	if (!env?.KV || typeof env.KV.get !== 'function' || typeof env.KV.put !== 'function' || typeof env.KV.delete !== 'function') {
+		throw new StorageError('KV 绑定不可用，请将命名空间绑定为 KV');
+	}
 	let byKV = bindings.get(env.DB);
 	if (!byKV) bindings.set(env.DB, byKV = new WeakMap());
 	let storage = byKV.get(env.KV);

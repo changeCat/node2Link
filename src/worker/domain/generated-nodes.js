@@ -139,11 +139,6 @@ export function normalizeStoredNode(node) {
 	};
 }
 
-export function generateNodesFromEndpoint(settings, payload, createdAt = new Date().toISOString()) {
-	const endpoint = normalizeEndpoint(payload);
-	return generateNodesForEndpoint(settings, endpoint, createdAt);
-}
-
 export function generateNodesForEndpoint(settings, endpoint, createdAt) {
 	const templates = cleanLines(settings.nodeTemplate);
 	if (!templates.length) throw new Error('管理员尚未配置节点模板');

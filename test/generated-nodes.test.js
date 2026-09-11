@@ -6,9 +6,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { readGeneratedNodes } from '../src/worker/storage/generated-nodes.js';
-import { generateNodesFromEndpoint, normalizeGeneratedNodeSettings } from '../src/worker/domain/generated-nodes.js';
+import { generateNodesFromEndpoints, normalizeGeneratedNodeSettings } from '../src/worker/domain/generated-nodes.js';
+import { normalizeV2rayNSubscription } from '../src/worker/domain/nodes.js';
 import { appendGeneratedNodes } from '../src/worker/services/generated-nodes.js';
-import worker, { normalizeV2rayNSubscription } from '../src/worker/app.js';
+import worker from '../src/worker/app.js';
 
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
 import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
@@ -57,7 +58,7 @@ test('v2rayN 兼容处理补全 AnyTLS SNI 并过滤不支持的 SS TLS 混淆',
 });
 
 test('address 域名会替换地址、端口和固定名称', () => {
-	const [node] = generateNodesFromEndpoint(settings, { address: 'CDN.Example.COM.', port: '8443' }, '2026-01-01T00:00:00.000Z');
+	const [node] = generateNodesFromEndpoints(settings, { address: 'CDN.Example.COM.', port: '8443' }, '2026-01-01T00:00:00.000Z');
 	assert.equal(node.kind, 'endpoint');
 	assert.equal(node.addressType, 'domain');
 	assert.equal(node.address, 'cdn.example.com');
@@ -71,13 +72,13 @@ test('统一 address 参数支持随机标准 HTTPS 端口和名称截取', () =
 		nameTemplate: '{{address|split:.:0}}-{{address|slice:0:6}}-{{port}}',
 		nodeTemplate: 'vless://uuid@{{address}}:{{port}}#{{name}}'
 	});
-	const [node] = generateNodesFromEndpoint(slicedSettings, { address: 'cfsaas.080112.xyz' });
+	const [node] = generateNodesFromEndpoints(slicedSettings, { address: 'cfsaas.080112.xyz' });
 	assert.ok([443, 2053, 2083, 2087, 2096, 8443].includes(node.port));
 	assert.equal(node.name, `cfsaas-cfsaas-${node.port}`);
 });
 
 test('IPv6 address 在节点 authority 中自动加方括号，但名称保持原始地址', () => {
-	const [node] = generateNodesFromEndpoint(settings, { address: '2606:4700:4700::1111', port: 443 });
+	const [node] = generateNodesFromEndpoints(settings, { address: '2606:4700:4700::1111', port: 443 });
 	assert.equal(node.address, '2606:4700:4700::1111');
 	assert.equal(node.name, 'CF-IP-2606:4700:4700::1111:443');
 	assert.match(node.content, /@\[2606:4700:4700::1111\]:443/);

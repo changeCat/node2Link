@@ -28,9 +28,6 @@ export async function readJSON(kv, key, fallback, validate = () => true) {
 export const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export async function readJSONMap(kv, keys, fallback = {}, validate = () => true) {
-	if (typeof kv.getMany !== 'function') {
-		return new Map(await Promise.all(keys.map(async key => [key, await readJSON(kv, key, fallback, validate)])));
-	}
 	let values;
 	try { values = await kv.getMany(keys); }
 	catch (cause) { if (cause instanceof StorageError) throw cause; throw new StorageError(undefined, { cause }); }
@@ -65,18 +62,11 @@ export async function writeJSONBatch(kv, records) {
 		key: record.key, value: JSON.stringify(record.value),
 		options: record.metadata === undefined ? undefined : { metadata: record.metadata }
 	}));
-	if (typeof kv.putMany === 'function') {
-		try { return await kv.putMany(serialized); }
-		catch (cause) { if (cause instanceof StorageError) throw cause; throw new StorageError(undefined, { cause }); }
-	}
-	for (const record of records) await writeJSON(kv, record.key, record.value, record.metadata);
+	try { return await kv.putMany(serialized); }
+	catch (cause) { if (cause instanceof StorageError) throw cause; throw new StorageError(undefined, { cause }); }
 }
 
 export async function listRecords(kv, prefix, validate = isObject) {
-	if (typeof kv.listWithValues !== 'function') {
-		const keys = await listKeys(kv, prefix);
-		return mapConcurrent(keys, 6, async key => ({ ...key, value: await readRequiredJSON(kv, key.name, validate) }));
-	}
 	const records = [];
 	let cursor;
 	const seen = new Set();

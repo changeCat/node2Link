@@ -1,7 +1,7 @@
 import { handleSharesAPI } from './routes/shares.js';
 import { createRuntimeConfig, isSubscriptionTokenRequest, isAPISubscriptionEnabled, couldBeSubscriptionTokenRequest, sanitizeSubscriptionToken } from './config.js';
 import { jsonResponse, textResponse, requestHasSameOrigin } from './http.js';
-import { readPersistedSettings, readPublicSubscriptionSettings, readSubscriptionEntry } from './storage/settings.js';
+import { readLoginPresentation, readPersistedSettings, readPublicSubscriptionSettings, readSubscriptionEntry } from './storage/settings.js';
 import { StorageError } from './storage/kv.js';
 import { RequestBodyError } from './request-body.js';
 import { isShareAvailable } from './domain/shares.js';
@@ -14,8 +14,6 @@ import { renderLoginPage, renderSettingsPage, renderGeneratedNodesPage, renderSh
 import { handleMainPage } from './routes/main.js';
 import { handleLogin } from './routes/login.js';
 import { saveSettings } from './routes/settings.js';
-export { normalizeV2rayNSubscription } from './domain/nodes.js';
-
 // 管理端使用账号密码登录；订阅通过不可猜测的 /s/<id> 链接访问。
 
 import { renderDashboardPage } from './ui/dashboard.js';
@@ -53,8 +51,9 @@ async function dispatch(request, env, ctx, timings) {
 	const authenticated = () => authentication ??= isAuthenticated(request, env);
 	const shareMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{12,64})$/);
 	const publicShareRequest = Boolean(shareMatch && request.method === 'GET');
+	const loginPageRequest = url.pathname === '/login' && request.method === 'GET';
 	// Percent-encoded slashes can belong to an existing /<Token> entry.
-	const tokenCandidate = request.method === 'GET' && couldBeSubscriptionTokenRequest(url);
+	const tokenCandidate = request.method === 'GET' && !loginPageRequest && couldBeSubscriptionTokenRequest(url);
 	if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)
 		&& ['/', '/api/login', '/api/settings', '/api/shares', '/api/generated-nodes', '/api/logout'].includes(url.pathname)
 		&& !requestHasSameOrigin(request)) return textResponse('请求来源无效', 403);
@@ -87,6 +86,12 @@ async function dispatch(request, env, ctx, timings) {
 				], request);
 			})());
 		} });
+	}
+	if (loginPageRequest) {
+		if (await authenticated()) return Response.redirect(url.origin + '/', 303);
+		const presentation = await timed(timings, 'settings', () => readLoginPresentation(env));
+		const runtime = await timed(timings, 'config', () => createRuntimeConfig(env, presentation));
+		return renderLoginPage(env, runtime);
 	}
 
 	if (!tokenCandidate && !publicShareRequest) {
@@ -128,11 +133,6 @@ async function dispatch(request, env, ctx, timings) {
 	}
 
 	if (url.pathname === '/api/login' && request.method === 'POST') return handleLogin(request, env, runtime, persistedSettings);
-	if (url.pathname === '/login' && request.method === 'GET') {
-		if (await authenticated()) return Response.redirect(url.origin + '/', 303);
-		return renderLoginPage(env, runtime);
-	}
-
 	if (!(await authenticated())) {
 		if (url.pathname.startsWith('/api/')) return jsonResponse({ ok: false, message: '登录已失效' }, 401);
 		return Response.redirect(url.origin + '/login', 303);

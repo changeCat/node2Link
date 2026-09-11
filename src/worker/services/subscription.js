@@ -99,8 +99,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		}
 
 		if (includeWarp && env.WARP) converterSourceURL += '|' + (await ADD(env.WARP)).join('|');
-		const text = new TextDecoder().decode(new TextEncoder().encode(requestData));
-		let result = [...new Set(text.split('\n'))].join('\n');
+		let result = [...new Set(requestData.split('\n'))].join('\n');
 		let compatibility = null;
 		if (subscriptionFormat === 'base64' && isV2rayNUserAgent(userAgentHeader)) {
 			compatibility = normalizeV2rayNSubscription(result);
