@@ -44,6 +44,21 @@ test('D1 schema initializes once and structured settings never touch KV', async 
 	assert.equal(db.metrics.exec, 1);
 });
 
+test('D1 schema initialization recognizes Cloudflare errors with details in cause', async () => {
+	class NestedMissingTableD1 extends MemoryD1 {
+		assertInitialized() {
+			if (!this.initialized) throw new Error('D1_ERROR', {
+				cause: new Error('no such table: node2link_records')
+			});
+		}
+	}
+	const kv = new MemoryKV();
+	const db = new NestedMissingTableD1();
+	const { KV: storage } = withStorageBindings({ KV: kv, DB: db });
+	assert.deepEqual(await readPersistedSettings({ KV: storage }), {});
+	assert.equal(db.metrics.exec, 1);
+});
+
 test('ordinary shares stay entirely in D1 and reset atomically', async () => {
 	const { kv, db, storage } = fixture({ initialized: true });
 	const original = share('d1_original_share');
