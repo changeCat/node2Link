@@ -1,7 +1,7 @@
 import { handleSharesAPI } from './routes/shares.js';
-import { createRuntimeConfig, isSubscriptionTokenRequest, isAPISubscriptionEnabled, couldBeSubscriptionTokenRequest } from './config.js';
+import { createRuntimeConfig, isSubscriptionTokenRequest, isAPISubscriptionEnabled, couldBeSubscriptionTokenRequest, sanitizeSubscriptionToken } from './config.js';
 import { jsonResponse, textResponse, requestHasSameOrigin } from './http.js';
-import { readPersistedSettings, readPublicSubscriptionSettings } from './storage/settings.js';
+import { readPersistedSettings, readPublicSubscriptionSettings, readSubscriptionEntry } from './storage/settings.js';
 import { StorageError } from './storage/kv.js';
 import { RequestBodyError } from './request-body.js';
 import { isShareAvailable } from './domain/shares.js';
@@ -94,8 +94,16 @@ async function dispatch(request, env, ctx, timings) {
 			return Response.redirect(url.origin + '/login', 303);
 		}
 	}
+	let entry;
+	if (tokenCandidate) {
+		entry = await timed(timings, 'settings', () => readSubscriptionEntry(env));
+		const token = sanitizeSubscriptionToken(Object.hasOwn(entry, 'subscriptionToken') ? entry.subscriptionToken : env.TOKEN);
+		if (!isSubscriptionTokenRequest(url, token) && url.pathname !== '/login' && !(await authenticated())) {
+			return Response.redirect(url.origin + '/login', 303);
+		}
+	}
 	const persistedSettings = await timed(timings, 'settings', () => publicShareRequest
-		? readPublicSubscriptionSettings(env) : readPersistedSettings(env));
+		? readPublicSubscriptionSettings(env) : readPersistedSettings(env, { entry }));
 	const runtime = await timed(timings, 'config', () => createRuntimeConfig(env, persistedSettings));
 
 	if (tokenCandidate && isSubscriptionTokenRequest(url, runtime.subscriptionToken)) {

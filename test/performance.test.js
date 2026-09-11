@@ -15,7 +15,7 @@ async function fixture(kv = new MemoryKV()) {
 	return { env, headers, request };
 }
 
-test('immutable settings bodies are reused but latest keys and token revocations stay fresh', async () => {
+test('fixed settings reads use no lists and token revocations stay fresh', async () => {
 	const kv = new MemoryKV({ pageSize: 1 });
 	const { env, request } = await fixture(kv);
 	await saveMainRecord(kv, node);
@@ -23,17 +23,17 @@ test('immutable settings bodies are reused but latest keys and token revocations
 	await saveSettingsSections(kv, { displayFormats: ['sub', 'b64'] }, 'clients');
 	await saveSettingsSections(kv, { pageTitle: 'Title' }, 'display');
 	let bodyReads = 0;
-	kv.before = (op, key) => { if (op === 'get' && key.startsWith('NODE2LINK.v2.settings.')) bodyReads++; };
+	kv.before = (op, key) => { if (op === 'list' && key.startsWith('NODE2LINK.v3.settings.')) throw new Error('settings must not scan'); if (op === 'get' && key.startsWith('NODE2LINK.v3.settings.')) bodyReads++; };
 	const first = await readPersistedSettings(env);
-	assert.equal(bodyReads, 3);
+	assert.equal(bodyReads, 5);
 	first.displayFormats.push('clash');
 	const second = await readPersistedSettings(env);
-	assert.equal(bodyReads, 3);
+	assert.equal(bodyReads, 10);
 	assert.deepEqual(second.displayFormats, ['sub', 'b64']);
 	await saveSettingsSections(kv, { subscriptionToken: 'second-token' }, 'entry');
 	assert.equal((await request('/first-token?base64', { headers: {} })).status, 303);
 	assert.equal((await request('/second-token?base64', { headers: {} })).status, 200);
-	assert.equal(bodyReads, 4);
+	assert.equal(bodyReads, 16);
 	assert.equal((await readPersistedSettings({ KV: new MemoryKV() })).subscriptionToken, undefined);
 });
 
@@ -42,20 +42,20 @@ test('a cached old settings record cannot hide a failed read of its replacement'
 	await saveSettingsSections(env.KV, { subscriptionToken: 'first-token' }, 'entry');
 	await readPersistedSettings(env);
 	await saveSettingsSections(env.KV, { subscriptionToken: 'second-token' }, 'entry');
-	env.KV.before = (op, key) => { if (op === 'get' && key.startsWith('NODE2LINK.v2.settings.')) throw new Error('outage'); };
+	env.KV.before = (op, key) => { if (op === 'get' && key.startsWith('NODE2LINK.v3.settings.')) throw new Error('outage'); };
 	const response = await request('/first-token?base64', { headers: {} });
 	assert.equal(response.status, 503);
 	assert.match(response.headers.get('Server-Timing'), /settings;dur=[\d.]+/);
 });
 
-test('oversized immutable settings bodies are not retained in the small cache', async () => {
+test('full settings reads do not cache large presentation bodies', async () => {
 	const { env } = await fixture();
 	await saveSettingsSections(env.KV, { browserIconURL: 'x'.repeat(65535) }, 'display');
 	let reads = 0;
-	env.KV.before = (op, key) => { if (op === 'get' && key.startsWith('NODE2LINK.v2.settings.')) reads++; };
+	env.KV.before = (op, key) => { if (op === 'get' && key.startsWith('NODE2LINK.v3.settings.')) reads++; };
 	await readPersistedSettings(env);
 	await readPersistedSettings(env);
-	assert.equal(reads, 2);
+	assert.equal(reads, 10);
 });
 
 test('independent management APIs skip site settings and still authenticate before storage', async () => {
@@ -63,7 +63,7 @@ test('independent management APIs skip site settings and still authenticate befo
 	env.KV.before = () => { throw new Error('unexpected storage access'); };
 	assert.equal((await request('/api/shares', { headers: {} })).status, 401);
 	assert.equal((await request('/api/node-candidates', { headers: {} })).status, 401);
-	env.KV.before = (op, key) => { if (key === 'NODE2LINK.settings.json' || key === 'NODE2LINK.identity.json' || key.startsWith('NODE2LINK.v2.settings.')) throw new Error('unrelated settings read'); };
+	env.KV.before = (op, key) => { if (key === 'NODE2LINK.settings.json' || key === 'NODE2LINK.identity.json' || key.startsWith('NODE2LINK.v3.settings.')) throw new Error('unrelated settings read'); };
 	assert.equal((await request('/api/shares', { method: 'POST', body: JSON.stringify({ name: 'Fast share', content: node }) })).status, 201);
 	assert.equal((await request('/api/shares')).status, 200);
 	assert.equal((await request('/api/generated-nodes')).status, 200);
@@ -75,7 +75,7 @@ test('shares HTML does not load main or generated nodes before the picker opens'
 	const { env, request } = await fixture();
 	await saveMainRecord(env.KV, node);
 	env.KV.before = (op, key) => {
-		if (key.startsWith('NODE2LINK.v2.main.') || key.startsWith('NODE2LINK.v2.nodes.') || key.includes('api-subscription.nodes')) throw new Error('eager candidate read');
+		if (key.startsWith('NODE2LINK.v3.main.') || key.startsWith('NODE2LINK.v3.nodes.') || key.includes('api-subscription.nodes')) throw new Error('eager candidate read');
 	};
 	const response = await request('/shares');
 	assert.equal(response.status, 200);

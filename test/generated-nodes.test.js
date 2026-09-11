@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { saveMainRecord } from '../src/worker/storage/main.js';
+import { saveSettingsSections } from '../src/worker/storage/settings.js';
 import { handlePublicNodeImport } from '../src/worker/routes/generated-nodes.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -233,7 +235,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 		API_SUBSCRIPTION_ENABLED: 'true',
 		REQUESTLOG: '0'
 	};
-	await env.KV.put('LINK.txt', 'vless://manual-id@manual.example.com:443#Manual');
+	await saveMainRecord(env.KV, 'vless://manual-id@manual.example.com:443#Manual');
 	const ctx = { waitUntil() {} };
 	const dispatch = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, ctx);
 	const login = await dispatch('/api/login', {
@@ -475,12 +477,10 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		const otherAnytlsLine = otherClientDecoded.split('\n').find(line => line.startsWith('anytls://'));
 		assert.equal(new URL(otherAnytlsLine).searchParams.get('sni'), null);
 
-		const persistedSettings = JSON.parse(await env.KV.get('NODE2LINK.settings.json') || '{}');
-		await env.KV.put('NODE2LINK.settings.json', JSON.stringify({
-			...persistedSettings,
+		await saveSettingsSections(env.KV, {
 			converterMode: 'custom',
 			customConverterURL: 'https://custom.example.com'
-		}));
+		}, 'conversion');
 		const customEncoded = await (await dispatch(`/s/${structured.id}?base64`, {
 			headers: { 'User-Agent': 'v2rayN' }
 		})).text();
@@ -506,7 +506,7 @@ test('API 订阅默认关闭并隐藏页面、接口、节点来源和主订阅�
 		SESSION_SECRET: 'test-session-secret',
 		REQUESTLOG: '0'
 	};
-	await env.KV.put('LINK.txt', 'vless://manual@manual.example.com:443#Manual');
+	await saveMainRecord(env.KV, 'vless://manual@manual.example.com:443#Manual');
 	await appendGeneratedNodes(env.KV, settings, { address: 'api.example.com', port: 8443 });
 	const ctx = { waitUntil() {} };
 	const dispatch = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, ctx);

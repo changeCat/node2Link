@@ -1,85 +1,86 @@
-import { appendRecord, listKeys, readJSON, readRequiredJSON, mapConcurrent, StorageError, isObject } from './kv.js';
+import { listKeys, readJSON, readRequiredJSON, mapConcurrent, StorageError, isObject, writeJSON } from './kv.js';
 import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 
-const PREFIX = 'NODE2LINK.v2.shares.';
-const LEGACY_PREFIX = 'NODE2LINK.share.';
+const PREFIX = 'NODE2LINK.v3.shares.';
+const REVOKED_PREFIX = 'NODE2LINK.v3.revoked.';
+const validRevocation = value => isObject(value) && value.deleted === true
+	&& (value.replacementId === undefined || isValidShareId(value.replacementId));
+const validRecord = value => isObject(value) && value.schemaVersion === 3
+	&& isObject(value.share) && isValidShareId(value.share.id) && typeof value.share.content === 'string'
+	&& (value.activationId === undefined || isValidShareId(value.activationId));
+
+async function revocation(kv, id) {
+	return readJSON(kv, REVOKED_PREFIX + id, null, validRevocation);
+}
 
 async function shareView(kv) {
-	const [legacyIndex, legacyKeys, events] = await Promise.all([
-		readJSON(kv, 'NODE2LINK.shares.json', [], Array.isArray),
-		listKeys(kv, LEGACY_PREFIX), listKeys(kv, PREFIX)
-	]);
-	const summaries = new Map(legacyIndex.map(normalizeShareSummary).filter(Boolean).map(item => [item.id, item]));
-	const entries = new Map(legacyKeys.map(key => {
-		const id = key.name.slice(LEGACY_PREFIX.length);
-		return [id, { key: key.name, summary: summaries.get(id) }];
-	}));
-	return applyShareEvents(kv, entries, events);
-}
-
-async function applyShareEvents(kv, entries, events, onlyId) {
-	const revoked = new Set();
-	for (const event of events) {
-		const metadata = event.metadata || (await readRequiredJSON(kv, event.name)).index;
-		if (!Array.isArray(metadata?.changes)) throw new StorageError('分享索引格式异常');
-		for (const change of metadata.changes) {
-			if (onlyId && change.id !== onlyId) continue;
-			if (change.deleted) revoked.add(change.id);
-			else {
-				const summary = normalizeShareSummary(change);
-				if (!summary) throw new StorageError('分享摘要格式异常');
-				entries.set(change.id, { key: event.name, summary, event: true });
-			}
+	const [keys, revokedKeys] = await Promise.all([listKeys(kv, PREFIX), listKeys(kv, REVOKED_PREFIX)]);
+	const revoked = new Map(await mapConcurrent(revokedKeys, 6, async key => [
+		key.name.slice(REVOKED_PREFIX.length),
+		validRevocation(key.metadata) ? key.metadata : await readRequiredJSON(kv, key.name, validRevocation)
+	]));
+	const summaries = await mapConcurrent(keys, 6, async key => {
+		const id = key.name.slice(PREFIX.length);
+		if (revoked.has(id)) return null;
+		let metadata = key.metadata;
+		if (!normalizeShareSummary(metadata)) {
+			const record = await readRequiredJSON(kv, key.name, validRecord);
+			metadata = { ...normalizeShareSummary(record.share), activationId: record.activationId };
 		}
-	}
-	// Revocation is terminal, irrespective of event ordering. A late edit cannot
-	// restore a deleted/reset ID, including IDs originally stored in legacy KV.
-	for (const id of revoked) entries.delete(id);
-	return entries;
-}
-
-async function readEntry(kv, id, entry) {
-	const record = await readRequiredJSON(kv, entry.key);
-	const share = entry.event ? record.share : record;
-	if (!share || share.id !== id || typeof share.content !== 'string') throw new StorageError('分享内容格式异常');
-	return share;
+		if (metadata.id !== id) throw new StorageError('分享索引格式异常');
+		if (metadata.activationId && revoked.get(metadata.activationId)?.replacementId !== id) return null;
+		return normalizeShareSummary(metadata);
+	});
+	return summaries.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
 export async function readShare(kv, id) {
-	if (!isValidShareId(id)) return null;
-	// Only journal events can revoke a legacy ID. Check them on every request,
-	// then read the known legacy key directly instead of listing all old shares.
-	const entries = await applyShareEvents(kv, new Map([[id, { key: LEGACY_PREFIX + id }]]), await listKeys(kv, PREFIX), id);
-	const entry = entries.get(id);
-	if (!entry) return null;
-	if (entry.event) return readEntry(kv, id, entry);
-	return readJSON(kv, entry.key, null, share => isObject(share) && share.id === id && typeof share.content === 'string');
+	if (!kv || !isValidShareId(id)) return null;
+	const [record, revoked] = await Promise.all([
+		readJSON(kv, PREFIX + id, null, validRecord), revocation(kv, id)
+	]);
+	if (revoked || !record) return null;
+	if (record.share.id !== id) throw new StorageError('分享内容格式异常');
+	if (record.activationId && (await revocation(kv, record.activationId))?.replacementId !== id) return null;
+	return record.share;
 }
 
 export async function listShareSummaries(kv, { fresh = false } = {}) {
 	if (!kv) return [];
-	const entries = await cachedView(kv, PREFIX, () => shareView(kv), { fresh, ttlMs: 15_000, cacheable: entries => entries.size <= MAX_CACHED_KEYS });
-	const summaries = await mapConcurrent([...entries], 6, async ([id, entry]) => entry.summary || normalizeShareSummary(await readEntry(kv, id, entry)));
-	return summaries.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+	const summaries = await cachedView(kv, PREFIX, () => shareView(kv), {
+		fresh, ttlMs: 15_000, cacheable: value => value.length <= MAX_CACHED_KEYS
+	});
+	return structuredClone(summaries);
 }
-
 export const readShareIndex = listShareSummaries;
 
-// Content and index metadata are committed together in the same KV write.
-// A reset publishes the old-ID tombstone and the new share atomically.
+// Reset stages an inactive new record, then uses one revocation marker to
+// disable the old ID and activate the replacement. If publication fails, the
+// old link remains usable and the staged replacement is hidden everywhere.
+// Revocation markers are never removed or overwritten by ordinary edits.
 export async function saveShare(kv, share, previousId) {
-	const changes = [normalizeShareSummary(share)];
-	if (previousId && previousId !== share.id) changes.unshift({ id: previousId, deleted: true });
-	const index = { changes };
+	if (!normalizeShareSummary(share) || typeof share.content !== 'string') throw new StorageError('分享格式异常');
+	if (await revocation(kv, share.id)) throw new StorageError('分享已撤销，请刷新页面');
+	const resetting = previousId && previousId !== share.id;
+	if (resetting && !await readShare(kv, previousId)) throw new StorageError('原分享已撤销，请刷新页面');
+	const existing = await readJSON(kv, PREFIX + share.id, null, validRecord);
+	const activationId = resetting ? previousId : existing?.activationId;
 	invalidateView(kv, PREFIX);
-	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, share, index }, index); }
-	finally { invalidateView(kv, PREFIX); }
+	try {
+		await writeJSON(kv, PREFIX + share.id, { schemaVersion: 3, share, ...(activationId ? { activationId } : {}) },
+			{ ...normalizeShareSummary(share), ...(activationId ? { activationId } : {}) });
+		if (resetting) {
+			const marker = { deleted: true, replacementId: share.id };
+			await writeJSON(kv, REVOKED_PREFIX + previousId, marker, marker);
+		}
+	} finally { invalidateView(kv, PREFIX); }
 }
 
 export async function deleteShare(kv, id) {
-	const index = { changes: [{ id, deleted: true }] };
+	if (!isValidShareId(id)) return;
+	if (await revocation(kv, id)) return;
 	invalidateView(kv, PREFIX);
-	try { await appendRecord(kv, PREFIX, { schemaVersion: 2, index }, index); }
+	try { await writeJSON(kv, REVOKED_PREFIX + id, { deleted: true }, { deleted: true }); }
 	finally { invalidateView(kv, PREFIX); }
 }
 

@@ -25,8 +25,19 @@ export async function readJSON(kv, key, fallback, validate = () => true) {
 export const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export async function writeJSON(kv, key, value, metadata) {
-	try { await kv.put(key, JSON.stringify(value), metadata ? { metadata } : undefined); }
-	catch (cause) { throw new StorageError(undefined, { cause }); }
+	const serialized = JSON.stringify(value);
+	for (let attempt = 0; ; attempt++) {
+		try { await kv.put(key, serialized, metadata ? { metadata } : undefined); return; }
+		catch (cause) {
+			// Fixed current keys are subject to KV's one-write-per-second limit.
+			// Retry only explicit throttling, with a bounded backoff; persistent
+			// quota exhaustion still surfaces as a storage failure.
+			if (attempt >= 2 || !(cause?.status === 429 || /\b429\b/.test(String(cause?.message)))) {
+				throw new StorageError(undefined, { cause });
+			}
+			await new Promise(resolve => setTimeout(resolve, 1100 * (attempt + 1)));
+		}
+	}
 }
 
 export async function listKeys(kv, prefix) {

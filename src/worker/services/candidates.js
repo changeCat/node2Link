@@ -1,6 +1,6 @@
 import { timed } from '../timing.js';
 import { jsonResponse } from '../http.js';
-import { readKVValueWithLegacyFallback } from '../storage/main.js';
+import { readMainRecord } from '../storage/main.js';
 import { readGeneratedNodes } from '../storage/generated-nodes.js';
 import { ADD } from '../domain/nodes.js';
 import { getSUB } from '../adapters/upstream.js';
@@ -19,7 +19,7 @@ export async function handleNodeCandidates(request, env, apiSubscriptionEnabled,
 	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	try {
 		const [manualContent, generatedNodes] = await timed(timings, 'candidates_read', () => Promise.all([
-			readKVValueWithLegacyFallback(env.KV, 'LINK.txt'),
+			readMainRecord(env.KV).then(record => record.content),
 			apiSubscriptionEnabled ? readGeneratedNodes(env.KV) : Promise.resolve([])
 		]));
 		const input = await ADD(manualContent || '');
