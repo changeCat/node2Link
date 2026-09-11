@@ -29,7 +29,7 @@ function fixture(options) {
 test('D1 schema initializes once and structured settings never touch KV', async () => {
 	const { kv, db, storage, kvOps } = fixture();
 	assert.equal((await readPersistedSettings({ KV: storage })).subscriptionToken, undefined);
-	assert.equal(db.metrics.exec, 1);
+	assert.equal(db.metrics.exec, 3);
 	assert.equal(kvOps.length, 0);
 
 	await saveSettingsSections(storage, {
@@ -41,7 +41,7 @@ test('D1 schema initializes once and structured settings never touch KV', async 
 	const settings = await readPersistedSettings({ KV: storage });
 	assert.equal(settings.subscriptionToken, 'current-token');
 	assert.equal(settings.pageTitle, 'D1');
-	assert.equal(db.metrics.exec, 1);
+	assert.equal(db.metrics.exec, 3);
 });
 
 test('D1 schema initialization recognizes Cloudflare errors with details in cause', async () => {
@@ -56,7 +56,7 @@ test('D1 schema initialization recognizes Cloudflare errors with details in caus
 	const db = new NestedMissingTableD1();
 	const { KV: storage } = withStorageBindings({ KV: kv, DB: db });
 	assert.deepEqual(await readPersistedSettings({ KV: storage }), {});
-	assert.equal(db.metrics.exec, 1);
+	assert.equal(db.metrics.exec, 3);
 });
 
 test('D1 initialization failures retain their actionable storage message', async () => {

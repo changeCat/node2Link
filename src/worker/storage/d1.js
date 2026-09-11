@@ -4,22 +4,20 @@ const NODE_PREFIX = 'nodes.';
 const MAIN_BODY_PREFIX = 'blob.main.';
 const SHARE_BODY_PREFIX = 'blob.share.';
 const REQUEST_PREFIX = 'requests.';
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS node2link_records (
+const SCHEMA = [`CREATE TABLE IF NOT EXISTS node2link_records (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   metadata TEXT,
   expires_at INTEGER,
   updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS node2link_records_expires ON node2link_records(expires_at);
-CREATE TABLE IF NOT EXISTS node2link_nodes (
+);`,
+`CREATE INDEX IF NOT EXISTS node2link_records_expires ON node2link_records(expires_at);`,
+`CREATE TABLE IF NOT EXISTS node2link_nodes (
   id TEXT PRIMARY KEY,
   sort_key TEXT NOT NULL UNIQUE,
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
-);
-`;
+);`];
 
 const schemas = new WeakMap();
 const bindings = new WeakMap();
@@ -34,7 +32,9 @@ function missingSchema(cause) {
 
 async function initializeSchema(db) {
 	if (!schemas.has(db)) {
-		const pending = db.exec(SCHEMA).catch(cause => {
+		const pending = (async () => {
+			for (const statement of SCHEMA) await db.exec(statement);
+		})().catch(cause => {
 			schemas.delete(db);
 			throw new StorageError('D1 初始化失败，请确认 DB 绑定可用', { cause });
 		});
