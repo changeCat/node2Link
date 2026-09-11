@@ -195,18 +195,24 @@ test('share pause, expiry and renewal retain the same link', async ({ page }) =>
 	await expect(card).toHaveCount(0);
 });
 
-test('API template save, token rotation, import, copy and deletion', async ({ page }) => {
+test('API template save, token copy and reset, import and deletion', async ({ page }) => {
 	await page.goto('/api-subscriptions');
 	await expect(page.locator('#apiToken')).toHaveValue(/^[A-Za-z0-9_-]{16,128}$/);
 	const oldToken = await page.locator('#apiToken').inputValue();
 	expect(oldToken).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+	const [copyBox, resetBox] = await Promise.all([page.locator('#copyToken').boundingBox(), page.locator('#resetToken').boundingBox()]);
+	expect(copyBox).not.toBeNull();
+	expect(resetBox).not.toBeNull();
+	expect(Math.abs(copyBox.y - resetBox.y)).toBeLessThan(1);
+	await page.locator('#copyToken').click();
+	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(oldToken);
 	await page.locator('#nodeTemplate').fill('vless://uuid@{{address}}:{{port}}#{{name}}');
 	await page.locator('#nameTemplate').fill('Browser-{{address}}');
 	await page.locator('#saveSettings').click();
 	await expect(page.locator('#settingsMessage')).toContainText('已保存');
-	await page.locator('#regenerateToken').click();
+	await page.locator('#resetToken').click();
 	await page.locator('#confirmAccept').click();
-	await expect(page.locator('#settingsMessage')).toHaveText('新 Token 尚未保存');
+	await expect(page.locator('#settingsMessage')).toHaveText('Token 已重置，尚未保存');
 	await page.locator('#saveSettings').click();
 	await expect(page.locator('#settingsMessage')).toContainText('已保存');
 	const token = await page.locator('#apiToken').inputValue();

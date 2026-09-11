@@ -277,6 +277,10 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /\{\{port\}\}<\/code>API 传入的端口/);
 	assert.match(apiPageHTML, /\{\{name\}\}<\/code>由名称格式生成/);
 	assert.match(apiPageHTML, /\{\{type\}\}<\/code>根据 address 自动判断/);
+	assert.match(apiPageHTML, /id="copyToken"[^>]*>复制<\/button>/);
+	assert.match(apiPageHTML, /id="resetToken"[^>]*>重置<\/button>/);
+	assert.match(apiPageHTML, /class="token-actions"/);
+	assert.doesNotMatch(apiPageHTML, /重新生成 Token/);
 	assert.match(apiPageHTML, /复制 URL/);
 	assert.match(apiPageHTML, /复制命令/);
 	assert.match(apiPageHTML, /address=\{\{address1\}\}.*address=\{\{address2\}\}/);
