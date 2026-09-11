@@ -13,11 +13,11 @@ const node = 'trojan://test@node.example.com:443#Saved';
 const mainId = 'saved_main_id_123';
 const shareId = 'saved_share_id_123';
 
-function fixture({ logging = '0' } = {}) {
+function fixture() {
 	const operations = [];
 	const kv = new MemoryKV({ before(op, key) { operations.push(['kv.' + op, key]); } });
 	const db = new MemoryD1({ before(op) { operations.push(['d1.' + op]); } });
-	const env = { KV: kv, DB: db, ADMIN_PASSWORD: 'password', SESSION_SECRET: 'secret', REQUESTLOG: logging };
+	const env = { KV: kv, DB: db, ADMIN_PASSWORD: 'password', SESSION_SECRET: 'secret' };
 	const storage = withStorageBindings(env).KV;
 	const request = async (path, init) => {
 		const pending = [];
@@ -51,7 +51,7 @@ test('login page reads only its display setting', async () => {
 
 test('main and ordinary share requests never list KV and logs are written to D1', async () => {
 	for (const kind of ['main', 'share']) {
-		const { storage, operations, request } = fixture({ logging: '1' });
+		const { storage, operations, request } = fixture();
 		await storage.put('identity', JSON.stringify({ mainSubscriptionId: mainId }));
 		await saveMainRecord(storage, node);
 		await saveShare(storage, { id: shareId, name: 'Saved share', content: node, nodeCount: 1 });

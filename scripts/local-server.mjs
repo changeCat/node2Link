@@ -16,8 +16,7 @@ const env = {
 	ADMIN_USERNAME: process.env.NODE2LINK_DEV_USERNAME || 'admin',
 	ADMIN_PASSWORD: process.env.NODE2LINK_DEV_PASSWORD || 'dev-password',
 	SESSION_SECRET: process.env.NODE2LINK_DEV_SESSION_SECRET || 'dev-session-secret',
-	API_SUBSCRIPTION_ENABLED: process.env.API_SUBSCRIPTION_ENABLED || process.env.NODE2LINK_DEV_API_SUBSCRIPTION_ENABLED || 'false',
-	REQUESTLOG: process.env.NODE2LINK_DEV_REQUESTLOG || '0'
+	API_SUBSCRIPTION_ENABLED: process.env.API_SUBSCRIPTION_ENABLED || process.env.NODE2LINK_DEV_API_SUBSCRIPTION_ENABLED || 'false'
 };
 const mimeTypes = {
 	'.css': 'text/css;charset=utf-8',

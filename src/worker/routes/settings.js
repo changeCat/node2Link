@@ -9,7 +9,10 @@ export async function saveSettings(request, env, currentSettings) {
 	if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
 	try {
 		const payload = await readJSONBody(request, BODY_LIMITS.settings);
-		const section = ['display', 'entry', 'conversion', 'clients', 'logging'].includes(payload.section) ? payload.section : 'all';
+		const allowedSections = ['display', 'entry', 'conversion', 'clients'];
+		const section = payload.section === undefined || payload.section === 'all'
+			? 'all' : allowedSections.includes(payload.section) ? payload.section : '';
+		if (!section) return jsonResponse({ ok: false, message: '设置分区不存在' }, 400);
 		const settings = { ...currentSettings };
 
 		if (section === 'display' || section === 'all') {
@@ -42,14 +45,6 @@ export async function saveSettings(request, env, currentSettings) {
 			const displayFormats = normalizeDisplayFormats(payload.displayFormats ?? currentSettings.displayFormats ?? DEFAULT_DISPLAY_FORMATS, []);
 			if (!displayFormats.length) return jsonResponse({ ok: false, message: '请至少保留一种客户端订阅格式' }, 400);
 			settings.displayFormats = displayFormats;
-		}
-
-		if (section === 'logging' || section === 'all' && Object.hasOwn(payload, 'requestLogMode')) {
-			if (!['off', 'full', 'sample'].includes(payload.requestLogMode)) return jsonResponse({ ok: false, message: '请选择有效的记录模式' }, 400);
-			const rate = Number(payload.requestLogSampleRate ?? currentSettings.requestLogSampleRate ?? 0.1);
-			if (!Number.isFinite(rate) || rate < 0.01 || rate > 1) return jsonResponse({ ok: false, message: '采样比例须为 1% 到 100%' }, 400);
-			settings.requestLogMode = payload.requestLogMode;
-			settings.requestLogSampleRate = rate;
 		}
 
 		settings.savedAt = new Date().toISOString();

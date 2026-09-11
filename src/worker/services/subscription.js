@@ -64,7 +64,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			headers['X-Node2Link-Format'] = subscriptionFormat;
 			headers['Server-Timing'] = 'subscription;dur=' + durationMs;
 			if (upstreamFailures) headers['X-Node2Link-Upstream-Failures'] = String(upstreamFailures);
-			if (!isSubConverterRequest && runtime.requestLogEnabled) queueSubscriptionRequestLog(ctx, env, { client: detectSubscriptionClient(userAgentHeader), userAgent: userAgentHeader || 'Unknown', format: subscriptionFormat, access, subscriptionId, status, durationMs, upstreamFailures }, runtime);
+			if (!isSubConverterRequest && env?.KV) queueSubscriptionRequestLog(ctx, env, { client: detectSubscriptionClient(userAgentHeader), userAgent: userAgentHeader || 'Unknown', format: subscriptionFormat, access, subscriptionId, status, durationMs, upstreamFailures });
 			console.log(JSON.stringify({ event: 'subscription.complete', format: subscriptionFormat, status, durationMs, upstreamFailures }));
 			return new Response(body, { status, headers });
 		};

@@ -9,8 +9,7 @@ export const SETTING_SECTIONS = {
 	display: ['subscriptionName', 'pageTitle', 'browserIconURL'],
 	entry: ['subscriptionToken'],
 	conversion: ['converterMode', 'customConverterURL', 'ruleMode', 'customSubConfigURL'],
-	clients: ['displayFormats'],
-	logging: ['requestLogMode', 'requestLogSampleRate']
+	clients: ['displayFormats']
 };
 
 async function readSections(kv, sections, entry) {
@@ -47,7 +46,7 @@ export async function readPersistedSettings(env, { entry } = {}) {
 // directly from KV; there is no persistent snapshot or additional auth cache.
 export async function readPublicSubscriptionSettings(env) {
 	const [settings, identity] = await Promise.all([
-		cachedView(env.KV, PUBLIC_VIEW, () => readSections(env.KV, ['display', 'conversion', 'clients', 'logging']), {
+		cachedView(env.KV, PUBLIC_VIEW, () => readSections(env.KV, ['display', 'conversion', 'clients']), {
 			fresh: false, ttlMs: 60_000,
 			cacheable: value => new TextEncoder().encode(JSON.stringify(value)).length <= 64 * 1024
 		}),
