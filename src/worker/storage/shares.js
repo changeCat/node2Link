@@ -14,11 +14,16 @@ async function shareView(kv) {
 		const id = key.name.slice(LEGACY_PREFIX.length);
 		return [id, { key: key.name, summary: summaries.get(id) }];
 	}));
+	return applyShareEvents(kv, entries, events);
+}
+
+async function applyShareEvents(kv, entries, events, onlyId) {
 	const revoked = new Set();
 	for (const event of events) {
 		const metadata = event.metadata || (await readRequiredJSON(kv, event.name)).index;
 		if (!Array.isArray(metadata?.changes)) throw new StorageError('分享索引格式异常');
 		for (const change of metadata.changes) {
+			if (onlyId && change.id !== onlyId) continue;
 			if (change.deleted) revoked.add(change.id);
 			else {
 				const summary = normalizeShareSummary(change);
@@ -42,13 +47,18 @@ async function readEntry(kv, id, entry) {
 
 export async function readShare(kv, id) {
 	if (!isValidShareId(id)) return null;
-	const entry = (await shareView(kv)).get(id);
-	return entry ? readEntry(kv, id, entry) : null;
+	// Only journal events can revoke a legacy ID. Check them on every request,
+	// then read the known legacy key directly instead of listing all old shares.
+	const entries = await applyShareEvents(kv, new Map([[id, { key: LEGACY_PREFIX + id }]]), await listKeys(kv, PREFIX), id);
+	const entry = entries.get(id);
+	if (!entry) return null;
+	if (entry.event) return readEntry(kv, id, entry);
+	return readJSON(kv, entry.key, null, share => isObject(share) && share.id === id && typeof share.content === 'string');
 }
 
 export async function listShareSummaries(kv, { fresh = false } = {}) {
 	if (!kv) return [];
-	const entries = await cachedView(kv, PREFIX, () => shareView(kv), { fresh, cacheable: entries => entries.size <= MAX_CACHED_KEYS });
+	const entries = await cachedView(kv, PREFIX, () => shareView(kv), { fresh, ttlMs: 15_000, cacheable: entries => entries.size <= MAX_CACHED_KEYS });
 	const summaries = await mapConcurrent([...entries], 6, async ([id, entry]) => entry.summary || normalizeShareSummary(await readEntry(kv, id, entry)));
 	return summaries.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }

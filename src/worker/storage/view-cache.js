@@ -1,5 +1,5 @@
-// Optional, short-lived administrative views only. Authoritative reads bypass
-// this cache. Weak keys let the runtime reclaim bindings after an isolate dies.
+// Optional, short-lived views. Credentials, identity, subscription content and
+// revocation reads bypass this cache. Bindings are isolated and weakly held.
 const bindings = new WeakMap();
 const TTL_MS = 2000;
 export const MAX_CACHED_KEYS = 20000;
@@ -19,7 +19,7 @@ export function invalidateView(kv, name) {
 	delete entry.pending;
 }
 
-export async function cachedView(kv, name, loader, { fresh = true, cacheable = () => true } = {}) {
+export async function cachedView(kv, name, loader, { fresh = true, cacheable = () => true, ttlMs = TTL_MS } = {}) {
 	if (!kv || fresh) return loader();
 	const entry = slot(kv, name);
 	if (entry.expires > Date.now() && Object.hasOwn(entry, 'value')) return entry.value;
@@ -28,7 +28,7 @@ export async function cachedView(kv, name, loader, { fresh = true, cacheable = (
 	const pending = Promise.resolve().then(loader).then(value => {
 		if (entry.generation === generation && cacheable(value)) {
 			entry.value = value;
-			entry.expires = Date.now() + TTL_MS;
+			entry.expires = Date.now() + ttlMs;
 		}
 		return value;
 	}).finally(() => { if (entry.pending === pending) delete entry.pending; });

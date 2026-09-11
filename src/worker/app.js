@@ -1,7 +1,7 @@
 import { handleSharesAPI } from './routes/shares.js';
 import { createRuntimeConfig, isSubscriptionTokenRequest, isAPISubscriptionEnabled } from './config.js';
 import { jsonResponse, textResponse, requestHasSameOrigin } from './http.js';
-import { readPersistedSettings } from './storage/settings.js';
+import { readPersistedSettings, readPublicSubscriptionSettings } from './storage/settings.js';
 import { StorageError } from './storage/kv.js';
 import { RequestBodyError } from './request-body.js';
 import { isShareAvailable } from './domain/shares.js';
@@ -23,6 +23,12 @@ import { timed } from './timing.js';
 import { readShare } from './storage/shares.js';
 import { handleGeneratedNodesAPI, handlePublicNodeImport } from './routes/generated-nodes.js';
 
+const PAGE_METHODS = new Map([
+	['/', ['GET', 'POST']], ['/login', ['GET']], ['/api/login', ['POST']],
+	['/api/settings', ['POST']], ['/dashboard', ['GET']], ['/settings', ['GET']],
+	['/api-subscriptions', ['GET']], ['/shares', ['GET']], ['/requests', ['GET']]
+]);
+
 export default {
 	async fetch(request, env, ctx) {
 		const startedAt = Date.now();
@@ -39,6 +45,13 @@ export default {
 async function dispatch(request, env, ctx, timings) {
 	const url = new URL(request.url);
 	const apiSubscriptionEnabled = isAPISubscriptionEnabled(env);
+	let authentication;
+	const authenticated = () => authentication ??= isAuthenticated(request, env);
+	const shareMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{12,64})$/);
+	const publicShareRequest = Boolean(shareMatch && request.method === 'GET');
+	// Percent-encoded slashes can belong to an existing /<Token> entry.
+	const tokenCandidate = request.method === 'GET' && (url.pathname === '/'
+		? url.searchParams.has('token') : !url.pathname.slice(1).includes('/'));
 	if (!apiSubscriptionEnabled && ['/api/import', '/api/generated-nodes', '/api-subscriptions'].includes(url.pathname)) {
 		return url.pathname.startsWith('/api/')
 			? jsonResponse({ ok: false, message: '接口不存在' }, 404)
@@ -47,7 +60,7 @@ async function dispatch(request, env, ctx, timings) {
 
 	// These administrative APIs need authentication, but no display/conversion settings.
 	if (['/api/shares', '/api/generated-nodes', '/api/node-candidates', '/api/logout'].includes(url.pathname)) {
-		if (!(await isAuthenticated(request, env))) return jsonResponse({ ok: false, message: '登录已失效' }, 401);
+		if (!(await authenticated())) return jsonResponse({ ok: false, message: '登录已失效' }, 401);
 		if (url.pathname === '/api/logout' && request.method === 'POST') {
 			if (!requestHasSameOrigin(request)) return textResponse('请求来源无效', 403);
 			return new Response(null, { status: 303, headers: { Location: '/login', 'Set-Cookie': clearSessionCookie() } });
@@ -57,24 +70,38 @@ async function dispatch(request, env, ctx, timings) {
 		if (url.pathname === '/api/node-candidates' && request.method === 'GET') return handleNodeCandidates(request, env, apiSubscriptionEnabled, timings);
 		return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);
 	}
-	const persistedSettings = await timed(timings, 'settings', () => readPersistedSettings(env));
-	const runtime = await timed(timings, 'config', () => createRuntimeConfig(env, persistedSettings));
-
-	if (request.method === 'GET' && isSubscriptionTokenRequest(url, runtime.subscriptionToken)) {
-		const mainData = await timed(timings, 'main_read', () => readMainSubscriptionData(env));
-		return serveSubscription(request, env, ctx, runtime, mainData, 'main', true, runtime.mainSubscriptionId, runtime.FileName, { timings });
-	}
 	if (url.pathname === '/api/import') {
 		return handlePublicNodeImport(request, env, url, { onImported(result) {
-			if (result.added.length) queueTelegram(ctx, sendActionMessage(runtime, 'API 订阅已修改', [
-				'API 订阅节点: ' + result.total + ' 个', '本次新增: ' + result.added.length + ' 个',
-				'调用方式: ' + (result.mode === 'direct' ? '完整节点' : '地址模板')
-			], request));
+			if (!result.added.length || !env.TGTOKEN || !env.TGID) return;
+			queueTelegram(ctx, (async () => {
+				const runtime = await createRuntimeConfig(env, await readPersistedSettings(env));
+				return sendActionMessage(runtime, 'API 订阅已修改', [
+					'API 订阅节点: ' + result.total + ' 个', '本次新增: ' + result.added.length + ' 个',
+					'调用方式: ' + (result.mode === 'direct' ? '完整节点' : '地址模板')
+				], request);
+			})());
 		} });
 	}
 
-	const shareMatch = url.pathname.match(/^\/s\/([A-Za-z0-9_-]{12,64})$/);
-	if (shareMatch && request.method === 'GET') {
+	if (!tokenCandidate && !publicShareRequest) {
+		const methods = PAGE_METHODS.get(url.pathname);
+		if (!methods) return textResponse('页面不存在', 404);
+		if (!methods.includes(request.method)) return textResponse('Method Not Allowed', 405);
+		if (url.pathname !== '/api/login' && !(await authenticated())) {
+			if (url.pathname.startsWith('/api/')) return jsonResponse({ ok: false, message: '登录已失效' }, 401);
+			return Response.redirect(url.origin + '/login', 303);
+		}
+	}
+	const persistedSettings = await timed(timings, 'settings', () => publicShareRequest
+		? readPublicSubscriptionSettings(env) : readPersistedSettings(env));
+	const runtime = await timed(timings, 'config', () => createRuntimeConfig(env, persistedSettings));
+
+	if (tokenCandidate && isSubscriptionTokenRequest(url, runtime.subscriptionToken)) {
+		const mainData = await timed(timings, 'main_read', () => readMainSubscriptionData(env));
+		return serveSubscription(request, env, ctx, runtime, mainData, 'main', true, runtime.mainSubscriptionId, runtime.FileName, { timings });
+	}
+
+	if (publicShareRequest) {
 		const shareId = shareMatch[1];
 		if (shareId === runtime.mainSubscriptionId) {
 			const mainData = await timed(timings, 'main_read', () => readMainSubscriptionData(env));
@@ -89,11 +116,11 @@ async function dispatch(request, env, ctx, timings) {
 
 	if (url.pathname === '/api/login' && request.method === 'POST') return handleLogin(request, env, runtime, persistedSettings);
 	if (url.pathname === '/login' && request.method === 'GET') {
-		if (await isAuthenticated(request, env)) return Response.redirect(url.origin + '/', 303);
+		if (await authenticated()) return Response.redirect(url.origin + '/', 303);
 		return renderLoginPage(env, runtime);
 	}
 
-	if (!(await isAuthenticated(request, env))) {
+	if (!(await authenticated())) {
 		if (url.pathname.startsWith('/api/')) return jsonResponse({ ok: false, message: '登录已失效' }, 401);
 		return Response.redirect(url.origin + '/login', 303);
 	}

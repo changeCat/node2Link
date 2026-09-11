@@ -10,7 +10,8 @@
     "pages:build": "npm run check && npm test && npm run build && npm run smoke",
     "smoke": "node scripts/smoke.mjs",
     "test:e2e": "playwright test",
-    "benchmark": "node scripts/benchmark-storage.mjs"
+    "benchmark": "node scripts/benchmark-storage.mjs",
+    "benchmark:requests": "node scripts/benchmark-kv-requests.mjs"
   },
   "dependencies": {
     "@keeex/qrcodejs-kx": "1.0.2",
