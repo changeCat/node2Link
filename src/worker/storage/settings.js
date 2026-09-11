@@ -24,7 +24,8 @@ export const SETTING_SECTIONS = {
 	display: ['subscriptionName', 'pageTitle', 'browserIconURL'],
 	entry: ['subscriptionToken'],
 	conversion: ['converterMode', 'customConverterURL', 'ruleMode', 'customSubConfigURL'],
-	clients: ['displayFormats']
+	clients: ['displayFormats'],
+	logging: ['requestLogMode', 'requestLogSampleRate']
 };
 
 export async function readPersistedSettings(env) {
@@ -43,7 +44,7 @@ export async function readPublicSubscriptionSettings(env) {
 	const [legacy, identity, journal] = await Promise.all([
 		readJSON(env.KV, SETTINGS_KEY, {}, isObject),
 		readJSON(env.KV, IDENTITY_KEY, {}, isObject),
-		cachedView(env.KV, PUBLIC_VIEW, () => readJournalSettings(env.KV, ['display', 'conversion', 'clients']), {
+		cachedView(env.KV, PUBLIC_VIEW, () => readJournalSettings(env.KV, ['display', 'conversion', 'clients', 'logging']), {
 			fresh: false, ttlMs: 60_000,
 			cacheable: value => new TextEncoder().encode(JSON.stringify(value)).length <= 64 * 1024
 		})
