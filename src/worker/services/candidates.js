@@ -16,7 +16,6 @@ export function nodeCandidateName(content, fallback) {
 }
 
 export async function handleNodeCandidates(request, env, apiSubscriptionEnabled, timings) {
-	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	try {
 		const [manualContent, generatedNodes] = await timed(timings, 'candidates_read', () => Promise.all([
 			readMainRecord(env.KV).then(record => record.content),

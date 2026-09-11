@@ -5,7 +5,6 @@ import { readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js'
 import { createShareId, readShare, listShareSummaries, saveShare, deleteShare } from '../storage/shares.js';
 
 export async function handleSharesAPI(request, env, url = new URL(request.url)) {
-	if (!env.KV) return jsonResponse({ ok: false, message: '请先绑定 KV 命名空间' }, 400);
 	try {
 		if (request.method === 'GET') {
 			const id = String(url.searchParams.get('id') || '');

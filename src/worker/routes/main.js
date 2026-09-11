@@ -8,7 +8,6 @@ import { renderMainPage } from '../ui/home.js';
 
 export async function handleMainPage(request, env, runtime, ctx, timings) {
 	if (request.method === 'POST') {
-		if (!env.KV) return jsonResponse({ ok: false, message: '未绑定 KV 命名空间' }, 400);
 		if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
 		if (request.headers.get('X-Node2Link-Action') === 'get-backup') {
 			const backup = await readMainBackup(env.KV);
@@ -26,6 +25,6 @@ export async function handleMainPage(request, env, runtime, ctx, timings) {
 		queueTelegram(ctx, sendActionMessage(runtime, '主订阅已修改', ['有效节点: ' + summary.nodes + ' 个', '订阅源: ' + summary.sources + ' 个'], request));
 		return jsonResponse({ ok: true, metadata });
 	}
-	const record = env.KV ? await timed(timings, 'main_read', () => readMainRecord(env.KV)) : { content: '', metadata: null };
-	return renderMainPage(request, runtime, record, Boolean(env.KV));
+	const record = await timed(timings, 'main_read', () => readMainRecord(env.KV));
+	return renderMainPage(request, runtime, record);
 }

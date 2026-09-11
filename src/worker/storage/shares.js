@@ -1,17 +1,15 @@
 import { listKeys, readJSON, readRequiredJSON, mapConcurrent, StorageError, isObject, writeJSON, writeJSONBatch, revisionKey } from './kv.js';
 import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 
-const PREFIX = 'NODE2LINK.v3.shares.';
-const REVOKED_PREFIX = 'NODE2LINK.v3.revoked.';
-const BODY_PREFIX = 'NODE2LINK.blob.share.';
+const PREFIX = 'shares.';
+const REVOKED_PREFIX = 'revoked.';
+const BODY_PREFIX = 'blob.share.';
 const D1_INLINE_LIMIT = 1_800_000;
 const validRevocation = value => isObject(value) && value.deleted === true
 	&& (value.replacementId === undefined || isValidShareId(value.replacementId));
 const validRecord = value => {
 	if (!isObject(value) || !isObject(value.share) || !isValidShareId(value.share.id)
 		|| (value.activationId !== undefined && !isValidShareId(value.activationId))) return false;
-	if (value.schemaVersion === 3) return typeof value.share.content === 'string';
-	if (value.schemaVersion !== 4) return false;
 	const inline = typeof value.share.content === 'string';
 	const overflow = typeof value.contentKey === 'string' && value.contentKey.startsWith(BODY_PREFIX);
 	return inline !== overflow;
@@ -81,11 +79,11 @@ export async function saveShare(kv, share, previousId) {
 	const existing = await readStoredRecord(kv, share.id);
 	const activationId = resetting ? previousId : existing?.activationId;
 	const { content, ...summaryFields } = share;
-	let record = { schemaVersion: 4, share: { ...summaryFields, content }, ...(activationId ? { activationId } : {}) };
+	let record = { share: { ...summaryFields, content }, ...(activationId ? { activationId } : {}) };
 	let contentKey;
-	if (kv.isD1 && new TextEncoder().encode(JSON.stringify(record)).length > D1_INLINE_LIMIT) {
+	if (new TextEncoder().encode(JSON.stringify(record)).length > D1_INLINE_LIMIT) {
 		contentKey = revisionKey(BODY_PREFIX + share.id + '.');
-		record = { schemaVersion: 4, share: summaryFields, contentKey, ...(activationId ? { activationId } : {}) };
+		record = { share: summaryFields, contentKey, ...(activationId ? { activationId } : {}) };
 		try { await kv.put(contentKey, content); }
 		catch (cause) { throw new StorageError(undefined, { cause }); }
 	}
@@ -98,9 +96,9 @@ export async function saveShare(kv, share, previousId) {
 			records.push({ key: REVOKED_PREFIX + previousId, value: marker, metadata: marker });
 		}
 		await writeJSONBatch(kv, records);
-		const retiredBody = resetting ? previousRecord?.contentKey : existing?.contentKey;
-		if (retiredBody && retiredBody !== contentKey) {
-			try { await kv.delete(retiredBody); } catch { /* Orphan cleanup is best effort. */ }
+		const previousBody = resetting ? previousRecord?.contentKey : existing?.contentKey;
+		if (previousBody && previousBody !== contentKey) {
+			try { await kv.delete(previousBody); } catch { /* Orphan cleanup is best effort. */ }
 		}
 	} finally { invalidateView(kv, PREFIX); }
 }

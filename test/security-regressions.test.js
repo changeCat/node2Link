@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
+import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
 import { createSessionCookie, isAuthenticated, hmacBase64Url } from '../src/worker/auth.js';
 import { saveShare, deleteShare, readShare, listShareSummaries } from '../src/worker/storage/shares.js';
 import { initializeGeneratedNodeSettings, readGeneratedNodeSettings, saveGeneratedNodeSettings } from '../src/worker/storage/generated-nodes.js';
@@ -12,7 +13,7 @@ const credentials = { ADMIN_USERNAME: 'admin.with.dots', ADMIN_PASSWORD: 'test-p
 const apiSettings = { token: 'abcdefghijklmnop', nameTemplate: '{{address}}', nodeTemplate: '' };
 const node = 'vless://uuid@example.com:443#test';
 const share = { id: 'original_share_id', name: 'original', content: node, nodeCount: 1 };
-const apiKey = 'NODE2LINK.api-subscription.settings.json';
+const apiKey = 'api.settings';
 
 test('password, username and session-secret changes each invalidate existing sessions', async () => {
 	const cookie = (await createSessionCookie(credentials)).split(';')[0];
@@ -56,7 +57,7 @@ test('administrative GET does not initialize API credentials', async () => {
 
 test('unavailable API configuration does not prevent administrator login', async () => {
 	const kv = new MemoryKV({ before(op, key) { if (op === 'get' && key === apiKey) throw new Error('API settings unavailable'); } });
-	const env = { ...credentials, KV: kv, API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
+	const env = { ...credentials, KV: kv, DB: new MemoryD1(), API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
 	const response = await worker.fetch(new Request('https://example.com/api/login', {
 		method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' },
 		body: JSON.stringify({ username: credentials.ADMIN_USERNAME, password: credentials.ADMIN_PASSWORD })
@@ -81,7 +82,7 @@ test('a late bootstrap write cannot undo a concurrent token rotation or template
 	const waiting = new Promise(resolve => { entered = resolve; });
 	const barrier = new Promise(resolve => { resume = resolve; });
 	const kv = new MemoryKV({ async before(op, key) {
-		if (op === 'put' && key.startsWith('NODE2LINK.api-subscription.bootstrap.')) { entered(); await barrier; }
+		if (op === 'put' && key === 'api.bootstrap') { entered(); await barrier; }
 	} });
 	const initialization = initializeGeneratedNodeSettings({ ...credentials, KV: kv });
 	await waiting;
@@ -99,7 +100,7 @@ test('existing API credentials survive initialization and administrator credenti
 });
 
 test('bootstrap mutation is protected by login and same-origin checks', async () => {
-	const env = { ...credentials, KV: new MemoryKV(), API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
+	const env = { ...credentials, KV: new MemoryKV(), DB: new MemoryD1(), API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
 	const url = 'https://example.com/api/generated-nodes';
 	const body = JSON.stringify({ action: 'initialize' });
 	const anonymous = await worker.fetch(new Request(url, { method: 'POST', body }), env, {});

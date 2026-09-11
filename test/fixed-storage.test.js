@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
+import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
 import { StorageError } from '../src/worker/storage/kv.js';
 import { saveMainRecord, readMainRecord, readMainBackup, MAIN_HEAD_KEY } from '../src/worker/storage/main.js';
 import { saveShare, readShare, listShareSummaries, deleteShare } from '../src/worker/storage/shares.js';
@@ -35,24 +36,10 @@ test('missing or corrupt current bodies fail closed without falling back to arch
 	await assert.rejects(saveMainRecord(kv, 'third'), StorageError);
 });
 
-test('raw-KV transition reads a v3 share by exact keys and converts it on edit', async () => {
-	const operations = [];
-	const kv = new MemoryKV({ before(op, key) { operations.push([op, key]); } });
-	await kv.put('NODE2LINK.v3.shares.' + original.id, JSON.stringify({ schemaVersion: 3, share: original }), { metadata: original });
-	operations.length = 0;
-	assert.equal((await readShare(kv, original.id)).content, original.content);
-	assert.deepEqual(operations, [
-		['get', 'NODE2LINK.v3.shares.' + original.id],
-		['get', 'NODE2LINK.v3.revoked.' + original.id]
-	]);
-	await saveShare(kv, { ...original, name: 'Converted' });
-	assert.equal(JSON.parse(await kv.get('NODE2LINK.v3.shares.' + original.id)).schemaVersion, 4);
-});
-
 test('reset publication failure never exposes a staged replacement and retry completes the switch', async () => {
 	const kv = new MemoryKV();
 	await saveShare(kv, original);
-	kv.before = (op, key) => { if (op === 'put' && key.startsWith('NODE2LINK.v3.revoked.')) throw new Error('publication failed'); };
+	kv.before = (op, key) => { if (op === 'put' && key.startsWith('revoked.')) throw new Error('publication failed'); };
 	await assert.rejects(saveShare(kv, replacement, original.id), StorageError);
 	assert.equal((await readShare(kv, original.id)).content, original.content);
 	assert.equal(await readShare(kv, replacement.id), null);
@@ -71,7 +58,7 @@ for (const action of ['delete', 'reset']) test('in-flight edit cannot resurrect 
 	const paused = new Promise(resolve => { entered = resolve; });
 	const barrier = new Promise(resolve => { resume = resolve; });
 	kv.before = async (op, key) => {
-		if (op === 'put' && key === 'NODE2LINK.v3.shares.' + original.id) { entered(); await barrier; }
+		if (op === 'put' && key === 'shares.' + original.id) { entered(); await barrier; }
 	};
 	const editing = saveShare(kv, { ...original, name: 'Late edit' });
 	await paused;
@@ -91,17 +78,16 @@ test('repeated settings and share edits do not grow history or subscription list
 		await saveShare(kv, { ...original, name: 'Edit ' + i });
 	}
 	assert.equal(kv.values.size, 2);
-	assert.equal([...kv.values.keys()].filter(key => key.startsWith('NODE2LINK.blob.share.')).length, 0);
+	assert.equal([...kv.values.keys()].filter(key => key.startsWith('blob.share.')).length, 0);
 	kv.before = op => { if (op !== 'get') throw new Error('Unexpected ' + op); };
 	assert.equal((await readPersistedSettings({ KV: kv })).subscriptionToken, 'token-99');
 	assert.equal((await readShare(kv, original.id)).name, 'Edit 99');
 });
 
-test('API credential initialization and later reads never list bootstrap history', async () => {
+test('API credential initialization uses one fixed bootstrap key', async () => {
 	const kv = new MemoryKV({ before(op) { if (op === 'list') throw new Error('Unexpected list'); } });
-	await kv.put('NODE2LINK.api-subscription.bootstrap.retired', JSON.stringify({ token: 'retired-token-1234' }));
 	assert.equal((await readGeneratedNodeSettings(kv)).token, '');
-	const settings = await initializeGeneratedNodeSettings({ KV: kv, ADMIN_PASSWORD: 'password' });
+	const settings = await initializeGeneratedNodeSettings({ KV: kv, DB: new MemoryD1(), ADMIN_PASSWORD: 'password' });
 	assert.ok(settings.token);
 	assert.equal((await readGeneratedNodeSettings(kv)).token, settings.token);
 });
@@ -141,11 +127,11 @@ test('explicit write throttling is retried with a bound and ordinary outages are
 	} finally { globalThis.setTimeout = originalTimer; }
 });
 
-test('an invalid token candidate reads only the current entry key and never scans', async () => {
+test('an invalid token candidate reads D1 only and never touches KV', async () => {
 	const { default: worker } = await import('../src/worker/app.js');
 	const calls = [];
 	const kv = new MemoryKV({ before(op, key) { calls.push([op, key]); } });
-	const response = await worker.fetch(new Request('https://example.com/unknown-token'), { KV: kv, TOKEN: 'valid-token', ADMIN_PASSWORD: 'password' }, {});
+	const response = await worker.fetch(new Request('https://example.com/unknown-token'), { KV: kv, DB: new MemoryD1(), TOKEN: 'valid-token', ADMIN_PASSWORD: 'password' }, {});
 	assert.equal(response.status, 303);
-	assert.deepEqual(calls, [['get', 'NODE2LINK.v3.settings.entry']]);
+	assert.deepEqual(calls, []);
 });

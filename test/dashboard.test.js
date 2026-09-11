@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import worker from '../src/worker/app.js';
 import { summarizeDashboard, readDashboard } from '../src/worker/services/dashboard.js';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
+import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
+import { withStorageBindings } from '../src/worker/storage/d1.js';
 import { saveMainRecord } from '../src/worker/storage/main.js';
 import { saveShare } from '../src/worker/storage/shares.js';
 import { createSessionCookie } from '../src/worker/auth.js';
@@ -47,7 +49,7 @@ test('dashboard reads existing records only and respects the API feature switch'
 	let writes = 0;
 	kv.before = (op, key) => {
 		if (op === 'put') writes++;
-		if (key.includes('api-subscription') || key.startsWith('NODE2LINK.v3.nodes.')) throw new Error('API should remain disabled');
+		if (key.includes('api-subscription') || key.startsWith('nodes.')) throw new Error('API should remain disabled');
 	};
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = () => { throw new Error('Dashboard must not fetch upstream'); };
@@ -60,7 +62,8 @@ test('dashboard reads existing records only and respects the API feature switch'
 });
 
 test('dashboard requires login, escapes names and never embeds node bodies', async () => {
-	const env = { KV: new MemoryKV(), ADMIN_PASSWORD: 'password', REQUESTLOG: '0' };
+	const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'password', REQUESTLOG: '0' };
+	env.KV = withStorageBindings(env).KV;
 	await saveMainRecord(env.KV, node);
 	await saveShare(env.KV, { id: 'dashboard_share_123', name: '<img src=x onerror=alert(1)>', content: node, updatedAt: date(0), expiresAt: date(1) });
 	const request = headers => worker.fetch(new Request('https://example.com/dashboard', { headers }), env, {});
@@ -74,11 +77,15 @@ test('dashboard requires login, escapes names and never embeds node bodies', asy
 	assert.match(html, /data-stat="nodes">1/);
 });
 
-test('dashboard supports empty deployments and surfaces storage failure instead of false zero counts', async () => {
-	const env = { ADMIN_PASSWORD: 'password' };
+test('dashboard supports empty bound storage and surfaces D1 failure instead of false zero counts', async () => {
+	const db = new MemoryD1();
+	const env = { KV: new MemoryKV(), DB: db, ADMIN_PASSWORD: 'password' };
+	env.KV = withStorageBindings(env).KV;
 	const headers = { Cookie: (await createSessionCookie(env)).split(';')[0] };
 	const request = () => worker.fetch(new Request('https://example.com/dashboard', { headers }), env, {});
-	assert.match(await (await request()).text(), /绑定 KV/);
-	env.KV = new MemoryKV({ before(op, key) { if (key.startsWith('NODE2LINK.v3.main.')) throw new Error('outage'); } });
+	const first = await request();
+	assert.equal(first.status, 200);
+	assert.match(await first.text(), /data-stat="nodes">0/);
+	db.before = operation => { if (operation === 'first') throw new Error('outage'); };
 	assert.equal((await request()).status, 503);
 });

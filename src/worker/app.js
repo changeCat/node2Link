@@ -22,7 +22,7 @@ import { renderDashboardPage } from './ui/dashboard.js';
 import { timed } from './timing.js';
 import { readShare } from './storage/shares.js';
 import { handleGeneratedNodesAPI, handlePublicNodeImport } from './routes/generated-nodes.js';
-import { withD1Storage } from './storage/d1.js';
+import { withStorageBindings } from './storage/d1.js';
 
 const PAGE_METHODS = new Map([
 	['/', ['GET', 'POST']], ['/login', ['GET']], ['/api/login', ['POST']],
@@ -32,10 +32,12 @@ const PAGE_METHODS = new Map([
 
 export default {
 	async fetch(request, env, ctx) {
-		env = withD1Storage(env);
 		const startedAt = Date.now();
 		const timings = [];
-		try { return withServerTiming(await dispatch(request, env, ctx, timings), startedAt, timings); }
+		try {
+			env = withStorageBindings(env);
+			return withServerTiming(await dispatch(request, env, ctx, timings), startedAt, timings);
+		}
 		catch (error) {
 			console.error(JSON.stringify({ event: 'request.failed', type: error.name || 'Error' }));
 			const expected = error instanceof StorageError || error instanceof RequestBodyError;
@@ -119,7 +121,6 @@ async function dispatch(request, env, ctx, timings) {
 			const mainData = await timed(timings, 'main_read', () => readMainSubscriptionData(env));
 			return serveSubscription(request, env, ctx, runtime, mainData, 'main', true, runtime.mainSubscriptionId, runtime.FileName, { timings });
 		}
-		if (!env.KV) return textResponse('分享链接不存在', 404);
 		const shared = await timed(timings, 'share_read', () => readShare(env.KV, shareId));
 		if (!shared) return textResponse('分享链接不存在或已被删除', 404);
 		if (!isShareAvailable(shared)) return textResponse('分享已暂停或已到期', 410);
@@ -144,8 +145,6 @@ async function dispatch(request, env, ctx, timings) {
 	if (url.pathname === '/shares' && request.method === 'GET') return renderSharesPage(request, env, runtime);
 	if (url.pathname === '/requests' && request.method === 'GET') return renderRequestsPage(request, env, runtime);
 	if (url.pathname !== '/') return textResponse('页面不存在', 404);
-	if (!env.KV) return handleMainPage(request, env, runtime, ctx, timings);
-
 	if (request.method === 'GET' || request.method === 'POST') {
 		return handleMainPage(request, env, runtime, ctx, timings);
 	}

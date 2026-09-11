@@ -1,6 +1,6 @@
 import { MemoryKV } from './lib/memory-kv.mjs';
 import { MemoryD1 } from './lib/memory-d1.mjs';
-import { withD1Storage } from '../src/worker/storage/d1.js';
+import { withStorageBindings } from '../src/worker/storage/d1.js';
 import { listShareSummaries, saveShare } from '../src/worker/storage/shares.js';
 import { appendNodeBatch } from '../src/worker/storage/node-records.js';
 import { readGeneratedNodes } from '../src/worker/storage/generated-nodes.js';
@@ -14,7 +14,7 @@ for (const history of [100, 1000, 10000]) {
 		const increment = key => { if (counts) counts[key] = (counts[key] || 0) + 1; };
 		const kv = new MemoryKV({ before(op) { increment('kv' + op[0].toUpperCase() + op.slice(1)); } });
 		const db = new MemoryD1({ initialized: true, before(op) { increment('d1' + op[0].toUpperCase() + op.slice(1)); } });
-		const storage = withD1Storage({ KV: kv, DB: db }).KV;
+		const storage = withStorageBindings({ KV: kv, DB: db }).KV;
 		const nodePool = Array.from({ length: 100 }, (_, i) => normalizeDirectNodes({ node: 'vless://uuid@example.com:443#' + i })[0]);
 		for (let i = 0; i < history; i++) {
 			if (kind === 'shares') await saveShare(storage, { id: 'benchmark_share_' + (i % 100), name: 'Share ' + i, content: 'vless://uuid@example.com:443#test', nodeCount: 1 });
@@ -32,4 +32,4 @@ for (const history of [100, 1000, 10000]) {
 	}
 }
 console.table(results);
-console.log('Local hybrid MemoryD1/MemoryKV counts. Structured lists use indexed D1 queries; KV retains only immutable main bodies and rare oversized share bodies. Views expire after 15 seconds.');
+console.log('Local MemoryD1/MemoryKV counts. Structured lists use indexed D1 queries; KV retains only immutable main bodies and rare oversized share bodies. Views expire after 15 seconds.');

@@ -4,7 +4,6 @@ import { parseSubConverters, normalizeSublinkConverter } from './adapters/conver
 
 export const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
 export const DEFAULT_PAGE_TITLE = DEFAULT_FILE_NAME;
-export const LEGACY_DEFAULT_PAGE_TITLE = 'Node2Link';
 export const DEFAULT_SUB_UPDATE_TIME = 6;
 export const DEFAULT_MAIN_DATA = `
 https://cfxr.eu.org/getSub
@@ -41,11 +40,8 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 	const updateTime = Number(env.SUBUPTIME);
 	const persistedCustomConverterURL = normalizeSublinkConverter(persistedSettings.customConverterURL);
 	const defaultSubConfig = normalizeHTTPURL(env.SUBCONFIG) || DEFAULT_SUB_CONFIG;
-	const migratedSubConfig = normalizeHTTPURL(persistedSettings.subConfig);
-	const persistedCustomSubConfigURL = normalizeHTTPURL(persistedSettings.customSubConfigURL)
-		|| (!Object.prototype.hasOwnProperty.call(persistedSettings, 'ruleMode') && migratedSubConfig !== defaultSubConfig ? migratedSubConfig : '');
-	const ruleMode = (persistedSettings.ruleMode === 'custom' || (!Object.prototype.hasOwnProperty.call(persistedSettings, 'ruleMode') && Boolean(persistedCustomSubConfigURL)))
-		&& persistedCustomSubConfigURL ? 'custom' : 'default';
+	const persistedCustomSubConfigURL = normalizeHTTPURL(persistedSettings.customSubConfigURL);
+	const ruleMode = persistedSettings.ruleMode === 'custom' && persistedCustomSubConfigURL ? 'custom' : 'default';
 	const storedMainId = isValidShareId(persistedSettings.mainSubscriptionId) ? persistedSettings.mainSubscriptionId : '';
 	const configuredMainId = isValidShareId(env.SUBSCRIPTION_ID) ? env.SUBSCRIPTION_ID : '';
 	const mainSubscriptionId = storedMainId
@@ -57,7 +53,7 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 		BotToken: env.TGTOKEN || '',
 		ChatID: env.TGID || '',
 		FileName: sanitizeSubscriptionName(persistedSettings.subscriptionName || env.SUBNAME || DEFAULT_FILE_NAME),
-		pageTitle: sanitizePageTitle(!persistedSettings.pageTitle || persistedSettings.pageTitle === LEGACY_DEFAULT_PAGE_TITLE ? DEFAULT_PAGE_TITLE : persistedSettings.pageTitle),
+		pageTitle: sanitizePageTitle(persistedSettings.pageTitle || DEFAULT_PAGE_TITLE),
 		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
 		subConfig: ruleMode === 'custom' ? persistedCustomSubConfigURL : defaultSubConfig,
 		defaultSubConfig,
@@ -69,9 +65,7 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 		mainSubscriptionId,
 		subscriptionToken: Object.prototype.hasOwnProperty.call(persistedSettings, 'subscriptionToken')
 			? sanitizeSubscriptionToken(persistedSettings.subscriptionToken)
-			: (Object.prototype.hasOwnProperty.call(persistedSettings, 'legacySubscriptionToken')
-				? sanitizeSubscriptionToken(persistedSettings.legacySubscriptionToken)
-				: sanitizeSubscriptionToken(env.TOKEN || '')),
+			: sanitizeSubscriptionToken(env.TOKEN || ''),
 		browserIconURL: normalizeBrowserIconURL(persistedSettings.browserIconURL),
 		displayFormats: normalizeDisplayFormats(persistedSettings.displayFormats),
 		apiSubscriptionEnabled: isAPISubscriptionEnabled(env),
@@ -79,10 +73,9 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 	};
 }
 
-// Preserve explicit legacy switches; an unconfigured deployment now samples.
 export function resolveRequestLogging(env, settings = {}) {
-	const legacy = String(env.REQUESTLOG ?? '').trim().toLowerCase();
-	const fallback = legacy === '0' || legacy === 'off' ? 'off' : legacy === '1' || legacy === 'full' ? 'full' : 'sample';
+	const configured = String(env.REQUESTLOG ?? '').trim().toLowerCase();
+	const fallback = configured === '0' || configured === 'off' ? 'off' : configured === '1' || configured === 'full' ? 'full' : 'sample';
 	const mode = ['off', 'full', 'sample'].includes(settings.requestLogMode) ? settings.requestLogMode : fallback;
 	const value = Number(settings.requestLogSampleRate ?? env.REQUESTLOG_SAMPLE_RATE ?? 0.1);
 	const sampleRate = Number.isFinite(value) && value > 0 && value <= 1 ? value : 0.1;

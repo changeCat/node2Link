@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../src/worker/app.js';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
+import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
+import { withStorageBindings } from '../src/worker/storage/d1.js';
 import { createSessionCookie } from '../src/worker/auth.js';
 import { DEFAULT_MAIN_DATA } from '../src/worker/config.js';
 import { readMainRecord, readMainSubscriptionData, saveMainRecord } from '../src/worker/storage/main.js';
@@ -12,7 +14,8 @@ import { BODY_LIMITS } from '../src/worker/request-body.js';
 const origin = 'https://personal.example.com';
 const node = 'vless://uuid@example.com:443#Personal';
 async function fixture() {
-	const env = { KV: new MemoryKV(), ADMIN_PASSWORD: 'test-password', SESSION_SECRET: 'test-secret', API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0', TOKEN: 'personal-token' };
+	const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'test-password', SESSION_SECRET: 'test-secret', API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0', TOKEN: 'personal-token' };
+	env.KV = withStorageBindings(env).KV;
 	const headers = { Cookie: (await createSessionCookie(env)).split(';')[0], Origin: origin, 'Content-Type': 'application/json' };
 	const request = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, { waitUntil() {} });
 	const mutate = (method, payload) => request('/api/shares', { method, headers, body: JSON.stringify(payload) });
@@ -22,6 +25,7 @@ async function fixture() {
 test('only uninitialized main subscriptions fall back to the default source', async () => {
 	const env = { KV: new MemoryKV() };
 	assert.equal(await readMainSubscriptionData(env), DEFAULT_MAIN_DATA);
+	assert.equal(await readMainSubscriptionData({ ...env, LINK: node }), node);
 	await saveMainRecord(env.KV, '');
 	assert.equal(await readMainSubscriptionData(env), '');
 	await saveMainRecord(env.KV, node);
@@ -115,7 +119,7 @@ for (const [path, method, limit] of [
 		const { env, headers, request } = await fixture();
 		const response = await request(path, { method, headers: { ...headers, 'Content-Length': String(limit + 1) }, body: '{}' });
 		assert.equal(response.status, 413);
-		assert.equal(env.KV.values.size, 0);
+		assert.equal(env.KV.kv.values.size, 0);
 	});
 }
 
@@ -124,5 +128,5 @@ test('management JSON validation returns 400 for malformed or non-object payload
 	for (const body of ['null', '[]', '{']) {
 		assert.equal((await request('/api/settings', { method: 'POST', headers, body })).status, 400);
 	}
-	assert.equal(env.KV.values.size, 0);
+	assert.equal(env.KV.kv.values.size, 0);
 });

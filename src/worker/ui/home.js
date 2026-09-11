@@ -2,7 +2,7 @@ import { DEFAULT_DISPLAY_FORMATS, SUBSCRIPTION_FORMAT_CATALOG, SUPPORTED_NODE_PR
 import { escapeHTML } from '../http.js';
 import { assetURL, basePageStyles, pageScript } from './assets.js';
 import { renderTopbar, renderFavicon } from './pages.js';
-export function renderMainPage(request, runtime, record, hasKV) {
+export function renderMainPage(request, runtime, record) {
 	const url = new URL(request.url);
 		const content = record.content;
 		let savedMetadata = record.metadata;
@@ -275,7 +275,7 @@ export function renderMainPage(request, runtime, record, hasKV) {
 
 						<section class="section workspace-main" aria-labelledby="editor-title">
 							<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
-							${hasKV ? `
+
 							<div class="editor-shell">
 								<div class="editor-toolbar">
 									<div class="editor-meta">
@@ -305,8 +305,7 @@ export function renderMainPage(request, runtime, record, hasKV) {
 									<span class="validation-issues" id="validationIssues"></span>
 								</div>
 								<textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
-							</div>` : `
-							<div class="empty-state"><i data-lucide="database-zap"></i><h3>尚未绑定 KV 命名空间</h3><p>请在 Cloudflare 中绑定变量名为 KV 的命名空间后再编辑订阅源。</p></div>`}
+							</div>
 						</section>
 
 						<aside class="workspace-sidebar" aria-label="主订阅入口">

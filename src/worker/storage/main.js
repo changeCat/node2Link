@@ -1,8 +1,8 @@
 import { DEFAULT_MAIN_DATA } from '../config.js';
 import { readJSON, readRequiredJSON, writeJSON, isObject, revisionKey } from './kv.js';
 
-export const MAIN_HEAD_KEY = 'NODE2LINK.v3.main.head';
-const PREFIX = 'NODE2LINK.v3.main.version.';
+export const MAIN_HEAD_KEY = 'main.head';
+const PREFIX = 'blob.main.';
 
 async function readHead(kv) {
 	if (!kv) return null;
@@ -39,7 +39,7 @@ export async function saveMainRecord(kv, content, { expectedRevision } = {}) {
 	// Publish the immutable body first, then atomically select current/previous.
 	// A failed head write leaves the visible content and backup untouched.
 	// Separate bodies preserve the 20 MB limit without doubling a KV value.
-	await writeJSON(kv, metadata.revision, { schemaVersion: 3, content, metadata });
+	await writeJSON(kv, metadata.revision, { content, metadata });
 	await writeJSON(kv, MAIN_HEAD_KEY, { current: metadata.revision, previous: head?.current || null });
 	if (head?.previous) {
 		try { await kv.delete(head.previous); } catch { /* Old-version cleanup is best effort. */ }
@@ -48,7 +48,6 @@ export async function saveMainRecord(kv, content, { expectedRevision } = {}) {
 }
 
 export async function readMainSubscriptionData(env) {
-	if (!env.KV) return env.LINK || DEFAULT_MAIN_DATA;
 	const record = await readMainRecord(env.KV);
-	return record.exists ? record.content : DEFAULT_MAIN_DATA;
+	return record.exists ? record.content : env.LINK || DEFAULT_MAIN_DATA;
 }

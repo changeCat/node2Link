@@ -50,7 +50,6 @@ export function summarizeDashboard(main, generated, shares, now = Date.now()) {
 }
 
 export async function readDashboard(env, runtime) {
-	if (!env.KV) return summarizeDashboard({}, [], []);
 	const [main, generated, shares] = await Promise.all([
 		readMainRecord(env.KV),
 		runtime.apiSubscriptionEnabled ? readGeneratedNodes(env.KV, { fresh: false }) : [],

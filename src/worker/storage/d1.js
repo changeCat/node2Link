@@ -1,6 +1,9 @@
 import { StorageError } from './kv.js';
 
-const NODE_PREFIX = 'NODE2LINK.v3.nodes.';
+const NODE_PREFIX = 'nodes.';
+const MAIN_BODY_PREFIX = 'blob.main.';
+const SHARE_BODY_PREFIX = 'blob.share.';
+const REQUEST_PREFIX = 'requests.';
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS node2link_records (
   key TEXT PRIMARY KEY,
@@ -18,26 +21,9 @@ CREATE TABLE IF NOT EXISTS node2link_nodes (
 );
 `;
 
-const D1_PREFIXES = [
-	'NODE2LINK.v3.settings.',
-	'NODE2LINK.v3.shares.',
-	'NODE2LINK.v3.revoked.',
-	'NODE2LINK.request.'
-];
-const D1_KEYS = new Set([
-	'NODE2LINK.identity.json',
-	'NODE2LINK.v3.main.head',
-	'NODE2LINK.api-subscription.settings.json',
-	'NODE2LINK.api-subscription.bootstrap.v3'
-]);
-
-const LEGACY_NODE_CACHE_KEY = 'NODE2LINK.cache.nodes.v3';
 const schemas = new WeakMap();
 const bindings = new WeakMap();
-
-function usesD1(key) {
-	return key.startsWith(NODE_PREFIX) || D1_KEYS.has(key) || D1_PREFIXES.some(prefix => key.startsWith(prefix));
-}
+const isBlobKey = key => key.startsWith(MAIN_BODY_PREFIX) || key.startsWith(SHARE_BODY_PREFIX);
 
 function missingSchema(cause) {
 	return /no such table:\s*node2link_(?:records|nodes)/i.test(String(cause?.message || cause));
@@ -74,9 +60,7 @@ function isCurrent(row) {
 		|| Number(row.expires_at) > Math.floor(Date.now() / 1000));
 }
 
-function upperBound(prefix) {
-	return prefix + '\uffff';
-}
+function upperBound(prefix) { return prefix + '\uffff'; }
 
 function chunks(items, size) {
 	const result = [];
@@ -84,16 +68,14 @@ function chunks(items, size) {
 	return result;
 }
 
-class HybridStorage {
+class AppStorage {
 	constructor(kv, db) {
 		this.kv = kv;
 		this.db = db;
-		this.isD1 = true;
 	}
 
 	async get(key) {
-		if (key === LEGACY_NODE_CACHE_KEY) return null;
-		if (!usesD1(key)) return this.kv.get(key);
+		if (isBlobKey(key)) return this.kv.get(key);
 		try {
 			const row = await query(this.db, () => this.db.prepare('SELECT value, expires_at FROM node2link_records WHERE key = ?1').bind(key).first());
 			return isCurrent(row) ? row.value : null;
@@ -105,16 +87,16 @@ class HybridStorage {
 
 	async getMany(keys) {
 		const result = new Map(keys.map(key => [key, null]));
-		const d1Keys = keys.filter(key => key !== LEGACY_NODE_CACHE_KEY && usesD1(key));
-		const kvKeys = keys.filter(key => key !== LEGACY_NODE_CACHE_KEY && !usesD1(key));
+		const recordKeys = keys.filter(key => !isBlobKey(key));
+		const blobKeys = keys.filter(isBlobKey);
 		try {
-			if (d1Keys.length) {
-				const placeholders = d1Keys.map((_, index) => '?' + (index + 1)).join(',');
+			if (recordKeys.length) {
+				const placeholders = recordKeys.map((_, index) => '?' + (index + 1)).join(',');
 				const sql = `SELECT key, value, expires_at FROM node2link_records WHERE key IN (${placeholders})`;
-				const { results = [] } = await query(this.db, () => this.db.prepare(sql).bind(...d1Keys).all());
+				const { results = [] } = await query(this.db, () => this.db.prepare(sql).bind(...recordKeys).all());
 				for (const row of results) if (isCurrent(row)) result.set(row.key, row.value);
 			}
-			await Promise.all(kvKeys.map(async key => result.set(key, await this.kv.get(key))));
+			await Promise.all(blobKeys.map(async key => result.set(key, await this.kv.get(key))));
 			return result;
 		} catch (cause) {
 			if (cause instanceof StorageError) throw cause;
@@ -135,7 +117,7 @@ class HybridStorage {
 		let record;
 		try { record = JSON.parse(serialized); }
 		catch (cause) { throw new StorageError('节点存储数据格式异常', { cause }); }
-		if (!record || record.schemaVersion !== 2 || (!Array.isArray(record.nodes) && !Array.isArray(record.deletedIds))) {
+		if (!record || (!Array.isArray(record.nodes) && !Array.isArray(record.deletedIds))) {
 			throw new StorageError('节点存储数据格式异常');
 		}
 		const nodes = record.nodes || [];
@@ -144,8 +126,7 @@ class HybridStorage {
 			|| deletedIds.some(id => typeof id !== 'string')) throw new StorageError('节点存储数据格式异常');
 		const now = Math.floor(Date.now() / 1000);
 		const statements = [];
-		const positioned = nodes.map((node, position) => ({ node, position }));
-		for (const group of chunks(positioned, 25)) {
+		for (const group of chunks(nodes.map((node, position) => ({ node, position })), 25)) {
 			const params = [];
 			const values = group.map(({ node, position }, index) => {
 				const offset = index * 4;
@@ -162,8 +143,7 @@ class HybridStorage {
 	}
 
 	async put(key, value, options = {}) {
-		if (key === LEGACY_NODE_CACHE_KEY) return;
-		if (!usesD1(key)) return this.kv.put(key, value, options);
+		if (isBlobKey(key)) return this.kv.put(key, value, options);
 		try {
 			if (key.startsWith(NODE_PREFIX)) {
 				const statements = this.nodeStatements(key, String(value));
@@ -179,7 +159,7 @@ class HybridStorage {
 
 	async putMany(records) {
 		if (!records.length) return;
-		if (records.some(record => record.key.startsWith(NODE_PREFIX) || !usesD1(record.key))) {
+		if (records.some(record => record.key.startsWith(NODE_PREFIX) || isBlobKey(record.key))) {
 			for (const record of records) await this.put(record.key, record.value, record.options);
 			return;
 		}
@@ -193,8 +173,7 @@ class HybridStorage {
 	}
 
 	async delete(key) {
-		if (key === LEGACY_NODE_CACHE_KEY) return;
-		if (!usesD1(key)) return this.kv.delete(key);
+		if (isBlobKey(key)) return this.kv.delete(key);
 		try {
 			await query(this.db, () => this.db.prepare('DELETE FROM node2link_records WHERE key = ?1').bind(key).run());
 		} catch (cause) {
@@ -210,10 +189,7 @@ class HybridStorage {
 			WHERE sort_key > ?1 ORDER BY sort_key LIMIT ?2`).bind(cursor || '', size + 1).all());
 		const complete = results.length <= size;
 		const page = results.slice(0, size);
-		return {
-			page, complete,
-			cursor: complete ? '' : page.at(-1)?.sort_key || ''
-		};
+		return { page, complete, cursor: complete ? '' : page.at(-1)?.sort_key || '' };
 	}
 
 	async listWithValues({ prefix = '', limit = 1000, cursor = '' } = {}) {
@@ -221,15 +197,11 @@ class HybridStorage {
 			if (prefix === NODE_PREFIX) {
 				const { page, complete, cursor: next } = await this.listNodes({ limit, cursor }, true);
 				return {
-					records: page.map(row => ({
-						name: row.sort_key,
-						value: JSON.stringify({ schemaVersion: 2, nodes: [JSON.parse(row.value)] })
-					})),
-					list_complete: complete,
-					cursor: next
+					records: page.map(row => ({ name: row.sort_key, value: JSON.stringify({ nodes: [JSON.parse(row.value)] }) })),
+					list_complete: complete, cursor: next
 				};
 			}
-			if (!usesD1(prefix)) throw new StorageError('KV 正文列表不支持批量读取');
+			if (isBlobKey(prefix)) throw new StorageError('正文不支持列表读取');
 			const size = Math.max(1, Math.min(1000, Number(limit) || 1000));
 			const now = Math.floor(Date.now() / 1000);
 			const { results = [] } = await query(this.db, () => this.db.prepare(`SELECT key, value, metadata, expires_at FROM node2link_records
@@ -239,8 +211,7 @@ class HybridStorage {
 			const page = results.slice(0, size);
 			return {
 				records: page.map(row => ({ name: row.key, value: row.value, metadata: parseMetadata(row.metadata) })),
-				list_complete: complete,
-				cursor: complete ? '' : page.at(-1)?.key || ''
+				list_complete: complete, cursor: complete ? '' : page.at(-1)?.key || ''
 			};
 		} catch (cause) {
 			if (cause instanceof StorageError) throw cause;
@@ -249,7 +220,7 @@ class HybridStorage {
 	}
 
 	async list({ prefix = '', limit = 1000, cursor = '' } = {}) {
-		if (!usesD1(prefix)) return this.kv.list({ prefix, limit, cursor });
+		if (isBlobKey(prefix)) throw new StorageError('正文不支持列表读取');
 		try {
 			if (prefix === NODE_PREFIX) {
 				const { page, complete, cursor: next } = await this.listNodes({ limit, cursor }, false);
@@ -257,7 +228,7 @@ class HybridStorage {
 			}
 			const size = Math.max(1, Math.min(1000, Number(limit) || 1000));
 			const now = Math.floor(Date.now() / 1000);
-			if (prefix === 'NODE2LINK.request.' && !cursor) {
+			if (prefix === REQUEST_PREFIX && !cursor) {
 				await query(this.db, () => this.db.prepare('DELETE FROM node2link_records WHERE expires_at IS NOT NULL AND expires_at <= ?1').bind(now).run());
 			}
 			const { results = [] } = await query(this.db, () => this.db.prepare(`SELECT key, metadata FROM node2link_records
@@ -267,8 +238,7 @@ class HybridStorage {
 			const page = results.slice(0, size);
 			return {
 				keys: page.map(row => ({ name: row.key, metadata: parseMetadata(row.metadata) })),
-				list_complete: complete,
-				cursor: complete ? '' : page.at(-1)?.key || ''
+				list_complete: complete, cursor: complete ? '' : page.at(-1)?.key || ''
 			};
 		} catch (cause) {
 			if (cause instanceof StorageError) throw cause;
@@ -277,13 +247,13 @@ class HybridStorage {
 	}
 }
 
-export function withD1Storage(env) {
-	if (!env?.DB || !env?.KV) return env;
+export function withStorageBindings(env) {
+	if (env?.KV instanceof AppStorage) return env;
+	if (!env?.DB) throw new StorageError('未绑定 D1 数据库，请将数据库绑定为 DB');
+	if (!env?.KV) throw new StorageError('未绑定 KV 命名空间，请将命名空间绑定为 KV');
 	let byKV = bindings.get(env.DB);
 	if (!byKV) bindings.set(env.DB, byKV = new WeakMap());
 	let storage = byKV.get(env.KV);
-	if (!storage) byKV.set(env.KV, storage = new HybridStorage(env.KV, env.DB));
+	if (!storage) byKV.set(env.KV, storage = new AppStorage(env.KV, env.DB));
 	return { ...env, KV: storage };
 }
-
-export { usesD1 };

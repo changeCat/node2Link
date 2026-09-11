@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../src/worker/app.js';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
+import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
+import { withStorageBindings } from '../src/worker/storage/d1.js';
 import { resolveRequestLogging, createRuntimeConfig } from '../src/worker/config.js';
 import { queueSubscriptionRequestLog, readSubscriptionRequestStats } from '../src/worker/storage/request-logs.js';
 import { createSessionCookie } from '../src/worker/auth.js';
@@ -18,7 +20,7 @@ async function log(kv, mode, status = 200) {
 	await Promise.all(pending);
 }
 
-test('logging defaults to sampling and preserves explicit full/off legacy configuration', () => {
+test('logging defaults to sampling and preserves the REQUESTLOG environment setting', () => {
 	assert.equal(resolveRequestLogging({}).requestLogMode, 'sample');
 	assert.equal(resolveRequestLogging({}).requestLogSampleRate, 0.1);
 	assert.equal(resolveRequestLogging({ REQUESTLOG: '1' }).requestLogMode, 'full');
@@ -73,7 +75,8 @@ test('request statistics reuse short views, invalidate on writes and retry faile
 
 test('logging settings save independently, validate input and are honored by public reads', async () => {
 	const kv = new MemoryKV();
-	const env = { KV: kv, ADMIN_PASSWORD: 'password', SESSION_SECRET: 'secret' };
+	const env = { KV: kv, DB: new MemoryD1(), ADMIN_PASSWORD: 'password', SESSION_SECRET: 'secret' };
+	env.KV = withStorageBindings(env).KV;
 	const cookie = (await createSessionCookie(env)).split(';')[0];
 	const save = payload => worker.fetch(new Request('https://example.com/api/settings', {
 		method: 'POST', headers: { Cookie: cookie, Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -95,7 +98,7 @@ test('logging settings save independently, validate input and are honored by pub
 });
 
 test('malformed/oversized Token candidates and cross-origin mutations avoid storage', async () => {
-	const env = { KV: new MemoryKV({ before() { throw new Error('unexpected storage'); } }), ADMIN_PASSWORD: 'password' };
+	const env = { KV: new MemoryKV({ before() { throw new Error('unexpected storage'); } }), DB: new MemoryD1(), ADMIN_PASSWORD: 'password' };
 	for (const path of ['/%ZZ', '/' + 'x'.repeat(129), '/?token=', '/?token=%00']) {
 		const response = await worker.fetch(new Request('https://example.com' + path), env, {});
 		assert.ok([303, 404].includes(response.status));
@@ -109,7 +112,7 @@ test('API deletion scans node history only once and rejects missing IDs without 
 	const kv = new MemoryKV();
 	const nodes = normalizeDirectNodes({ node });
 	await appendNodeBatch(kv, nodes);
-	kv.before = (op, key) => { if (op === 'list' && key === 'NODE2LINK.v3.nodes.') lists++; };
+	kv.before = (op, key) => { if (op === 'list' && key === 'nodes.') lists++; };
 	const remove = id => handleGeneratedNodesAPI(new Request('https://example.com/api/generated-nodes', {
 		method: 'DELETE', headers: { Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
 	}), { KV: kv });
