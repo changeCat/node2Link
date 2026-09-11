@@ -22,6 +22,7 @@ import { renderDashboardPage } from './ui/dashboard.js';
 import { timed } from './timing.js';
 import { readShare } from './storage/shares.js';
 import { handleGeneratedNodesAPI, handlePublicNodeImport } from './routes/generated-nodes.js';
+import { withD1Storage } from './storage/d1.js';
 
 const PAGE_METHODS = new Map([
 	['/', ['GET', 'POST']], ['/login', ['GET']], ['/api/login', ['POST']],
@@ -31,6 +32,7 @@ const PAGE_METHODS = new Map([
 
 export default {
 	async fetch(request, env, ctx) {
+		env = withD1Storage(env);
 		const startedAt = Date.now();
 		const timings = [];
 		try { return withServerTiming(await dispatch(request, env, ctx, timings), startedAt, timings); }

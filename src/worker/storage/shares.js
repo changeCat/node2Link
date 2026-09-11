@@ -1,13 +1,21 @@
-import { listKeys, readJSON, readRequiredJSON, mapConcurrent, StorageError, isObject, writeJSON } from './kv.js';
+import { listKeys, readJSON, readRequiredJSON, mapConcurrent, StorageError, isObject, writeJSON, writeJSONBatch, revisionKey } from './kv.js';
 import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 
 const PREFIX = 'NODE2LINK.v3.shares.';
 const REVOKED_PREFIX = 'NODE2LINK.v3.revoked.';
+const BODY_PREFIX = 'NODE2LINK.blob.share.';
+const D1_INLINE_LIMIT = 1_800_000;
 const validRevocation = value => isObject(value) && value.deleted === true
 	&& (value.replacementId === undefined || isValidShareId(value.replacementId));
-const validRecord = value => isObject(value) && value.schemaVersion === 3
-	&& isObject(value.share) && isValidShareId(value.share.id) && typeof value.share.content === 'string'
-	&& (value.activationId === undefined || isValidShareId(value.activationId));
+const validRecord = value => {
+	if (!isObject(value) || !isObject(value.share) || !isValidShareId(value.share.id)
+		|| (value.activationId !== undefined && !isValidShareId(value.activationId))) return false;
+	if (value.schemaVersion === 3) return typeof value.share.content === 'string';
+	if (value.schemaVersion !== 4) return false;
+	const inline = typeof value.share.content === 'string';
+	const overflow = typeof value.contentKey === 'string' && value.contentKey.startsWith(BODY_PREFIX);
+	return inline !== overflow;
+};
 
 async function revocation(kv, id) {
 	return readJSON(kv, REVOKED_PREFIX + id, null, validRevocation);
@@ -34,15 +42,22 @@ async function shareView(kv) {
 	return summaries.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
+async function readStoredRecord(kv, id) {
+	return readJSON(kv, PREFIX + id, null, validRecord);
+}
+
 export async function readShare(kv, id) {
 	if (!kv || !isValidShareId(id)) return null;
-	const [record, revoked] = await Promise.all([
-		readJSON(kv, PREFIX + id, null, validRecord), revocation(kv, id)
-	]);
+	const [record, revoked] = await Promise.all([readStoredRecord(kv, id), revocation(kv, id)]);
 	if (revoked || !record) return null;
 	if (record.share.id !== id) throw new StorageError('分享内容格式异常');
 	if (record.activationId && (await revocation(kv, record.activationId))?.replacementId !== id) return null;
-	return record.share;
+	if (typeof record.share.content === 'string') return record.share;
+	let content;
+	try { content = await kv.get(record.contentKey); }
+	catch (cause) { throw new StorageError(undefined, { cause }); }
+	if (content === null || content === undefined) throw new StorageError('分享正文暂时不可用');
+	return { ...record.share, content };
 }
 
 export async function listShareSummaries(kv, { fresh = false } = {}) {
@@ -54,24 +69,38 @@ export async function listShareSummaries(kv, { fresh = false } = {}) {
 }
 export const readShareIndex = listShareSummaries;
 
-// Reset stages an inactive new record, then uses one revocation marker to
-// disable the old ID and activate the replacement. If publication fails, the
-// old link remains usable and the staged replacement is hidden everywhere.
-// Revocation markers are never removed or overwritten by ordinary edits.
+// Normal shares fit in one D1 row and publish with their metadata transaction.
+// Only a pathologically escaped value near D1's 2 MB row limit spills into an
+// immutable KV blob, preserving the existing 1 MiB content limit.
 export async function saveShare(kv, share, previousId) {
 	if (!normalizeShareSummary(share) || typeof share.content !== 'string') throw new StorageError('分享格式异常');
 	if (await revocation(kv, share.id)) throw new StorageError('分享已撤销，请刷新页面');
 	const resetting = previousId && previousId !== share.id;
+	const previousRecord = resetting ? await readStoredRecord(kv, previousId) : null;
 	if (resetting && !await readShare(kv, previousId)) throw new StorageError('原分享已撤销，请刷新页面');
-	const existing = await readJSON(kv, PREFIX + share.id, null, validRecord);
+	const existing = await readStoredRecord(kv, share.id);
 	const activationId = resetting ? previousId : existing?.activationId;
+	const { content, ...summaryFields } = share;
+	let record = { schemaVersion: 4, share: { ...summaryFields, content }, ...(activationId ? { activationId } : {}) };
+	let contentKey;
+	if (kv.isD1 && new TextEncoder().encode(JSON.stringify(record)).length > D1_INLINE_LIMIT) {
+		contentKey = revisionKey(BODY_PREFIX + share.id + '.');
+		record = { schemaVersion: 4, share: summaryFields, contentKey, ...(activationId ? { activationId } : {}) };
+		try { await kv.put(contentKey, content); }
+		catch (cause) { throw new StorageError(undefined, { cause }); }
+	}
 	invalidateView(kv, PREFIX);
 	try {
-		await writeJSON(kv, PREFIX + share.id, { schemaVersion: 3, share, ...(activationId ? { activationId } : {}) },
-			{ ...normalizeShareSummary(share), ...(activationId ? { activationId } : {}) });
+		const metadata = { ...normalizeShareSummary(share), ...(activationId ? { activationId } : {}) };
+		const records = [{ key: PREFIX + share.id, value: record, metadata }];
 		if (resetting) {
 			const marker = { deleted: true, replacementId: share.id };
-			await writeJSON(kv, REVOKED_PREFIX + previousId, marker, marker);
+			records.push({ key: REVOKED_PREFIX + previousId, value: marker, metadata: marker });
+		}
+		await writeJSONBatch(kv, records);
+		const retiredBody = resetting ? previousRecord?.contentKey : existing?.contentKey;
+		if (retiredBody && retiredBody !== contentKey) {
+			try { await kv.delete(retiredBody); } catch { /* Orphan cleanup is best effort. */ }
 		}
 	} finally { invalidateView(kv, PREFIX); }
 }
@@ -79,9 +108,14 @@ export async function saveShare(kv, share, previousId) {
 export async function deleteShare(kv, id) {
 	if (!isValidShareId(id)) return;
 	if (await revocation(kv, id)) return;
+	const record = await readStoredRecord(kv, id);
 	invalidateView(kv, PREFIX);
-	try { await writeJSON(kv, REVOKED_PREFIX + id, { deleted: true }, { deleted: true }); }
-	finally { invalidateView(kv, PREFIX); }
+	try {
+		await writeJSON(kv, REVOKED_PREFIX + id, { deleted: true }, { deleted: true });
+		if (record?.contentKey) {
+			try { await kv.delete(record.contentKey); } catch { /* Revocation remains authoritative. */ }
+		}
+	} finally { invalidateView(kv, PREFIX); }
 }
 
 export function isValidShareId(value) {

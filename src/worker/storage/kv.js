@@ -24,6 +24,23 @@ export async function readJSON(kv, key, fallback, validate = () => true) {
 
 export const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+export async function readJSONMap(kv, keys, fallback = {}, validate = () => true) {
+	if (typeof kv.getMany !== 'function') {
+		return new Map(await Promise.all(keys.map(async key => [key, await readJSON(kv, key, fallback, validate)])));
+	}
+	let values;
+	try { values = await kv.getMany(keys); }
+	catch (cause) { if (cause instanceof StorageError) throw cause; throw new StorageError(undefined, { cause }); }
+	const result = new Map();
+	for (const key of keys) {
+		const value = values.get(key);
+		if (value === null || value === undefined) { result.set(key, structuredClone(fallback)); continue; }
+		try { const parsed = JSON.parse(value); if (!validate(parsed)) throw new Error('Invalid record'); result.set(key, parsed); }
+		catch (cause) { throw new StorageError('存储数据格式异常，已停止操作以保护原数据', { cause }); }
+	}
+	return result;
+}
+
 export async function writeJSON(kv, key, value, metadata) {
 	const serialized = JSON.stringify(value);
 	for (let attempt = 0; ; attempt++) {
@@ -38,6 +55,44 @@ export async function writeJSON(kv, key, value, metadata) {
 			await new Promise(resolve => setTimeout(resolve, 1100 * (attempt + 1)));
 		}
 	}
+}
+
+export async function writeJSONBatch(kv, records) {
+	const serialized = records.map(record => ({
+		key: record.key, value: JSON.stringify(record.value),
+		options: record.metadata === undefined ? undefined : { metadata: record.metadata }
+	}));
+	if (typeof kv.putMany === 'function') {
+		try { return await kv.putMany(serialized); }
+		catch (cause) { if (cause instanceof StorageError) throw cause; throw new StorageError(undefined, { cause }); }
+	}
+	for (const record of records) await writeJSON(kv, record.key, record.value, record.metadata);
+}
+
+export async function listRecords(kv, prefix, validate = isObject) {
+	if (typeof kv.listWithValues !== 'function') {
+		const keys = await listKeys(kv, prefix);
+		return mapConcurrent(keys, 6, async key => ({ ...key, value: await readRequiredJSON(kv, key.name, validate) }));
+	}
+	const records = [];
+	let cursor;
+	const seen = new Set();
+	try {
+		do {
+			const page = await kv.listWithValues({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) });
+			for (const record of page.records) {
+				let value;
+				try { value = JSON.parse(record.value); if (!validate(value)) throw new Error('Invalid record'); }
+				catch (cause) { throw new StorageError('存储数据格式异常，已停止操作以保护原数据', { cause }); }
+				records.push({ name: record.name, metadata: record.metadata, value });
+			}
+			if (page.list_complete) break;
+			if (!page.cursor || seen.has(page.cursor)) throw new Error('Invalid D1 cursor');
+			cursor = page.cursor;
+			seen.add(cursor);
+		} while (true);
+	} catch (cause) { if (cause instanceof StorageError) throw cause; throw new StorageError(undefined, { cause }); }
+	return records.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function listKeys(kv, prefix) {

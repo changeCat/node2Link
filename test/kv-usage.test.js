@@ -108,6 +108,7 @@ test('share lookup reads current detail and terminal revocation by key without s
 	kv.before = (op, key) => { operations.push([op, key]); };
 	assert.equal((await readShare(kv, shareId)).content, node);
 	assert.deepEqual(operations, [['get', 'NODE2LINK.v3.shares.' + shareId], ['get', 'NODE2LINK.v3.revoked.' + shareId]]);
+	assert.ok(!operations.some(([op]) => op === 'list'));
 	kv.before = undefined;
 	await saveShare(kv, { ...share, name: 'Updated' });
 	assert.equal((await readShare(kv, shareId)).name, 'Updated');
