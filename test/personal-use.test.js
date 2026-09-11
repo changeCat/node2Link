@@ -22,7 +22,7 @@ async function fixture() {
 test('only uninitialized main subscriptions fall back to the default source', async () => {
 	const env = { KV: new MemoryKV() };
 	assert.equal(await readMainSubscriptionData(env), DEFAULT_MAIN_DATA);
-	await env.KV.put('/LINK.txt', '');
+	await saveMainRecord(env.KV, '');
 	assert.equal(await readMainSubscriptionData(env), '');
 	await saveMainRecord(env.KV, node);
 	await saveMainRecord(env.KV, '');
@@ -51,11 +51,11 @@ test('a stale main editor receives 409 and cannot replace the newer content', as
 	assert.equal((await request('/', { method: 'POST', headers: { ...headers, 'X-Node2Link-Revision': revision }, body: '' })).status, 200);
 });
 
-test('legacy main versions detect visible changes while callers without revision remain compatible', async () => {
+test('main versions detect visible changes while callers without revision remain compatible', async () => {
 	const { env, headers, request } = await fixture();
-	await env.KV.put('LINK.txt', node);
+	await saveMainRecord(env.KV, node);
 	const version = (await readMainRecord(env.KV)).revision;
-	await env.KV.put('LINK.txt', 'new legacy content');
+	await saveMainRecord(env.KV, 'new current content');
 	assert.equal((await request('/', { method: 'POST', headers: { ...headers, 'X-Node2Link-Revision': version }, body: 'stale' })).status, 409);
 	assert.equal((await request('/', { method: 'POST', headers, body: node })).status, 200);
 });

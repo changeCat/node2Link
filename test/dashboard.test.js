@@ -47,7 +47,7 @@ test('dashboard reads existing records only and respects the API feature switch'
 	let writes = 0;
 	kv.before = (op, key) => {
 		if (op === 'put') writes++;
-		if (key.includes('api-subscription') || key.startsWith('NODE2LINK.v2.nodes.')) throw new Error('API should remain disabled');
+		if (key.includes('api-subscription') || key.startsWith('NODE2LINK.v3.nodes.')) throw new Error('API should remain disabled');
 	};
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = () => { throw new Error('Dashboard must not fetch upstream'); };
@@ -79,6 +79,6 @@ test('dashboard supports empty deployments and surfaces storage failure instead 
 	const headers = { Cookie: (await createSessionCookie(env)).split(';')[0] };
 	const request = () => worker.fetch(new Request('https://example.com/dashboard', { headers }), env, {});
 	assert.match(await (await request()).text(), /绑定 KV/);
-	env.KV = new MemoryKV({ before(op, key) { if (key.startsWith('NODE2LINK.v2.main.')) throw new Error('outage'); } });
+	env.KV = new MemoryKV({ before(op, key) { if (key.startsWith('NODE2LINK.v3.main.')) throw new Error('outage'); } });
 	assert.equal((await request()).status, 503);
 });

@@ -7,6 +7,7 @@ const rows = [];
 for (const [label, path, api] of [
 	['Anonymous root', '/', false],
 	['Invalid nested path', '/scanner/config.php', false],
+	['Invalid Token', '/unknown-token', false],
 	['Login page', '/login', false],
 	['Main Token', '/benchmark-token?base64', false],
 	['Main /s/ link', '/s/benchmark_main_id?base64', false],

@@ -26,17 +26,19 @@ test('password, username and session-secret changes each invalidate existing ses
 	assert.equal(await isAuthenticated(new Request(request.url, { headers: { Cookie: 'node2link_session=' + payload + '.' + oldSignature } }), credentials), false);
 });
 
-for (const legacy of [false, true]) {
+for (const resetBeforeEdit of [false, true]) {
 	for (const operation of ['delete', 'reset']) {
-		test(`${legacy ? 'legacy' : 'journal'} share ${operation} dominates late stale edits`, async () => {
+		test(`${resetBeforeEdit ? 'previously reset' : 'new'} share ${operation} dominates late stale edits`, async () => {
 			const kv = new MemoryKV({ pageSize: 1 });
-			if (legacy) await kv.put('NODE2LINK.share.' + share.id, JSON.stringify(share));
-			else await saveShare(kv, share);
+			if (resetBeforeEdit) {
+				await saveShare(kv, { ...share, id: 'initial_share_id' });
+				await saveShare(kv, share, 'initial_share_id');
+			} else await saveShare(kv, share);
 			const stale = await readShare(kv, share.id);
 			await listShareSummaries(kv); // Warm the administrative index.
 			if (operation === 'reset') await saveShare(kv, { ...share, id: 'replacement_share_id' }, share.id);
 			else await deleteShare(kv, share.id);
-			await saveShare(kv, { ...stale, name: 'late edit' });
+			await assert.rejects(saveShare(kv, { ...stale, name: 'late edit' }), /撤销/);
 			assert.equal(await readShare(kv, share.id), null);
 			assert.ok(!(await listShareSummaries(kv)).some(item => item.id === share.id));
 			if (operation === 'reset') assert.equal((await readShare(kv, 'replacement_share_id')).content, node);
@@ -64,13 +66,13 @@ test('unavailable API configuration does not prevent administrator login', async
 	assert.ok(![...kv.values.keys()].some(key => key.includes('api-subscription')));
 });
 
-test('concurrent first initialization returns one credential without hot-key writes', async () => {
+test('concurrent first initialization coalesces one credential publication', async () => {
 	const writes = [];
 	const kv = new MemoryKV({ before(op, key) { if (op === 'put') writes.push(key); } });
 	const results = await Promise.all(Array.from({ length: 10 }, () => initializeGeneratedNodeSettings({ ...credentials, KV: kv })));
 	assert.equal(new Set(results.map(item => item.token)).size, 1);
 	assert.equal((await readGeneratedNodeSettings(kv)).token, results[0].token);
-	assert.equal(new Set(writes).size, writes.length);
+	assert.equal(writes.length, 1);
 	assert.ok(!writes.includes(apiKey));
 });
 

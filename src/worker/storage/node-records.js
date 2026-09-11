@@ -2,14 +2,13 @@ import { appendRecord, listKeys, mapConcurrent, readJSON, readRequiredJSON, writ
 import { normalizeStoredNode } from '../domain/generated-nodes.js';
 import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 
-const LEGACY_KEY = 'NODE2LINK.api-subscription.nodes.json';
-const PREFIX = 'NODE2LINK.v2.nodes.';
-const CACHE_KEY = 'NODE2LINK.cache.nodes.v2';
+const PREFIX = 'NODE2LINK.v3.nodes.';
+const CACHE_KEY = 'NODE2LINK.cache.nodes.v3';
 
 export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh = true } = {}) {
 	if (!kv) return [];
-	const [legacy, keys, cached] = await Promise.all([
-		readJSON(kv, LEGACY_KEY, [], Array.isArray), cachedView(kv, PREFIX, () => listKeys(kv, PREFIX), { fresh, ttlMs: 15_000, cacheable: keys => keys.length <= MAX_CACHED_KEYS }),
+	const [keys, cached] = await Promise.all([
+		cachedView(kv, PREFIX, () => listKeys(kv, PREFIX), { fresh, ttlMs: 15_000, cacheable: keys => keys.length <= MAX_CACHED_KEYS }),
 		// Only this derived cache may be discarded on failure. The authoritative
 		// legacy value and immutable records must always be read successfully.
 		readJSON(kv, CACHE_KEY, null, value => isObject(value) && value.schemaVersion === 2 && Array.isArray(value.applied) && Array.isArray(value.entries) && value.entries.every(entry => typeof entry.revision === 'string' && normalize(entry.node)) && Array.isArray(value.deleted)).catch(() => null)
@@ -24,7 +23,7 @@ export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh
 	]
 		.filter(entry => !deleted.has(entry.node.id))
 		.sort((a, b) => a.revision.localeCompare(b.revision) || a.position - b.position);
-	const nodes = [...legacy, ...entries.map(entry => entry.node)];
+	const nodes = entries.map(entry => entry.node);
 	const contents = new Set();
 	const result = nodes.map(node => {
 		const normalized = normalize(node);

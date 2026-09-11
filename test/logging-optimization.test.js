@@ -109,7 +109,7 @@ test('API deletion scans node history only once and rejects missing IDs without 
 	const kv = new MemoryKV();
 	const nodes = normalizeDirectNodes({ node });
 	await appendNodeBatch(kv, nodes);
-	kv.before = (op, key) => { if (op === 'list' && key === 'NODE2LINK.v2.nodes.') lists++; };
+	kv.before = (op, key) => { if (op === 'list' && key === 'NODE2LINK.v3.nodes.') lists++; };
 	const remove = id => handleGeneratedNodesAPI(new Request('https://example.com/api/generated-nodes', {
 		method: 'DELETE', headers: { Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: JSON.stringify({ id })
 	}), { KV: kv });

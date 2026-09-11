@@ -70,7 +70,7 @@ test('public subscriptions reduce lists without suppressing request logs', async
 			assert.equal(atob(await response.text()).trim(), node);
 			counts.push(calls);
 		}
-		assert.deepEqual(counts.map(c => c.list), [2, 1], kind);
+		assert.deepEqual(counts.map(c => c.list), [0, 0], kind);
 		assert.deepEqual(counts.map(c => c.put), [1, 1], kind);
 		assert.deepEqual(counts.map(c => c.delete), [0, 0], kind);
 		for (const [key, value] of before) assert.deepEqual(kv.values.get(key), value);
@@ -78,40 +78,41 @@ test('public subscriptions reduce lists without suppressing request logs', async
 	}
 });
 
-test('old and mixed-format deployments need no migration and read paths do not write', async () => {
+test('retired storage is ignored without read-time migration or deletion', async () => {
 	const { kv, env, request } = fixture(new MemoryKV({ pageSize: 1 }));
-	await kv.put('NODE2LINK.settings.json', JSON.stringify({ mainSubscriptionId: mainId, subscriptionToken: 'old-token', subscriptionName: 'Old name', savedAt: '2026-01-02' }));
+	await kv.put('NODE2LINK.settings.json', JSON.stringify({ subscriptionToken: 'old-token' }));
 	await kv.put('/LINK.txt', node);
 	await kv.put('/LINK.backup.txt', 'legacy backup');
 	await kv.put('NODE2LINK.share.' + shareId, JSON.stringify(share));
-	await saveSettingsSections(kv, { pageTitle: 'Updated title' }, 'display');
+	await kv.put('NODE2LINK.v2.settings.old', '{broken');
+	await kv.put('NODE2LINK.v2.main.old', '{broken');
+	await kv.put('NODE2LINK.v2.shares.old', '{broken');
+	await saveSettingsSections(kv, { pageTitle: 'Updated title', savedAt: '2026-01-02' }, 'display');
 	await saveShare(kv, { ...share, id: 'new_share_id_123' });
 	const before = structuredClone(kv.values);
-	for (const path of ['/old-token?base64', '/s/' + mainId + '?base64', '/s/' + shareId + '?base64', '/s/new_share_id_123?base64']) {
-		const response = await request(path);
-		assert.equal(response.status, 200, path);
-		assert.equal(atob(await response.text()).trim(), node);
-	}
-	assert.equal((await readMainBackup(kv)).content, 'legacy backup');
-	assert.equal((await listShareSummaries(kv)).length, 2);
+	assert.equal((await request('/old-token?base64')).status, 303);
+	assert.equal((await request('/s/' + shareId + '?base64')).status, 404);
+	const response = await request('/s/new_share_id_123?base64');
+	assert.equal(response.status, 200);
+	assert.equal(atob(await response.text()).trim(), node);
+	assert.equal(await readMainBackup(kv), null);
+	assert.equal((await listShareSummaries(kv)).length, 1);
 	assert.equal((await readPersistedSettings(env)).savedAt, '2026-01-02');
-	assert.equal((await readPublicSubscriptionSettings(env)).mainSubscriptionId, mainId);
 	assert.deepEqual(kv.values, before);
 });
 
-test('targeted share lookup reads one journal and the known legacy key, including old records without metadata', async () => {
+test('share lookup reads current detail and terminal revocation by key without scans', async () => {
 	const { kv } = fixture(new MemoryKV({ pageSize: 1 }));
-	await kv.put('NODE2LINK.share.' + shareId, JSON.stringify(share));
+	await saveShare(kv, share);
 	const operations = [];
 	kv.before = (op, key) => { operations.push([op, key]); };
 	assert.equal((await readShare(kv, shareId)).content, node);
-	assert.deepEqual(operations, [['list', 'NODE2LINK.v2.shares.'], ['get', 'NODE2LINK.share.' + shareId]]);
+	assert.deepEqual(operations, [['get', 'NODE2LINK.v3.shares.' + shareId], ['get', 'NODE2LINK.v3.revoked.' + shareId]]);
 	kv.before = undefined;
 	await saveShare(kv, { ...share, name: 'Updated' });
-	for (const [key, entry] of kv.values) if (key.startsWith('NODE2LINK.v2.shares.')) entry.metadata = undefined;
 	assert.equal((await readShare(kv, shareId)).name, 'Updated');
 	await deleteShare(kv, shareId);
-	await saveShare(kv, { ...share, name: 'Late old writer' });
+	await assert.rejects(saveShare(kv, { ...share, name: 'Late old writer' }), /撤销/);
 	assert.equal(await readShare(kv, shareId), null);
 });
 
@@ -164,12 +165,12 @@ test('expired presentation views and authoritative failures never fall back to s
 	await readPublicSubscriptionSettings(env);
 	kv.before = (op, key) => { if (key === 'NODE2LINK.identity.json') throw new Error('identity unavailable'); };
 	assert.equal((await request('/s/' + shareId)).status, 503);
-	kv.before = (op, key) => { if (op === 'list' && key === 'NODE2LINK.v2.shares.') throw new Error('revocations unavailable'); };
+	kv.before = (op, key) => { if (op === 'get' && key.startsWith('NODE2LINK.v3.revoked.')) throw new Error('revocations unavailable'); };
 	assert.equal((await request('/s/' + shareId)).status, 503);
 	const now = Date.now;
 	try {
 		Date.now = () => now() + 61_000;
-		kv.before = (op, key) => { if (op === 'list' && key === 'NODE2LINK.v2.settings.') throw new Error('settings unavailable'); };
+		kv.before = (op, key) => { if (op === 'get' && key.startsWith('NODE2LINK.v3.settings.')) throw new Error('settings unavailable'); };
 		assert.equal((await request('/s/' + shareId)).status, 503);
 	} finally { Date.now = now; }
 });
@@ -180,7 +181,7 @@ test('imports skip unrelated site settings, preserve the API token and reject in
 	const token = 'existing_api_token_123';
 	await saveGeneratedNodeSettings(kv, { token });
 	kv.before = (op, key) => {
-		if (key === 'NODE2LINK.settings.json' || key === 'NODE2LINK.identity.json' || key.startsWith('NODE2LINK.v2.settings.')) throw new Error('unrelated site settings');
+		if (key === 'NODE2LINK.settings.json' || key === 'NODE2LINK.identity.json' || key.startsWith('NODE2LINK.v3.settings.')) throw new Error('unrelated site settings');
 	};
 	const response = await request('/api/import', { method: 'POST', headers: { 'Content-Type': 'text/plain', 'X-API-Token': token }, body: node });
 	assert.equal(response.status, 201);

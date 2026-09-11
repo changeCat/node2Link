@@ -35,13 +35,13 @@ test('stale or missing derived snapshots replay every unpublished mutation', asy
 	const kv = new MemoryKV();
 	await Promise.all(Array.from({ length: 16 }, (_, i) => appendGeneratedNodes(kv, {}, { node: node('n' + i) })));
 	assert.equal((await readGeneratedNodes(kv)).length, 16);
-	const oldCache = await kv.get('NODE2LINK.cache.nodes.v2');
+	const oldCache = await kv.get('NODE2LINK.cache.nodes.v3');
 	assert.ok(oldCache);
 	await Promise.all(Array.from({ length: 16 }, (_, i) => appendGeneratedNodes(kv, {}, { node: node('m' + i) })));
 	assert.equal((await readGeneratedNodes(kv)).length, 32);
-	await kv.put('NODE2LINK.cache.nodes.v2', oldCache);
+	await kv.put('NODE2LINK.cache.nodes.v3', oldCache);
 	assert.equal((await readGeneratedNodes(kv)).length, 32);
-	await kv.put('NODE2LINK.cache.nodes.v2', '{broken');
+	await kv.put('NODE2LINK.cache.nodes.v3', '{broken');
 	assert.equal((await readGeneratedNodes(kv)).length, 32);
 });
 
@@ -53,13 +53,14 @@ test('failed node reads and corrupt JSON cannot replace existing data', async ()
 	await assert.rejects(appendGeneratedNodes(kv, {}, { node: node('new') }), StorageError);
 	assert.deepEqual(kv.values, before);
 	kv.before = undefined;
-	await kv.put('NODE2LINK.api-subscription.nodes.json', '{broken');
+	const currentKey = [...kv.values.keys()].find(key => key.startsWith('NODE2LINK.v3.nodes.'));
+	await kv.put(currentKey, '{broken');
 	const corrupt = structuredClone(kv.values);
 	await assert.rejects(appendGeneratedNodes(kv, {}, { node: node('new') }), StorageError);
 	assert.deepEqual(kv.values, corrupt);
 });
 
-test('legacy nodes remain readable and deletable alongside concurrent additions', async () => {
+test('retired node arrays are ignored while new concurrent batches remain deletable', async () => {
 	const kv = new MemoryKV({ pageSize: 1 });
 	const legacy = normalizeDirectNodes({ node: node('legacy') });
 	await kv.put('NODE2LINK.api-subscription.nodes.json', JSON.stringify(legacy));
@@ -103,7 +104,8 @@ test('ordinary GET initialization is read-only; concurrent logins preserve one i
 
 test('concurrent saves of independent setting sections retain both changes', async () => {
 	const kv = new MemoryKV({ pageSize: 1 });
-	await kv.put('NODE2LINK.settings.json', JSON.stringify({ subscriptionName: 'Old', subscriptionToken: 'old', mainSubscriptionId: 'abcdefghijklmnop' }));
+	await kv.put('NODE2LINK.identity.json', JSON.stringify({ mainSubscriptionId: 'abcdefghijklmnop' }));
+	await saveSettingsSections(kv, { subscriptionName: 'Old', subscriptionToken: 'old' }, 'all');
 	await Promise.all([
 		saveSettingsSections(kv, { subscriptionName: 'New', pageTitle: 'Title', browserIconURL: '', savedAt: '2026-01-01' }, 'display'),
 		saveSettingsSections(kv, { subscriptionToken: 'new', savedAt: '2026-01-02' }, 'entry')
@@ -141,12 +143,13 @@ test('concurrent shares retain both summaries; reset publication is atomic', asy
 	assert.deepEqual((await listShareSummaries(kv)).map(item => item.id), [reset.id]);
 });
 
-test('legacy orphan shares are listed without a destructive read-time migration', async () => {
+test('retired orphan shares are ignored without deleting old records', async () => {
 	const kv = new MemoryKV();
 	const old = share('legacy');
 	await kv.put('NODE2LINK.share.' + old.id, JSON.stringify(old));
 	const before = structuredClone(kv.values);
-	assert.equal((await listShareSummaries(kv))[0].id, old.id);
+	assert.deepEqual(await listShareSummaries(kv), []);
+	assert.equal(await readShare(kv, old.id), null);
 	assert.deepEqual(kv.values, before);
 	await deleteShare(kv, old.id);
 	assert.equal(await readShare(kv, old.id), null);
@@ -156,7 +159,7 @@ test('main snapshots keep content and metadata together with the previous versio
 	const kv = new MemoryKV({ pageSize: 1 });
 	await kv.put('/LINK.txt', 'legacy');
 	await saveMainRecord(kv, 'first');
-	assert.equal((await readMainBackup(kv)).content, 'legacy');
+	assert.equal(await readMainBackup(kv), null);
 	await saveMainRecord(kv, 'second');
 	assert.equal((await readMainRecord(kv)).content, 'second');
 	assert.equal((await readMainRecord(kv)).metadata.bytes, 6);
