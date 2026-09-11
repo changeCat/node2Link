@@ -33,7 +33,7 @@ function missingSchema(cause) {
 async function initializeSchema(db) {
 	if (!schemas.has(db)) {
 		const pending = (async () => {
-			for (const statement of SCHEMA) await db.exec(statement);
+			for (const statement of SCHEMA) await db.prepare(statement).run();
 		})().catch(cause => {
 			schemas.delete(db);
 			throw new StorageError('D1 初始化失败，请确认 DB 绑定可用', { cause });
