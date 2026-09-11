@@ -1,4 +1,4 @@
-import { appendRecord, listKeys, mapConcurrent, readJSON, readRequiredJSON, writeJSON, StorageError, isObject } from './kv.js';
+import { appendRecord, listRecords, readJSON, writeJSON, StorageError, isObject } from './kv.js';
 import { normalizeStoredNode } from '../domain/generated-nodes.js';
 import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 
@@ -7,15 +7,16 @@ const CACHE_KEY = 'NODE2LINK.cache.nodes.v3';
 
 export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh = true } = {}) {
 	if (!kv) return [];
-	const [keys, cached] = await Promise.all([
-		cachedView(kv, PREFIX, () => listKeys(kv, PREFIX), { fresh, ttlMs: 15_000, cacheable: keys => keys.length <= MAX_CACHED_KEYS }),
-		// Only this derived cache may be discarded on failure. The authoritative
-		// legacy value and immutable records must always be read successfully.
-		readJSON(kv, CACHE_KEY, null, value => isObject(value) && value.schemaVersion === 2 && Array.isArray(value.applied) && Array.isArray(value.entries) && value.entries.every(entry => typeof entry.revision === 'string' && normalize(entry.node)) && Array.isArray(value.deleted)).catch(() => null)
+	const [listed, cached] = await Promise.all([
+		cachedView(kv, PREFIX, () => listRecords(kv, PREFIX, record => record?.schemaVersion === 2 && (Array.isArray(record.nodes) || Array.isArray(record.deletedIds))), { fresh, ttlMs: 15_000, cacheable: records => records.length <= MAX_CACHED_KEYS }),
+		// D1 stores current nodes and applies deletions transactionally, so a KV
+		// journal snapshot would be both redundant and capable of resurrecting a
+		// deleted row. Raw-KV fallback retains the replay-safe derived snapshot.
+		kv.isD1 ? null : readJSON(kv, CACHE_KEY, null, value => isObject(value) && value.schemaVersion === 2 && Array.isArray(value.applied) && Array.isArray(value.entries) && value.entries.every(entry => typeof entry.revision === 'string' && normalize(entry.node)) && Array.isArray(value.deleted)).catch(() => null)
 	]);
 	const applied = new Set(cached?.applied || []);
-	const pending = keys.filter(key => !applied.has(key.name));
-	const records = await mapConcurrent(pending, 6, key => readRequiredJSON(kv, key.name, record => record?.schemaVersion === 2 && (Array.isArray(record.nodes) || Array.isArray(record.deletedIds))));
+	const pending = listed.filter(record => !applied.has(record.name));
+	const records = pending.map(record => record.value);
 	const deleted = new Set([...(cached?.deleted || []), ...records.flatMap(record => record.deletedIds || [])]);
 	const entries = [
 		...(cached?.entries || []),
@@ -34,7 +35,7 @@ export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh
 		contents.add(node.content);
 		return true;
 	});
-	if (pending.length >= 16) {
+	if (!kv.isD1 && pending.length >= 16) {
 		// A stale/concurrent cache replacement cannot lose mutations: every read
 		// replays all journal keys absent from that snapshot's explicit applied set.
 		try { await writeJSON(kv, CACHE_KEY, { schemaVersion: 2, applied: [...applied, ...pending.map(key => key.name)], entries, deleted: [...deleted] }); }

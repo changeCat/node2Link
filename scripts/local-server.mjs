@@ -6,11 +6,13 @@ import { fileURLToPath } from 'node:url';
 import worker from '../dist/_worker.js';
 
 import { MemoryKV } from './lib/memory-kv.mjs';
+import { MemoryD1 } from './lib/memory-d1.mjs';
 
 const distDirectory = resolve(fileURLToPath(new URL('../dist/', import.meta.url)));
 const port = Number(process.env.NODE2LINK_DEV_PORT || 8788);
 const env = {
 	KV: new MemoryKV(),
+	DB: new MemoryD1(),
 	ADMIN_USERNAME: process.env.NODE2LINK_DEV_USERNAME || 'admin',
 	ADMIN_PASSWORD: process.env.NODE2LINK_DEV_PASSWORD || 'dev-password',
 	SESSION_SECRET: process.env.NODE2LINK_DEV_SESSION_SECRET || 'dev-session-secret',

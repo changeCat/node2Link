@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import worker from '../dist/_worker.js';
 import { MemoryKV } from './lib/memory-kv.mjs';
+import { MemoryD1 } from './lib/memory-d1.mjs';
 
 // Exercise the deployable artifact, including its page-to-static-script links.
 // All data is disposable in-memory data; no real providers or notifications run.
 const origin = 'https://smoke.example.com';
-const env = { KV: new MemoryKV(), ADMIN_PASSWORD: 'smoke-password', SESSION_SECRET: 'smoke-secret', API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
+const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'smoke-password', SESSION_SECRET: 'smoke-secret', API_SUBSCRIPTION_ENABLED: 'true', REQUESTLOG: '0' };
 const ctx = { waitUntil(task) { void task.catch(() => {}); } };
 const request = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, ctx);
 const login = await request('/api/login', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: env.ADMIN_PASSWORD }) });

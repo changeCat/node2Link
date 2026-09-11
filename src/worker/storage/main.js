@@ -41,6 +41,9 @@ export async function saveMainRecord(kv, content, { expectedRevision } = {}) {
 	// Separate bodies preserve the 20 MB limit without doubling a KV value.
 	await writeJSON(kv, metadata.revision, { schemaVersion: 3, content, metadata });
 	await writeJSON(kv, MAIN_HEAD_KEY, { current: metadata.revision, previous: head?.current || null });
+	if (head?.previous) {
+		try { await kv.delete(head.previous); } catch { /* Old-version cleanup is best effort. */ }
+	}
 	return metadata;
 }
 

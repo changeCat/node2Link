@@ -1,4 +1,4 @@
-import { isObject, readJSON, writeJSON } from './kv.js';
+import { isObject, readJSON, readJSONMap, writeJSON, writeJSONBatch } from './kv.js';
 import { isValidShareId } from './shares.js';
 import { cachedView, invalidateView } from './view-cache.js';
 
@@ -14,8 +14,10 @@ export const SETTING_SECTIONS = {
 };
 
 async function readSections(kv, sections, entry) {
-	const records = await Promise.all(sections.map(section => section === 'entry' && entry !== undefined
-		? entry : readJSON(kv, SETTINGS_PREFIX + section, {}, isObject)));
+	const storedSections = sections.filter(section => section !== 'entry' || entry === undefined);
+	const keys = storedSections.map(section => SETTINGS_PREFIX + section);
+	const values = await readJSONMap(kv, keys, {}, isObject);
+	const records = sections.map(section => section === 'entry' && entry !== undefined ? entry : values.get(SETTINGS_PREFIX + section));
 	const settings = {};
 	for (let i = 0; i < sections.length; i++) {
 		const record = records[i];
@@ -58,12 +60,14 @@ export async function saveSettingsSections(kv, settings, section) {
 	invalidateView(kv, PUBLIC_VIEW);
 	try {
 		// The UI saves one section at a time. Independent sections never replace
-		// each other; the legacy bulk endpoint is not a multi-key transaction.
-		await Promise.all(sections.map(async name => {
+		// each other. D1 publishes legacy bulk saves in one transaction; the
+		// temporary raw-KV fallback writes the fixed section keys sequentially.
+		const records = sections.map(name => {
 			const patch = { savedAt: settings.savedAt };
 			for (const field of SETTING_SECTIONS[name]) if (Object.hasOwn(settings, field)) patch[field] = settings[field];
-			await writeJSON(kv, SETTINGS_PREFIX + name, patch);
-		}));
+			return { key: SETTINGS_PREFIX + name, value: patch };
+		});
+		await writeJSONBatch(kv, records);
 	} finally { invalidateView(kv, PUBLIC_VIEW); }
 }
 

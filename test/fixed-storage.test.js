@@ -35,6 +35,20 @@ test('missing or corrupt current bodies fail closed without falling back to arch
 	await assert.rejects(saveMainRecord(kv, 'third'), StorageError);
 });
 
+test('raw-KV transition reads a v3 share by exact keys and converts it on edit', async () => {
+	const operations = [];
+	const kv = new MemoryKV({ before(op, key) { operations.push([op, key]); } });
+	await kv.put('NODE2LINK.v3.shares.' + original.id, JSON.stringify({ schemaVersion: 3, share: original }), { metadata: original });
+	operations.length = 0;
+	assert.equal((await readShare(kv, original.id)).content, original.content);
+	assert.deepEqual(operations, [
+		['get', 'NODE2LINK.v3.shares.' + original.id],
+		['get', 'NODE2LINK.v3.revoked.' + original.id]
+	]);
+	await saveShare(kv, { ...original, name: 'Converted' });
+	assert.equal(JSON.parse(await kv.get('NODE2LINK.v3.shares.' + original.id)).schemaVersion, 4);
+});
+
 test('reset publication failure never exposes a staged replacement and retry completes the switch', async () => {
 	const kv = new MemoryKV();
 	await saveShare(kv, original);
@@ -77,6 +91,7 @@ test('repeated settings and share edits do not grow history or subscription list
 		await saveShare(kv, { ...original, name: 'Edit ' + i });
 	}
 	assert.equal(kv.values.size, 2);
+	assert.equal([...kv.values.keys()].filter(key => key.startsWith('NODE2LINK.blob.share.')).length, 0);
 	kv.before = op => { if (op !== 'get') throw new Error('Unexpected ' + op); };
 	assert.equal((await readPersistedSettings({ KV: kv })).subscriptionToken, 'token-99');
 	assert.equal((await readShare(kv, original.id)).name, 'Edit 99');
