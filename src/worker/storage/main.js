@@ -5,7 +5,6 @@ export const MAIN_HEAD_KEY = 'main.head';
 const PREFIX = 'blob.main.';
 
 async function readHead(kv) {
-	if (!kv) return null;
 	return readJSON(kv, MAIN_HEAD_KEY, null, value => isObject(value)
 		&& typeof value.current === 'string' && value.current.startsWith(PREFIX)
 		&& (value.previous === null || typeof value.previous === 'string' && value.previous.startsWith(PREFIX)));

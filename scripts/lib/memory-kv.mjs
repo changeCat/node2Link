@@ -13,12 +13,18 @@ export class MemoryKV {
 		if (entry?.expiresAt && entry.expiresAt <= this.now()) { this.values.delete(key); return null; }
 		return entry?.value ?? null;
 	}
+	async getMany(keys) {
+		return new Map(await Promise.all(keys.map(async key => [key, await this.get(key)])));
+	}
 	async put(key, value, options = {}) {
 		await this.before?.('put', key);
 		if (options.metadata && new TextEncoder().encode(JSON.stringify(options.metadata)).length > 1024) throw new Error('KV metadata exceeds 1024 bytes');
 		this.values.set(key, { value: String(value), metadata: structuredClone(options.metadata), expiresAt: options.expirationTtl ? this.now() + options.expirationTtl * 1000 : options.expiration ? options.expiration * 1000 : null });
 	}
 	async delete(key) { await this.before?.('delete', key); this.values.delete(key); }
+	async putMany(records) {
+		for (const record of records) await this.put(record.key, record.value, record.options);
+	}
 	async list({ prefix = '', limit = 1000, cursor = '' } = {}) {
 		await this.before?.('list', prefix);
 		const keys = [...this.values].filter(([name, entry]) => name.startsWith(prefix) && (!entry.expiresAt || entry.expiresAt > this.now()))
@@ -28,5 +34,13 @@ export class MemoryKV {
 		const page = keys.slice(0, Math.min(limit, this.pageSize));
 		const complete = page.length === keys.length;
 		return { keys: page, list_complete: complete, cursor: complete ? '' : page.at(-1).name };
+	}
+	async listWithValues(options = {}) {
+		const page = await this.list(options);
+		return {
+			records: await Promise.all(page.keys.map(async key => ({ ...key, value: await this.get(key.name) }))),
+			list_complete: page.list_complete,
+			cursor: page.cursor
+		};
 	}
 }

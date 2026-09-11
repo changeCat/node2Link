@@ -39,6 +39,16 @@ test('unrelated and unauthorized requests stop before any D1 or KV operation', a
 	assert.deepEqual(operations, []);
 });
 
+test('login page reads only its display setting', async () => {
+	const { storage, operations, request } = fixture();
+	await saveSettingsSections(storage, { pageTitle: 'Private Console' }, 'display');
+	operations.length = 0;
+	const response = await request('/login');
+	assert.equal(response.status, 200);
+	assert.match(await response.text(), /Private Console/);
+	assert.deepEqual(operations, [['d1.first']]);
+});
+
 test('main and ordinary share requests never list KV and logs are written to D1', async () => {
 	for (const kind of ['main', 'share']) {
 		const { storage, operations, request } = fixture({ logging: '1' });
@@ -80,4 +90,10 @@ test('missing required bindings return an explicit configuration error', async (
 	const missingKV = await worker.fetch(request, { DB: new MemoryD1(), ADMIN_PASSWORD: 'password' }, {});
 	assert.equal(missingKV.status, 503);
 	assert.match((await missingKV.json()).message, /KV/);
+	const wrongDB = await worker.fetch(request, { DB: {}, KV: new MemoryKV(), ADMIN_PASSWORD: 'password' }, {});
+	assert.equal(wrongDB.status, 503);
+	assert.match((await wrongDB.json()).message, /D1/);
+	const wrongKV = await worker.fetch(request, { DB: new MemoryD1(), KV: {}, ADMIN_PASSWORD: 'password' }, {});
+	assert.equal(wrongKV.status, 503);
+	assert.match((await wrongKV.json()).message, /KV/);
 });

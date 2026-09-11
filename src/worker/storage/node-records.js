@@ -5,7 +5,6 @@ import { cachedView, invalidateView, MAX_CACHED_KEYS } from './view-cache.js';
 const PREFIX = 'nodes.';
 
 export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh = true } = {}) {
-	if (!kv) return [];
 	const listed = await cachedView(kv, PREFIX, () => listRecords(kv, PREFIX,
 		record => Array.isArray(record?.nodes) || Array.isArray(record?.deletedIds)), {
 		fresh, ttlMs: 15_000, cacheable: records => records.length <= MAX_CACHED_KEYS

@@ -23,7 +23,6 @@ export function detectSubscriptionClient(userAgentHeader) {
 }
 
 export function queueSubscriptionRequestLog(ctx, env, details, logging = { requestLogMode: 'full', requestLogSampleRate: 1 }) {
-	if (typeof env.KV.put !== 'function') return;
 	if (logging.requestLogMode === 'off') return;
 	const rate = logging.requestLogMode === 'sample' ? logging.requestLogSampleRate : 1;
 	const failed = Number(details.status) >= 400;
@@ -37,9 +36,7 @@ async function recordSubscriptionRequest(kv, details) {
 	invalidateView(kv, REQUEST_LOG_PREFIX);
 	const now = Date.now();
 	const reverseTimestamp = String(9999999999999 - now).padStart(13, '0');
-	const randomID = typeof crypto.randomUUID === 'function'
-		? crypto.randomUUID()
-		: Math.random().toString(36).slice(2) + now.toString(36);
+	const randomID = crypto.randomUUID();
 	const metadata = {
 		client: String(details.client || '其他客户端').slice(0, 40),
 		userAgent: String(details.userAgent || 'Unknown').slice(0, 120),
@@ -68,7 +65,6 @@ export async function readSubscriptionRequestStats(kv) {
 
 async function loadSubscriptionRequestStats(kv) {
 	const empty = { total: 0, truncated: false, main: { total: 0, clients: [] }, shares: [] };
-	if (!kv || typeof kv.list !== 'function') return empty;
 	const events = [];
 	let cursor;
 	let truncated = false;

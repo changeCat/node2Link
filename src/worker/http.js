@@ -1,5 +1,3 @@
-import { StorageError } from './storage/kv.js';
-
 export function jsonResponse(data, status = 200, extraHeaders = {}) {
 	return new Response(JSON.stringify(data), { status, headers: {
 		'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store',
@@ -17,10 +15,6 @@ export function requestHasSameOrigin(request, { allowMissing = true } = {}) {
 	const origin = request.headers.get('Origin');
 	if (!origin) return allowMissing;
 	try { return new URL(origin).origin === new URL(request.url).origin; } catch { return false; }
-}
-
-export function errorResponse(error, fallback = '操作失败', status = 400) {
-	return jsonResponse({ ok: false, message: error instanceof StorageError ? error.message : fallback }, error.status || status);
 }
 
 export function escapeHTML(value) {

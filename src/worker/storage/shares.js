@@ -59,13 +59,11 @@ export async function readShare(kv, id) {
 }
 
 export async function listShareSummaries(kv, { fresh = false } = {}) {
-	if (!kv) return [];
 	const summaries = await cachedView(kv, PREFIX, () => shareView(kv), {
 		fresh, ttlMs: 15_000, cacheable: value => value.length <= MAX_CACHED_KEYS
 	});
 	return structuredClone(summaries);
 }
-export const readShareIndex = listShareSummaries;
 
 // Normal shares fit in one D1 row and publish with their metadata transaction.
 // Only a pathologically escaped value near D1's 2 MB row limit spills into an

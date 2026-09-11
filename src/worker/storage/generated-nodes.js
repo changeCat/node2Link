@@ -6,8 +6,8 @@ const SETTINGS_KEY = 'api.settings';
 const BOOTSTRAP_KEY = 'api.bootstrap';
 const initializing = new WeakMap();
 export async function readGeneratedNodeSettings(kv) {
-	const parsed = kv ? await readJSON(kv, SETTINGS_KEY, {}, isObject) : {};
-	if (kv && !parsed.token) {
+	const parsed = await readJSON(kv, SETTINGS_KEY, {}, isObject);
+	if (!parsed.token) {
 		const bootstrap = await readJSON(kv, BOOTSTRAP_KEY, null, value => /^[A-Za-z0-9_-]{16,128}$/.test(value?.token || ''));
 		if (bootstrap) parsed.token = bootstrap.token;
 	}
