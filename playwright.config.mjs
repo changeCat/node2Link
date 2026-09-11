@@ -23,6 +23,6 @@ export default defineConfig({
 		url: 'http://127.0.0.1:8790/login',
 		reuseExistingServer: false,
 		timeout: 60000,
-		env: { NODE2LINK_DEV_PORT: '8790', NODE2LINK_DEV_API_SUBSCRIPTION_ENABLED: 'true', NODE2LINK_DEV_USERNAME: 'admin', NODE2LINK_DEV_PASSWORD: 'browser-test-password', NODE2LINK_DEV_REQUESTLOG: '0' }
+		env: { NODE2LINK_DEV_PORT: '8790', NODE2LINK_DEV_API_SUBSCRIPTION_ENABLED: 'true', NODE2LINK_DEV_USERNAME: 'admin', NODE2LINK_DEV_PASSWORD: 'browser-test-password' }
 	}
 });
