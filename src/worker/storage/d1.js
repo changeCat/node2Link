@@ -4,53 +4,9 @@ const NODE_PREFIX = 'nodes.';
 const MAIN_BODY_PREFIX = 'blob.main.';
 const SHARE_BODY_PREFIX = 'blob.share.';
 const REQUEST_PREFIX = 'requests.';
-const SCHEMA = [`CREATE TABLE IF NOT EXISTS node2link_records (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  metadata TEXT,
-  expires_at INTEGER,
-  updated_at INTEGER NOT NULL
-);`,
-`CREATE INDEX IF NOT EXISTS node2link_records_expires ON node2link_records(expires_at);`,
-`CREATE TABLE IF NOT EXISTS node2link_nodes (
-  id TEXT PRIMARY KEY,
-  sort_key TEXT NOT NULL UNIQUE,
-  value TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);`];
 
-const schemas = new WeakMap();
 const bindings = new WeakMap();
 const isBlobKey = key => key.startsWith(MAIN_BODY_PREFIX) || key.startsWith(SHARE_BODY_PREFIX);
-
-function missingSchema(cause) {
-	for (let current = cause, depth = 0; current && depth < 5; current = current.cause, depth++) {
-		if (/no such table:\s*node2link_(?:records|nodes)/i.test(String(current.message || current))) return true;
-	}
-	return false;
-}
-
-async function initializeSchema(db) {
-	if (!schemas.has(db)) {
-		const pending = (async () => {
-			for (const statement of SCHEMA) await db.prepare(statement).run();
-		})().catch(cause => {
-			schemas.delete(db);
-			throw new StorageError('D1 初始化失败，请确认 DB 绑定可用', { cause });
-		});
-		schemas.set(db, pending);
-	}
-	return schemas.get(db);
-}
-
-async function query(db, operation) {
-	try { return await operation(); }
-	catch (cause) {
-		if (!missingSchema(cause)) throw cause;
-		await initializeSchema(db);
-		return operation();
-	}
-}
 
 function parseMetadata(value) {
 	if (value === null || value === undefined || value === '') return undefined;
@@ -80,7 +36,7 @@ class AppStorage {
 	async get(key) {
 		if (isBlobKey(key)) return this.kv.get(key);
 		try {
-			const row = await query(this.db, () => this.db.prepare('SELECT value, expires_at FROM node2link_records WHERE key = ?1').bind(key).first());
+			const row = await this.db.prepare('SELECT value, expires_at FROM node2link_records WHERE key = ?1').bind(key).first();
 			return isCurrent(row) ? row.value : null;
 		} catch (cause) {
 			if (cause instanceof StorageError) throw cause;
@@ -96,7 +52,7 @@ class AppStorage {
 			if (recordKeys.length) {
 				const placeholders = recordKeys.map((_, index) => '?' + (index + 1)).join(',');
 				const sql = `SELECT key, value, expires_at FROM node2link_records WHERE key IN (${placeholders})`;
-				const { results = [] } = await query(this.db, () => this.db.prepare(sql).bind(...recordKeys).all());
+				const { results = [] } = await this.db.prepare(sql).bind(...recordKeys).all();
 				for (const row of results) if (isCurrent(row)) result.set(row.key, row.value);
 			}
 			await Promise.all(blobKeys.map(async key => result.set(key, await this.kv.get(key))));
@@ -150,10 +106,10 @@ class AppStorage {
 		try {
 			if (key.startsWith(NODE_PREFIX)) {
 				const statements = this.nodeStatements(key, String(value));
-				if (statements.length) await query(this.db, () => this.db.batch(statements));
+				if (statements.length) await this.db.batch(statements);
 				return;
 			}
-			await query(this.db, () => this.statement(key, value, options).run());
+			await this.statement(key, value, options).run();
 		} catch (cause) {
 			if (cause instanceof StorageError) throw cause;
 			throw new StorageError('D1 写入失败', { cause });
@@ -168,7 +124,7 @@ class AppStorage {
 		}
 		try {
 			const now = Math.floor(Date.now() / 1000);
-			await query(this.db, () => this.db.batch(records.map(record => this.statement(record.key, record.value, record.options, now))));
+			await this.db.batch(records.map(record => this.statement(record.key, record.value, record.options, now)));
 		} catch (cause) {
 			if (cause instanceof StorageError) throw cause;
 			throw new StorageError('D1 事务写入失败', { cause });
@@ -178,7 +134,7 @@ class AppStorage {
 	async delete(key) {
 		if (isBlobKey(key)) return this.kv.delete(key);
 		try {
-			await query(this.db, () => this.db.prepare('DELETE FROM node2link_records WHERE key = ?1').bind(key).run());
+			await this.db.prepare('DELETE FROM node2link_records WHERE key = ?1').bind(key).run();
 		} catch (cause) {
 			if (cause instanceof StorageError) throw cause;
 			throw new StorageError('D1 删除失败', { cause });
@@ -188,8 +144,8 @@ class AppStorage {
 	async listNodes({ limit = 1000, cursor = '' } = {}, values = true) {
 		const size = Math.max(1, Math.min(1000, Number(limit) || 1000));
 		const columns = values ? 'sort_key, value' : 'sort_key';
-		const { results = [] } = await query(this.db, () => this.db.prepare(`SELECT ${columns} FROM node2link_nodes
-			WHERE sort_key > ?1 ORDER BY sort_key LIMIT ?2`).bind(cursor || '', size + 1).all());
+		const { results = [] } = await this.db.prepare(`SELECT ${columns} FROM node2link_nodes
+			WHERE sort_key > ?1 ORDER BY sort_key LIMIT ?2`).bind(cursor || '', size + 1).all();
 		const complete = results.length <= size;
 		const page = results.slice(0, size);
 		return { page, complete, cursor: complete ? '' : page.at(-1)?.sort_key || '' };
@@ -207,9 +163,9 @@ class AppStorage {
 			if (isBlobKey(prefix)) throw new StorageError('正文不支持列表读取');
 			const size = Math.max(1, Math.min(1000, Number(limit) || 1000));
 			const now = Math.floor(Date.now() / 1000);
-			const { results = [] } = await query(this.db, () => this.db.prepare(`SELECT key, value, metadata, expires_at FROM node2link_records
+			const { results = [] } = await this.db.prepare(`SELECT key, value, metadata, expires_at FROM node2link_records
 				WHERE key >= ?1 AND key < ?2 AND key > ?3 AND (expires_at IS NULL OR expires_at > ?4)
-				ORDER BY key LIMIT ?5`).bind(prefix, upperBound(prefix), cursor || '', now, size + 1).all());
+				ORDER BY key LIMIT ?5`).bind(prefix, upperBound(prefix), cursor || '', now, size + 1).all();
 			const complete = results.length <= size;
 			const page = results.slice(0, size);
 			return {
@@ -232,11 +188,11 @@ class AppStorage {
 			const size = Math.max(1, Math.min(1000, Number(limit) || 1000));
 			const now = Math.floor(Date.now() / 1000);
 			if (prefix === REQUEST_PREFIX && !cursor) {
-				await query(this.db, () => this.db.prepare('DELETE FROM node2link_records WHERE expires_at IS NOT NULL AND expires_at <= ?1').bind(now).run());
+				await this.db.prepare('DELETE FROM node2link_records WHERE expires_at IS NOT NULL AND expires_at <= ?1').bind(now).run();
 			}
-			const { results = [] } = await query(this.db, () => this.db.prepare(`SELECT key, metadata FROM node2link_records
+			const { results = [] } = await this.db.prepare(`SELECT key, metadata FROM node2link_records
 				WHERE key >= ?1 AND key < ?2 AND key > ?3 AND (expires_at IS NULL OR expires_at > ?4)
-				ORDER BY key LIMIT ?5`).bind(prefix, upperBound(prefix), cursor || '', now, size + 1).all());
+				ORDER BY key LIMIT ?5`).bind(prefix, upperBound(prefix), cursor || '', now, size + 1).all();
 			const complete = results.length <= size;
 			const page = results.slice(0, size);
 			return {

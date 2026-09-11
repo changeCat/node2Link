@@ -11,7 +11,7 @@
 
 绑定由你在 Cloudflare Dashboard 中手动创建。保存或更换绑定后，需要重新部署一次，新的 Worker 才能使用它们。缺少任一绑定时，应用返回 503 并指出缺少的变量名。
 
-D1 不需要手工建表。首次数据库操作发现表不存在时，代码会自动执行幂等建表。仓库中的 [0001_storage.sql](migrations/0001_storage.sql) 仅供审查或需要时手工初始化。
+首次部署前必须在 D1 控制台完整执行 [0001_storage.sql](migrations/0001_storage.sql)。运行时代码不会执行 DDL、自动建表或升级 schema；以后新增 migration 时也必须先手工执行，再部署依赖该结构的代码。
 
 ## Pages 构建配置
 
@@ -52,7 +52,7 @@ Root directory: 留空
 4. 如果启用了 API 订阅，保存模板和 Token，再导入节点。
 5. 创建需要的分享链接。
 
-D1 表会在这些操作中自动创建。主订阅首次保存后，D1 中出现 `main.head`，KV 中出现 `blob.main.*`。
+开始使用前应已手工建立两张 D1 表及索引。主订阅首次保存后，D1 中出现 `main.head`，KV 中出现 `blob.main.*`。
 
 ## 存储检查
 
@@ -92,7 +92,7 @@ npm run test:e2e
 2. 登录、保存主订阅和读取订阅均成功。
 3. 普通分享可以创建、修改、暂停、恢复、重置和删除。
 4. `/dashboard` 和 `/requests` 正常加载。
-5. D1 两张表已自动创建。
+5. D1 两张表及索引已由 migration 手工创建。
 6. KV 中只出现 `blob.main.*`；只有极端大分享才出现 `blob.share.*`。
 
 ## 故障处理
@@ -101,9 +101,9 @@ npm run test:e2e
 
 检查当前 Production 部署的 Bindings，确认变量名严格为 `DB` 和 `KV`，然后重新部署最新提交。
 
-### D1 初始化失败
+### D1 读取或写入失败
 
-确认绑定指向可用数据库。自动建表需要执行建表和索引 SQL；如果账号权限阻止自动执行，可在 D1 控制台运行 [0001_storage.sql](migrations/0001_storage.sql)。
+确认绑定指向可用数据库，并在 D1 控制台检查两张表和索引是否存在。首次配置时完整运行 [0001_storage.sql](migrations/0001_storage.sql)；后续按版本顺序手工执行新增 migration。
 
 ### 页面为空
 

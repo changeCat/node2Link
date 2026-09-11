@@ -15,22 +15,15 @@ class MemoryD1Statement {
 }
 
 export class MemoryD1 {
-	constructor({ initialized = false, before } = {}) {
+	constructor({ initialized = true, before } = {}) {
 		this.initialized = initialized;
 		this.before = before;
 		this.records = new Map();
 		this.nodes = new Map();
-		this.metrics = { exec: 0, first: 0, all: 0, run: 0, batch: 0 };
+		this.metrics = { first: 0, all: 0, run: 0, batch: 0 };
 	}
 
 	prepare(sql) { return new MemoryD1Statement(this, sql); }
-
-	async exec(sql) {
-		await this.before?.('exec', sql, []);
-		this.metrics.exec++;
-		this.initialized = true;
-		return { count: 4, duration: 0 };
-	}
 
 	async batch(statements) {
 		this.assertInitialized();
@@ -45,12 +38,6 @@ export class MemoryD1 {
 	}
 
 	async execute(statement, operation) {
-		if (/^CREATE\s+(?:TABLE|INDEX)\s+IF\s+NOT\s+EXISTS/i.test(statement.sql.trim())) {
-			await this.before?.(operation, statement.sql, statement.params);
-			this.metrics[operation]++;
-			this.initialized = true;
-			return { success: true, meta: { changes: 0 } };
-		}
 		this.assertInitialized();
 		await this.before?.(operation, statement.sql, statement.params);
 		this.metrics[operation]++;

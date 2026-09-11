@@ -26,11 +26,9 @@ function fixture(options) {
 	return { kv, db, storage: env.KV, kvOps };
 }
 
-test('D1 schema initializes once and structured settings never touch KV', async () => {
+test('structured settings use existing D1 tables and never touch KV', async () => {
 	const { kv, db, storage, kvOps } = fixture();
 	assert.equal((await readPersistedSettings({ KV: storage })).subscriptionToken, undefined);
-	assert.equal(db.metrics.exec, 0);
-	assert.equal(db.metrics.run, 3);
 	assert.equal(kvOps.length, 0);
 
 	await saveSettingsSections(storage, {
@@ -42,33 +40,12 @@ test('D1 schema initializes once and structured settings never touch KV', async 
 	const settings = await readPersistedSettings({ KV: storage });
 	assert.equal(settings.subscriptionToken, 'current-token');
 	assert.equal(settings.pageTitle, 'D1');
-	assert.equal(db.metrics.exec, 0);
 });
 
-test('D1 schema initialization recognizes Cloudflare errors with details in cause', async () => {
-	class NestedMissingTableD1 extends MemoryD1 {
-		assertInitialized() {
-			if (!this.initialized) throw new Error('D1_ERROR', {
-				cause: new Error('no such table: node2link_records')
-			});
-		}
-	}
-	const kv = new MemoryKV();
-	const db = new NestedMissingTableD1();
-	const { KV: storage } = withStorageBindings({ KV: kv, DB: db });
-	assert.deepEqual(await readPersistedSettings({ KV: storage }), {});
-	assert.equal(db.metrics.exec, 0);
-	assert.equal(db.metrics.run, 3);
-});
-
-test('D1 initialization failures retain their actionable storage message', async () => {
-	const { storage } = fixture({ before(operation) {
-		if (operation === 'run') throw new Error('database unavailable');
-	} });
-	await assert.rejects(
-		readPersistedSettings({ KV: storage }),
-		error => error instanceof StorageError && error.message === 'D1 初始化失败，请确认 DB 绑定可用'
-	);
+test('missing D1 tables fail without running schema mutations', async () => {
+	const { storage, db } = fixture({ initialized: false });
+	await assert.rejects(readPersistedSettings({ KV: storage }), StorageError);
+	assert.deepEqual(db.metrics, { first: 0, all: 0, run: 0, batch: 0 });
 });
 
 test('ordinary shares stay entirely in D1 and reset atomically', async () => {

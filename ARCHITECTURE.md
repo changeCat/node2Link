@@ -48,7 +48,7 @@ KV 正文键只有 `blob.main.*` 和 `blob.share.*`。
 
 `node2link_nodes` 每行保存一个当前节点，以节点 ID 为主键，以唯一 `sort_key` 保持导入顺序。一次最多导入 100 个节点时拆成 4 条参数安全的 INSERT，并在一个 D1 batch 中提交。删除直接删除当前行，数据量受现有 3,000 节点上限约束。
 
-代码第一次遇到表不存在时自动执行与 [0001_storage.sql](migrations/0001_storage.sql) 相同的幂等结构。
+表结构由部署人员手工维护。首次部署或后续表结构变更时，在 D1 控制台执行对应 migration；运行时代码不执行 DDL，也不自动迁移 schema。
 
 ## 写入一致性
 
@@ -82,7 +82,7 @@ KV 正文键只有 `blob.main.*` 和 `blob.share.*`。
 
 `npm run pages:build` 依次执行源码检查、单元测试、构建和产物冒烟。测试覆盖：
 
-- D1 自动建表和批量事务
+- 已建表 D1 的读写和批量事务
 - 100 节点参数限制
 - 主订阅 current/previous 发布
 - 普通分享零 KV 操作
