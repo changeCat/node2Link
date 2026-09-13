@@ -118,6 +118,33 @@ test('adaptive Loon keeps ordinary upstream URLs behind the normalized callback'
 	assert.doesNotMatch(converterSource, /upstream\.example\.com|token=secret/);
 });
 
+test('custom Sublink mode delegates unsupported Loon and QuanX targets to Subconverter', async () => {
+	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' }, {
+		converterMode: 'custom',
+		customConverterURL: 'https://custom.example.com'
+	});
+	const calls = [];
+	const fetchImpl = async input => {
+		const value = input instanceof Request ? input.url : String(input);
+		calls.push(value);
+		return new Response('[Proxy]\nnode = trojan,example.com,443,password');
+	};
+	for (const [requestURL, expectedFormat] of [
+		['https://app.example.com/s/abcdefghijklmnop', 'loon'],
+		['https://app.example.com/s/abcdefghijklmnop?quanx', 'quanx']
+	]) {
+		const headers = expectedFormat === 'loon' ? { 'User-Agent': 'Loon/3.2.4' } : {};
+		const response = await serveSubscription(new Request(requestURL, { headers }), {}, {}, runtime, 'trojan://id@example.com:443#node', 'share', false, 'abcdefghijklmnop', 'Share', { fetchImpl });
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get('X-Node2Link-Format'), expectedFormat);
+	}
+	assert.equal(calls.length, 2);
+	for (const value of calls) {
+		assert.equal(new URL(value).hostname.toLowerCase(), 'subapi.cmliussss.net');
+		assert.doesNotMatch(value, /custom\.example\.com/);
+	}
+});
+
 test('remote diagnostics exclude subscription paths, tokens and response content', t => {
 	const lines = [];
 	t.mock.method(console, 'log', line => lines.push(line));
