@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fetchWithTimeout, logRemote } from '../src/worker/adapters/http.js';
 import { fetchConvertedSubscription } from '../src/worker/adapters/converters.js';
 import { getSUB } from '../src/worker/adapters/upstream.js';
-import { createRuntimeConfig } from '../src/worker/config.js';
+import { CONVERTER_FETCH_TIMEOUT_MS, REMOTE_FETCH_TIMEOUT_MS, createRuntimeConfig } from '../src/worker/config.js';
 import { serveSubscription } from '../src/worker/services/subscription.js';
 import { selectSubscriptionFormat } from '../src/worker/domain/formats.js';
 
@@ -29,6 +29,23 @@ test('a slow converter leaves time for the backup', async () => {
 	});
 	assert.equal(result.converter, 'https://backup.example.com');
 	assert.deepEqual(attempts, ['slow.example.com', 'backup.example.com']);
+});
+
+test('conversion body gets a longer deadline while ordinary upstreams stay bounded', async () => {
+	assert.equal(REMOTE_FETCH_TIMEOUT_MS, 8000);
+	assert.equal(CONVERTER_FETCH_TIMEOUT_MS, 30000);
+	const result = await fetchConvertedSubscription(['https://converter.example.com'], 'loon', 'https://source.example.com', '', {}, {
+		timeoutMs: 20,
+		conversionTimeoutMs: 100,
+		fetchImpl: async () => new Response(new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('[Proxy]\n'));
+				setTimeout(() => { controller.enqueue(new TextEncoder().encode('node = trojan,example.com,443,password')); controller.close(); }, 40);
+			}
+		}))
+	});
+	assert.equal(result.converter, 'https://converter.example.com');
+	assert.match(await result.response.text(), /node = trojan/);
 });
 
 test('upstream concurrency is bounded while input ordering is retained', async () => {
