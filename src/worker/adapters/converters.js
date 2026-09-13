@@ -1,5 +1,5 @@
 import { fetchWithTimeout, logRemote } from './http.js';
-import { DEFAULT_SUB_CONVERTER, REMOTE_FETCH_TIMEOUT_MS } from '../config.js';
+import { CONVERTER_FETCH_TIMEOUT_MS, DEFAULT_SUB_CONVERTER } from '../config.js';
 export function parseSubConverters(value) {
 	const converters = String(value || DEFAULT_SUB_CONVERTER)
 		.split(/[\n,;]+/)
@@ -42,7 +42,7 @@ export function createNoStoreFetchInit(init = {}) {
 
 export async function fetchSublinkSubscription(converter, target, sourceURL, init, options = {}) {
 	try {
-		const response = await fetchWithTimeout(createSublinkURL(converter, target, sourceURL), createNoStoreFetchInit(init), options.timeoutMs || REMOTE_FETCH_TIMEOUT_MS, options);
+		const response = await fetchWithTimeout(createSublinkURL(converter, target, sourceURL), createNoStoreFetchInit(init), options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS, options);
 		if (response.ok) return { response, converter };
 		logRemote('converter.response', converter, { status: response.status });
 	} catch (error) {
@@ -63,12 +63,12 @@ export function createSubConverterURL(converter, target, sourceURL, configURL) {
 }
 
 export async function fetchConvertedSubscription(converters, target, sourceURL, configURL, init, options = {}) {
-	const deadline = Date.now() + (options.timeoutMs || REMOTE_FETCH_TIMEOUT_MS);
+	const deadline = Date.now() + (options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS);
 	for (const converter of converters) {
 		try {
 			const remaining = deadline - Date.now();
 			if (remaining <= 0) break;
-			const attemptBudget = converters.length === 1 ? remaining : Math.min(remaining, options.attemptTimeoutMs || 3000);
+			const attemptBudget = converters.length === 1 ? remaining : Math.min(remaining, options.attemptTimeoutMs || 20000);
 			const response = await fetchWithTimeout(createSubConverterURL(converter, target, sourceURL, configURL), createNoStoreFetchInit(init), attemptBudget, options);
 			if (response.ok) return { response, converter };
 			logRemote('converter.response', converter, { status: response.status });

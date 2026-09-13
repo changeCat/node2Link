@@ -30,6 +30,9 @@ export const SUBSCRIPTION_FORMAT_CATALOG = [
 export const DEFAULT_DISPLAY_FORMATS = ['sub', 'b64', 'clash', 'loon'];
 export const SUPPORTED_NODE_PROTOCOLS = ['vless', 'vmess', 'trojan', 'ss', 'ssr', 'hysteria', 'hysteria2', 'hy2', 'tuic', 'wireguard', 'socks', 'socks5'];
 export const REMOTE_FETCH_TIMEOUT_MS = 8 * 1000;
+// Unlike the legacy implementation, the hardened fetch wrapper includes the
+// complete response body in its deadline. Rule-based profiles need more time.
+export const CONVERTER_FETCH_TIMEOUT_MS = 30 * 1000;
 export const APP_VERSION = globalThis.__NODE2LINK_VERSION__ || 'dev';
 
 export function isAPISubscriptionEnabled(env) {
