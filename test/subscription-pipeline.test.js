@@ -53,23 +53,52 @@ test('explicit format parameters override missing and conflicting User-Agent', (
 	assert.equal(selectSubscriptionFormat(new URL('https://example.com?base64&clash'), 'Clash'), 'base64');
 });
 
-test('conversion passes a direct callback and upstream once; failures do not masquerade as another format', async () => {
+test('conversion resolves ordinary upstreams through its base64 callback; failures do not masquerade as another format', async () => {
 	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' });
 	const content = 'trojan://secret@direct.example.com:443#direct\nhttps://upstream.example.com/private?token=secret';
 	const calls = [];
-	const options = { fetchImpl: async input => { calls.push(String(input)); return new Response('proxies: []'); } };
+	const upstreamNode = 'trojan://upstream@edge.example.com:443#upstream';
+	const options = { fetchImpl: async input => {
+		const value = input instanceof Request ? input.url : String(input);
+		calls.push(value);
+		return value.startsWith('https://upstream.example.com/') ? new Response(upstreamNode) : new Response('proxies: []');
+	} };
 	const response = await serveSubscription(new Request('https://app.example.com/s/abcdefghijklmnop?clash'), {}, {}, runtime, content, 'share', false, 'abcdefghijklmnop', 'Share', options);
 	assert.equal(response.status, 200);
 	assert.equal(response.headers.get('X-Node2Link-Format'), 'clash');
-	assert.equal(calls.length, 1);
-	const sources = new URL(calls[0]).searchParams.get('url').split('|');
-	assert.equal(new URL(sources[0]).searchParams.get('source'), 'direct');
-	assert.equal(sources[1], 'https://upstream.example.com/private?token=secret');
-	const callback = await serveSubscription(new Request(sources[0]), {}, {}, runtime, content, 'share', false, 'abcdefghijklmnop', 'Share', { fetchImpl: async () => { throw new Error('must not refetch upstream'); } });
-	assert.equal(Buffer.from(await callback.text(), 'base64').toString(), 'trojan://secret@direct.example.com:443#direct\n');
+	assert.equal(calls.length, 2);
+	const converterCall = calls.find(value => new URL(value).hostname.toLowerCase() === 'subapi.cmliussss.net');
+	const sources = new URL(converterCall).searchParams.get('url').split('|');
+	assert.equal(sources.length, 1);
+	assert.equal(new URL(sources[0]).searchParams.has('source'), false);
+	const callback = await serveSubscription(new Request(sources[0], { headers: { 'User-Agent': 'subconverter/v0.9' } }), {}, {}, runtime, content, 'share', false, 'abcdefghijklmnop', 'Share', { fetchImpl: async () => new Response(upstreamNode) });
+	const callbackContent = Buffer.from(await callback.text(), 'base64').toString();
+	assert.match(callbackContent, /direct\.example\.com/);
+	assert.match(callbackContent, /edge\.example\.com/);
 	const failed = await serveSubscription(new Request('https://app.example.com/s/abcdefghijklmnop?clash'), {}, {}, runtime, content, 'share', false, 'abcdefghijklmnop', 'Share', { fetchImpl: async () => new Response('failed', { status: 503 }) });
 	assert.equal(failed.status, 502);
 	assert.match(await failed.text(), /订阅转换失败/);
+});
+
+test('adaptive Loon keeps ordinary upstream URLs behind the normalized callback', async () => {
+	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' });
+	const upstreamURL = 'https://upstream.example.com/private?token=secret';
+	let converterSource = '';
+	const response = await serveSubscription(
+		new Request('https://app.example.com/s/abcdefghijklmnop', { headers: { 'User-Agent': 'Loon/3.2.4' } }),
+		{}, {}, runtime, `vless://id@direct.example.com:443#direct\n${upstreamURL}`, 'share', false, 'abcdefghijklmnop', 'Share', {
+			fetchImpl: async input => {
+				const value = input instanceof Request ? input.url : String(input);
+				if (value === upstreamURL) return new Response('trojan://upstream@edge.example.com:443#upstream');
+				converterSource = new URL(value).searchParams.get('url');
+				return new Response('[Proxy]\nupstream = trojan,edge.example.com,443,password');
+			}
+		}
+	);
+	assert.equal(response.status, 200);
+	assert.equal(response.headers.get('X-Node2Link-Format'), 'loon');
+	assert.equal(converterSource, 'https://app.example.com/s/abcdefghijklmnop?base64');
+	assert.doesNotMatch(converterSource, /upstream\.example\.com|token=secret/);
 });
 
 test('remote diagnostics exclude subscription paths, tokens and response content', t => {
