@@ -137,12 +137,73 @@ test('custom Sublink mode delegates unsupported Loon and QuanX targets to Subcon
 		const response = await serveSubscription(new Request(requestURL, { headers }), {}, {}, runtime, 'trojan://id@example.com:443#node', 'share', false, 'abcdefghijklmnop', 'Share', { fetchImpl });
 		assert.equal(response.status, 200);
 		assert.equal(response.headers.get('X-Node2Link-Format'), expectedFormat);
+		assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'unsupported-default');
 	}
 	assert.equal(calls.length, 2);
 	for (const value of calls) {
 		assert.equal(new URL(value).hostname.toLowerCase(), 'subapi.cmliussss.net');
 		assert.doesNotMatch(value, /custom\.example\.com/);
 	}
+});
+
+test('custom Sublink failure falls back to the default converter and reports it in the subscription notification', async t => {
+	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret', TGTOKEN: 'bot-token', TGID: 'chat-id' }, {
+		converterMode: 'custom',
+		customConverterURL: 'https://custom.example.com'
+	});
+	const converterCalls = [];
+	const telegramMessages = [];
+	t.mock.method(globalThis, 'fetch', async input => {
+		const url = new URL(input instanceof Request ? input.url : String(input));
+		telegramMessages.push(url.searchParams.get('text'));
+		return new Response('{"ok":true}', { headers: { 'Content-Type': 'application/json' } });
+	});
+	const pending = [];
+	const response = await serveSubscription(
+		new Request('https://app.example.com/s/fallback-notice-id?clash&case=custom-fallback', { headers: { 'User-Agent': 'Clash/1.0' } }),
+		{}, { waitUntil(task) { pending.push(task); } }, runtime,
+		'trojan://id@example.com:443#node', 'share', false, 'fallback-notice-id', 'Fallback notice', {
+			fetchImpl: async input => {
+				const value = input instanceof Request ? input.url : String(input);
+				converterCalls.push(value);
+				return new URL(value).hostname === 'custom.example.com'
+					? new Response('unavailable', { status: 503 })
+					: new Response('proxies: []');
+			}
+		}
+	);
+	await Promise.all(pending);
+	assert.equal(response.status, 200);
+	assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'fallback-default');
+	assert.equal(response.headers.get('X-Subconverter-Used'), 'https://SUBAPI.cmliussss.net');
+	assert.deepEqual(converterCalls.map(value => new URL(value).hostname), ['custom.example.com', 'subapi.cmliussss.net']);
+	assert.equal(telegramMessages.length, 1);
+	assert.match(telegramMessages[0], /转换服务: 自建不可用，已回退到默认/);
+});
+
+test('an unreachable custom Sublink leaves time for the default fallback', async () => {
+	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' }, {
+		converterMode: 'custom',
+		customConverterURL: 'https://custom.example.com'
+	});
+	const calls = [];
+	const response = await serveSubscription(
+		new Request('https://app.example.com/s/custom-timeout-id?surge'), {}, {}, runtime,
+		'trojan://id@example.com:443#node', 'share', false, 'custom-timeout-id', 'Custom timeout', {
+			conversionTimeoutMs: 100,
+			customAttemptTimeoutMs: 20,
+			fetchImpl: async input => {
+				const value = input instanceof Request ? input.url : String(input);
+				calls.push(value);
+				return new URL(value).hostname === 'custom.example.com'
+					? new Response(new ReadableStream())
+					: new Response('[Proxy]\nnode = trojan,example.com,443,password');
+			}
+		}
+	);
+	assert.equal(response.status, 200);
+	assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'fallback-default');
+	assert.deepEqual(calls.map(value => new URL(value).hostname), ['custom.example.com', 'subapi.cmliussss.net']);
 });
 
 test('remote diagnostics exclude subscription paths, tokens and response content', t => {

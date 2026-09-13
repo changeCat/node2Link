@@ -10,7 +10,7 @@
 
 - 账号密码登录管理端，会话 Cookie 使用 `HttpOnly`、`Secure`、`SameSite=Strict`；
 - 汇聚多个节点或上游订阅，并输出 Base64、Clash、Sing-box、Surge、QuanX、Loon 等格式；
-- 独立设置页，可分别修改主订阅名称、浏览器标签页标题与图标、主订阅入口 Token，并在默认/自建转换服务和默认/自建规则之间切换；自建 Sublink Worker 负责其支持的 Base64、Clash、Sing-box、Surge，Loon 与 QuanX 继续由默认 Subconverter 转换；还可增减及排序“我的订阅”所展示的客户端格式，各设置模块均可独立保存，标签页标题默认使用 `CF-Workers-SUB`；
+- 独立设置页，可分别修改主订阅名称、浏览器标签页标题与图标、主订阅入口 Token，并在默认/自建转换服务和默认/自建规则之间切换；选择自建时，Base64、Clash、Sing-box、Surge 优先使用自建 Sublink Worker，不可用时自动回退默认 Subconverter，Loon 与 QuanX 因 Sublink 不支持而直接使用默认服务，实际选择及回退结果会写入订阅通知；还可增减及排序“我的订阅”所展示的客户端格式，各设置模块均可独立保存，标签页标题默认使用 `CF-Workers-SUB`；
 - “仪表盘”“主订阅”“分享管理”和“订阅请求”使用顶部 Tab 切换，访问根路径时默认展示主订阅；启用可选的 API 订阅功能后会增加“API 订阅”Tab；
 - 个人仪表盘展示本地节点及协议分布、上游来源数量、分享状态、未来 7 天到期提醒和最近修改；各模块支持折叠并在当前浏览器记住状态；
 - API 订阅默认关闭；设置 `API_SUBSCRIPTION_ENABLED=true` 后，可先配置节点及名称模板，再由外部系统通过带唯一 Token 的 URL 一次追加多个域名/IP 地址或完整节点链接；节点只在 API 订阅页维护，但会动态附加到主订阅结果末尾；

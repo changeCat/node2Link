@@ -31,8 +31,8 @@ export function shouldSendSubscriptionNotification(request) {
 	return true;
 }
 
-export async function sendMessage(runtime, subscriptionName, ip, details = {}) {
-	return sendRequestMessage(runtime, `获取订阅 ${subscriptionName}`, ip, details);
+export async function sendMessage(runtime, subscriptionName, ip, details = {}, detailLines = []) {
+	return sendRequestMessage(runtime, `获取订阅 ${subscriptionName}`, ip, details, detailLines);
 }
 
 export async function sendActionMessage(runtime, title, detailLines = [], request) {
