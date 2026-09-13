@@ -47,8 +47,9 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		const sourceBaseURL = access === 'main'
 			? `${url.origin}/s/${encodeURIComponent(runtime.mainSubscriptionId)}`
 			: url.origin + url.pathname;
-		let converterSourceURL = sourceBaseURL + '?base64&source=direct';
-		if (subscriptionFormat !== 'base64' && urls.filter(Boolean).length) converterSourceURL += '|' + urls.filter(Boolean).join('|');
+		// Let our callback normalize ordinary upstream subscriptions before the
+		// converter sees them. Structured subscriptions remain direct converter inputs.
+		let converterSourceURL = sourceBaseURL + '?base64';
 		let requestData = mainData;
 		let appendUA = 'v2rayn';
 		let usedConverter = '';
@@ -70,7 +71,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		};
 
 		const uniqueSubscriptionLinks = [...new Set(urls)].filter(item => item?.trim?.());
-		if (uniqueSubscriptionLinks.length > 0 && subscriptionFormat === 'base64' && !directSource) {
+		if (uniqueSubscriptionLinks.length > 0 && !directSource) {
 			const subscriptionResponses = await timed(options.timings, 'upstream', () => getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader, options));
 			upstreamFailures = subscriptionResponses.failures || 0;
 			requestData += subscriptionResponses[0].join('\n');

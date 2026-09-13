@@ -94,7 +94,7 @@ Root directory: 留空
 
 遇到主订阅编辑冲突时，当前文本和本地草稿会保留。先点击“备份”下载当前编辑，再刷新读取最新内容并合并修改。此检查基于 D1 head 的当前版本，适用于个人多标签页操作；正文仍通过不可变 KV 版本发布。
 
-分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前选择的转换后端处理；默认 Subconverter 可转换为 v2rayN 使用的节点订阅，自建 Sublink Worker 的 `/xray` 仅聚合原始节点或通用 Base64 订阅，因此使用自建服务时应填写提供商的原始节点、通用 Base64 或 Servers-only 链接。v2rayN 获取 Base64 订阅时，项目会为只有 `peer` 的 AnyTLS 节点补充同值 `sni`，并过滤当前 v2rayN 无法解析的 `obfs-local;obfs=tls` Shadowsocks 节点；Clash/Mihomo、Sing-box 和其他客户端的结果保持原样。上游订阅和转换请求均设有 8 秒超时；不可达或限制 Cloudflare 访问的提供商会被跳过，避免拖到客户端连接超时。
+分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前选择的转换后端处理；普通明文与 Base64 上游会先由项目拉取并规范化，再交给格式转换端，避免转换端因来源访问限制或响应缓慢而失败。默认 Subconverter 可转换为 v2rayN 使用的节点订阅，自建 Sublink Worker 的 `/xray` 仅聚合原始节点或通用 Base64 订阅，因此使用自建服务时应填写提供商的原始节点、通用 Base64 或 Servers-only 链接。v2rayN 获取 Base64 订阅时，项目会为只有 `peer` 的 AnyTLS 节点补充同值 `sni`，并过滤当前 v2rayN 无法解析的 `obfs-local;obfs=tls` Shadowsocks 节点；Clash/Mihomo、Sing-box 和其他客户端的结果保持原样。上游订阅和转换请求均设有 8 秒超时；不可达或限制 Cloudflare 访问的提供商会被跳过，避免拖到客户端连接超时。
 
 ### API 订阅调用
 
