@@ -1,12 +1,56 @@
 import { timed } from '../timing.js';
 import { selectSubscriptionFormat } from '../domain/formats.js';
-import { sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
+import { CONVERTER_FETCH_TIMEOUT_MS, sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
 import { ADD, encodeBase64, isV2rayNUserAgent, normalizeV2rayNSubscription, clashFix } from '../domain/nodes.js';
 import { getSUB } from '../adapters/upstream.js';
 import { fetchSublinkSubscription, fetchConvertedSubscription, supportsSublinkTarget } from '../adapters/converters.js';
 import { queueTelegram, sendMessage, shouldSendSubscriptionNotification } from '../adapters/telegram.js';
 import { detectSubscriptionClient, queueSubscriptionRequestLog } from '../storage/request-logs.js';
 import { readGeneratedNodes } from '../storage/generated-nodes.js';
+
+const CUSTOM_CONVERTER_ATTEMPT_TIMEOUT_MS = 12 * 1000;
+
+function formatName(format) {
+	return ({ base64: 'Base64', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX', loon: 'Loon' })[format] || format;
+}
+
+async function fetchConfiguredConversion(runtime, customConverter, target, defaultTarget, sourceURL, init, options) {
+	if (!customConverter) {
+		const result = await fetchConvertedSubscription(runtime.subConverters, defaultTarget, sourceURL, runtime.subConfig, init, options);
+		return { result, notice: result ? '转换服务: 默认' : '转换服务: 默认服务不可用', route: result ? 'default' : 'failed' };
+	}
+
+	if (!supportsSublinkTarget(target)) {
+		const result = await fetchConvertedSubscription(runtime.subConverters, defaultTarget, sourceURL, runtime.subConfig, init, options);
+		const name = formatName(target);
+		return {
+			result,
+			notice: result ? `转换服务: 自建不支持 ${name}，已使用默认` : `转换服务: 自建不支持 ${name}，默认服务也不可用`,
+			route: result ? 'unsupported-default' : 'failed'
+		};
+	}
+
+	const totalTimeoutMs = options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS;
+	const customTimeoutMs = Math.min(totalTimeoutMs, options.customAttemptTimeoutMs || CUSTOM_CONVERTER_ATTEMPT_TIMEOUT_MS);
+	const startedAt = Date.now();
+	const customResult = await fetchSublinkSubscription(customConverter, target, sourceURL, init, {
+		...options,
+		conversionTimeoutMs: customTimeoutMs
+	});
+	if (customResult) return { result: customResult, notice: '转换服务: 自建', route: 'custom' };
+
+	const remainingTimeoutMs = Math.max(1, totalTimeoutMs - (Date.now() - startedAt));
+	const fallbackResult = await fetchConvertedSubscription(runtime.subConverters, defaultTarget, sourceURL, runtime.subConfig, init, {
+		...options,
+		conversionTimeoutMs: remainingTimeoutMs
+	});
+	return {
+		result: fallbackResult,
+		notice: fallbackResult ? '转换服务: 自建不可用，已回退到默认' : '转换服务: 自建不可用，默认服务也不可用',
+		route: fallbackResult ? 'fallback-default' : 'failed'
+	};
+}
+
 export async function serveSubscription(request, env, ctx, runtime, sourceData, access, includeWarp, subscriptionId = '', subscriptionName = '', options = {}) {
 		const startedAt = Date.now();
 		const userAgentHeader = request.headers.get('User-Agent');
@@ -35,12 +79,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		const isSubConverterRequest = directSource || request.headers.get('subconverter-request')
 			|| request.headers.get('subconverter-version')
 			|| userAgent.includes('subconverter');
-		if (!isSubConverterRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request)) {
-			queueTelegram(ctx, sendMessage(runtime, effectiveSubscriptionName, request.headers.get('CF-Connecting-IP'), {
-				userAgent: userAgentHeader || 'Unknown',
-				hostname: url.hostname
-			}));
-		}
+		const shouldNotifySubscription = !isSubConverterRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request);
 
 		const subscriptionFormat = selectSubscriptionFormat(url, userAgentHeader, isSubConverterRequest);
 
@@ -53,6 +92,8 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		let requestData = mainData;
 		let appendUA = 'v2rayn';
 		let usedConverter = '';
+		let converterRoute = '';
+		const converterNotices = [];
 		if (url.searchParams.has('clash')) appendUA = 'clash';
 		else if (url.searchParams.has('singbox')) appendUA = 'singbox';
 		else if (url.searchParams.has('surge')) appendUA = 'surge';
@@ -63,10 +104,17 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		const finish = (body, headers, status = 200) => {
 			const durationMs = Date.now() - startedAt;
 			headers['X-Node2Link-Format'] = subscriptionFormat;
+			if (converterRoute) headers['X-Node2Link-Converter-Route'] = converterRoute;
 			headers['Server-Timing'] = 'subscription;dur=' + durationMs;
 			if (upstreamFailures) headers['X-Node2Link-Upstream-Failures'] = String(upstreamFailures);
+			if (shouldNotifySubscription) {
+				queueTelegram(ctx, sendMessage(runtime, effectiveSubscriptionName, request.headers.get('CF-Connecting-IP'), {
+					userAgent: userAgentHeader || 'Unknown',
+					hostname: url.hostname
+				}, [...new Set(converterNotices)]));
+			}
 			if (!isSubConverterRequest && env?.KV) queueSubscriptionRequestLog(ctx, env, { client: detectSubscriptionClient(userAgentHeader), userAgent: userAgentHeader || 'Unknown', format: subscriptionFormat, access, subscriptionId, status, durationMs, upstreamFailures });
-			console.log(JSON.stringify({ event: 'subscription.complete', format: subscriptionFormat, status, durationMs, upstreamFailures }));
+			console.log(JSON.stringify({ event: 'subscription.complete', format: subscriptionFormat, status, durationMs, upstreamFailures, converterRoute }));
 			return new Response(body, { status, headers });
 		};
 
@@ -78,13 +126,15 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			if (subscriptionResponses[1]) converterSourceURL += '|' + subscriptionResponses[1];
 			if (subscriptionFormat === 'base64' && !isSubConverterRequest && subscriptionResponses[1].includes('://')) {
 				const mixedInit = { signal: request.signal, headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB (https://github.com/cmliu/CF-Workers-SUB)' } };
-				const mixedResult = await timed(options.timings, 'conversion', () => customSublinkConverter
-					? fetchSublinkSubscription(customSublinkConverter, 'base64', subscriptionResponses[1], mixedInit, options)
-					: fetchConvertedSubscription(runtime.subConverters, 'mixed', subscriptionResponses[1], runtime.subConfig, mixedInit, options));
-				if (mixedResult) {
+				const mixedConversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
+					runtime, customSublinkConverter, 'base64', 'mixed', subscriptionResponses[1], mixedInit, options
+				));
+				converterNotices.push(mixedConversion.notice);
+				converterRoute = mixedConversion.route;
+				if (mixedConversion.result) {
 					try {
-						requestData += '\n' + atob(await mixedResult.response.text());
-						usedConverter = mixedResult.converter;
+						requestData += '\n' + atob(await mixedConversion.result.response.text());
+						usedConverter = mixedConversion.result.converter;
 					} catch (error) {
 						upstreamFailures += 1;
 						console.log(JSON.stringify({ event: 'converter.invalid_base64' }));
@@ -126,16 +176,15 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (subscriptionFormat === 'base64') return finish(base64Data, responseHeaders);
 
 		const conversionInit = { signal: request.signal, headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' } };
-		// Sublink has no Loon or QuanX target. Preserve the established behavior:
-		// supported targets use the selected Sublink service, while those two
-		// formats use the configured Subconverter instead of failing immediately.
-		const conversionResult = await timed(options.timings, 'conversion', () => customSublinkConverter && supportsSublinkTarget(subscriptionFormat)
-			? fetchSublinkSubscription(customSublinkConverter, subscriptionFormat, converterSourceURL, conversionInit, options)
-			: fetchConvertedSubscription(runtime.subConverters, subscriptionFormat, converterSourceURL, runtime.subConfig, conversionInit, options));
-		if (!conversionResult) return finish('订阅转换失败，请稍后重试或在管理页检查转换服务配置', responseHeaders, 502);
+		const conversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
+			runtime, customSublinkConverter, subscriptionFormat, subscriptionFormat, converterSourceURL, conversionInit, options
+		));
+		converterNotices.push(conversion.notice);
+		converterRoute = conversion.route;
+		if (!conversion.result) return finish('订阅转换失败，请稍后重试或在管理页检查转换服务配置', responseHeaders, 502);
 
-		responseHeaders['X-Subconverter-Used'] = conversionResult.converter;
-		let convertedContent = await conversionResult.response.text();
+		responseHeaders['X-Subconverter-Used'] = conversion.result.converter;
+		let convertedContent = await conversion.result.response.text();
 		if (subscriptionFormat === 'clash') convertedContent = await clashFix(convertedContent);
 		return finish(convertedContent, responseHeaders);
 	}
