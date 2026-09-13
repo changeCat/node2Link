@@ -126,10 +126,11 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (subscriptionFormat === 'base64') return finish(base64Data, responseHeaders);
 
 		const conversionInit = { signal: request.signal, headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' } };
-		const conversionResult = await timed(options.timings, 'conversion', () => customSublinkConverter
-			? supportsSublinkTarget(subscriptionFormat)
-				? fetchSublinkSubscription(customSublinkConverter, subscriptionFormat, converterSourceURL, conversionInit, options)
-				: null
+		// Sublink has no Loon or QuanX target. Preserve the established behavior:
+		// supported targets use the selected Sublink service, while those two
+		// formats use the configured Subconverter instead of failing immediately.
+		const conversionResult = await timed(options.timings, 'conversion', () => customSublinkConverter && supportsSublinkTarget(subscriptionFormat)
+			? fetchSublinkSubscription(customSublinkConverter, subscriptionFormat, converterSourceURL, conversionInit, options)
 			: fetchConvertedSubscription(runtime.subConverters, subscriptionFormat, converterSourceURL, runtime.subConfig, conversionInit, options));
 		if (!conversionResult) return finish('订阅转换失败，请稍后重试或在管理页检查转换服务配置', responseHeaders, 502);
 
