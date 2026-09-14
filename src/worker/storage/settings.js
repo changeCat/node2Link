@@ -8,7 +8,7 @@ const PUBLIC_VIEW = 'settings:public-presentation';
 export const SETTING_SECTIONS = {
 	display: ['subscriptionName', 'pageTitle', 'browserIconURL'],
 	entry: ['subscriptionToken'],
-	conversion: ['converterMode', 'customConverterURL', 'ruleMode', 'customSubConfigURL'],
+	conversion: ['converterMode', 'customConverterURL', 'customConverterType', 'customConverters', 'activeCustomConverterId', 'ruleMode', 'customSubConfigURL'],
 	clients: ['displayFormats']
 };
 

@@ -1,32 +1,42 @@
 import { timed } from '../timing.js';
+import { inspectLoonConversion } from '../domain/conversion-audit.js';
 import { selectSubscriptionFormat } from '../domain/formats.js';
 import { CONVERTER_FETCH_TIMEOUT_MS, sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
 import { ADD, encodeBase64, isV2rayNUserAgent, normalizeV2rayNSubscription, clashFix } from '../domain/nodes.js';
 import { getSUB } from '../adapters/upstream.js';
-import { fetchCustomSubscription, fetchConvertedSubscription, converterOrigin } from '../adapters/converters.js';
+import { fetchCustomSubscription, fetchConvertedSubscription, converterOrigin, converterTypeLabel } from '../adapters/converters.js';
 import { queueTelegram, sendMessage, shouldSendSubscriptionNotification } from '../adapters/telegram.js';
 import { detectSubscriptionClient, queueSubscriptionRequestLog } from '../storage/request-logs.js';
 import { readGeneratedNodes } from '../storage/generated-nodes.js';
 
 async function fetchConfiguredConversion(runtime, target, sourceURL, init, options) {
-	if (runtime.converterMode !== 'custom') {
-		const result = await fetchConvertedSubscription(runtime.subConverters, target === 'base64' ? 'mixed' : target, sourceURL, runtime.subConfig, init, options);
-		const service = result ? converterOrigin(result.converter) : runtime.subConverters.map(converterOrigin).join('、');
-		return { result, notice: '转换服务: 默认 Subconverter（' + service + '）' + (result ? '' : '\n提示: 默认转换服务不可用'), route: result ? 'default' : 'failed' };
-	}
-
-	const converter = runtime.customConverterURL;
-	const result = converter ? await timed(options.timings, 'conversion_custom', () => fetchCustomSubscription(converter, target, sourceURL, init, {
-		...options,
-		conversionTimeoutMs: options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS,
-		configURL: runtime.subConfig
-	})) : null;
-	return {
-		result,
-		notice: '转换服务: 自建 Subconverter（' + (converterOrigin(converter) || '地址未配置或无效') + '）'
-			+ (result ? '' : '\n提示: 自建转换不可用，已停止更新，未使用默认服务；请检查服务状态、地址及访问密钥'),
-		route: result ? 'custom' : 'failed'
-	};
+ const budget = options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS;
+ const deadline = Date.now() + budget;
+ let failure = null, customNotice = '';
+ const onFailure = value => { failure = value; };
+ if (runtime.converterMode === 'custom') {
+  const customLabel = '自建 ' + converterTypeLabel(runtime.customConverterType) + '（' + (converterOrigin(runtime.customConverterURL) || '地址未配置或无效') + '）';
+  const result = await timed(options.timings, 'conversion_custom', () => fetchCustomSubscription(runtime.customConverterURL, target, sourceURL, init, {
+   ...options, converterType: runtime.customConverterType, configURL: runtime.subConfig, onFailure,
+   conversionTimeoutMs: Math.min(options.customAttemptTimeoutMs || 8000, Math.max(1, Math.floor(budget * 0.4)))
+  }));
+  if (result) return { result, notice: '转换服务: ' + customLabel, route: 'custom' };
+  customNotice = '自定义尝试: ' + customLabel + '\n回退原因: ' + (failure?.reason || '不可用');
+ }
+ if (init.signal?.aborted) return { result: null, notice: customNotice + '\n提示: 请求已取消，未继续回退', route: 'failed', audit: failure?.audit };
+ const customFailure = failure;
+ const remaining = deadline - Date.now();
+ const result = remaining > 0 ? await timed(options.timings, runtime.converterMode === 'custom' ? 'conversion_fallback' : 'conversion_default', () => fetchConvertedSubscription(
+  runtime.subConverters, target === 'base64' ? 'mixed' : target, sourceURL, runtime.subConfig, init,
+  { ...options, conversionTimeoutMs: remaining, onFailure }
+ )) : null;
+ const service = result ? converterOrigin(result.converter) : runtime.subConverters.map(converterOrigin).join('、');
+ return { result, route: result ? runtime.converterMode === 'custom' ? 'fallback' : 'default' : 'failed',
+  audit: result?.audit || failure?.audit || customFailure?.audit,
+  notice: (customNotice ? customNotice + '\n' : '') + '转换服务: 默认 Subconverter（' + service + '）'
+   + (runtime.converterMode === 'custom' ? '\n回退结果: ' + (result ? '已使用默认服务' : '默认服务也不可用，已停止更新') : result ? '' : '\n提示: 默认转换服务不可用')
+   + (!result && failure?.reason ? '\n失败原因: ' + failure.reason : '')
+ };
 }
 
 export async function serveSubscription(request, env, ctx, runtime, sourceData, access, includeWarp, subscriptionId = '', subscriptionName = '', options = {}) {
@@ -53,7 +63,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		urls = await ADD(subscriptionLinks);
 
 		const directSource = url.searchParams.get('source') === 'direct';
-		const isSubConverterRequest = directSource || request.headers.get('subconverter-request')
+		const isSubConverterRequest = directSource || url.searchParams.get('source') === 'normalized' || request.headers.get('subconverter-request')
 			|| request.headers.get('subconverter-version')
 			|| userAgent.includes('subconverter');
 		const shouldNotifySubscription = !isSubConverterRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request);
@@ -65,12 +75,14 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			: url.origin + url.pathname;
 		// Let our callback normalize ordinary upstream subscriptions before the
 		// converter sees them. Structured subscriptions remain direct converter inputs.
-		let converterSourceURL = sourceBaseURL + '?base64';
+		let converterSourceURL = sourceBaseURL + '?base64&source=normalized';
 		let requestData = mainData;
 		let appendUA = 'v2rayn';
 		let usedConverter = '';
 		let converterRoute = '';
 		let conversionFailed = false;
+		let sourceCountComplete = true;
+		let conversionAudit = null;
 		const converterNotices = [];
 		if (url.searchParams.has('clash')) appendUA = 'clash';
 		else if (url.searchParams.has('singbox')) appendUA = 'singbox';
@@ -89,10 +101,18 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 				queueTelegram(ctx, sendMessage(runtime, effectiveSubscriptionName, request.headers.get('CF-Connecting-IP'), {
 					userAgent: userAgentHeader || 'Unknown',
 					hostname: url.hostname
-				}, ['订阅结果: ' + (status >= 400 ? '失败（HTTP ' + status + '）' : upstreamFailures ? '部分来源获取失败' : '成功'), ...(converterNotices.length ? [...new Set(converterNotices)] : ['转换服务: 本地生成（未调用外部转换服务）'])]));
+				}, [
+					'订阅结果: ' + (status >= 400 ? '失败（HTTP ' + status + '）' : upstreamFailures ? '部分来源获取失败' : '成功'),
+					'目标格式: ' + ({ base64: 'Base64', loon: 'Loon', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX' }[subscriptionFormat] || subscriptionFormat),
+					...(converterNotices.length ? [...new Set(converterNotices)] : [
+						'处理方式: 本地合并与编码（目标格式无需外部转换）',
+						'转换服务: 未调用（无需转换）',
+						'转换配置: ' + (runtime.converterMode === 'custom' ? '自建 ' + converterTypeLabel(runtime.customConverterType) + '（' + (converterOrigin(runtime.customConverterURL) || '地址未配置或无效') + '）' : '默认 Subconverter')
+					])
+				]));
 			}
 			if (!isSubConverterRequest && env?.KV) queueSubscriptionRequestLog(ctx, env, { client: detectSubscriptionClient(userAgentHeader), userAgent: userAgentHeader || 'Unknown', format: subscriptionFormat, access, subscriptionId, status, durationMs, upstreamFailures });
-			console.log(JSON.stringify({ event: 'subscription.complete', format: subscriptionFormat, status, durationMs, upstreamFailures, converterRoute }));
+			console.log(JSON.stringify({ event: 'subscription.complete', format: subscriptionFormat, status, durationMs, upstreamFailures, converterRoute, ...(conversionAudit ? { conversionCheck: conversionAudit.check, inputNodes: conversionAudit.inputCount, outputNodes: conversionAudit.outputCount, missingProtocols: conversionAudit.missing } : {}) }));
 			return new Response(body, { status, headers });
 		};
 
@@ -101,8 +121,8 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			const subscriptionResponses = await timed(options.timings, 'upstream', () => getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader, options));
 			upstreamFailures = subscriptionResponses.failures || 0;
 			requestData += subscriptionResponses[0].join('\n');
-			if (subscriptionResponses[1]) converterSourceURL += '|' + subscriptionResponses[1];
-			if (subscriptionFormat === 'base64' && !isSubConverterRequest && subscriptionResponses[1].includes('://')) {
+			if (subscriptionResponses[1]) { converterSourceURL += '|' + subscriptionResponses[1]; sourceCountComplete = false; }
+			if (subscriptionFormat === 'base64' && !isSubConverterRequest && !upstreamFailures && subscriptionResponses[1].includes('://')) {
 				const mixedInit = { signal: request.signal, headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB (https://github.com/cmliu/CF-Workers-SUB)' } };
 				const mixedConversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
 					runtime, 'base64', subscriptionResponses[1], mixedInit, options
@@ -130,7 +150,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			if (generatedNodes.length) requestData += '\n' + generatedNodes.map(node => node.content).join('\n');
 		}
 
-		if (includeWarp && env.WARP) converterSourceURL += '|' + (await ADD(env.WARP)).join('|');
+		if (includeWarp && env.WARP) { converterSourceURL += '|' + (await ADD(env.WARP)).join('|'); sourceCountComplete = false; }
 		let result = [...new Set(requestData.split('\n'))].join('\n');
 		let compatibility = null;
 		if (subscriptionFormat === 'base64' && isV2rayNUserAgent(userAgentHeader)) {
@@ -154,19 +174,44 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (compatibility?.filteredSsObfsTls) responseHeaders['X-Node2Link-Filtered'] = `ss-obfs-tls=${compatibility.filteredSsObfsTls}`;
 		if (compatibility?.normalizedAnytlsSni) responseHeaders['X-Node2Link-Normalized'] = `anytls-sni=${compatibility.normalizedAnytlsSni}`;
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = converterOrigin(usedConverter);
+		if (upstreamFailures && !conversionFailed) {
+   converterNotices.push('处理方式: 来源读取失败，已停止更新，未返回不完整节点', '转换服务: 未调用（来源读取失败）');
+   return finish('订阅转换失败：部分来源读取失败，请稍后重试', responseHeaders, 502);
+  }
 		if (conversionFailed) return finish('订阅转换失败，请在管理页检查转换服务配置', responseHeaders, 502);
 		if (subscriptionFormat === 'base64') return finish(base64Data, responseHeaders);
 
 		const conversionInit = { signal: request.signal, headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' } };
 		const conversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
-			runtime, subscriptionFormat, converterSourceURL, conversionInit, options
+			runtime, subscriptionFormat, converterSourceURL, conversionInit, { ...options,
+    validateContent: subscriptionFormat === 'loon' ? content => inspectLoonConversion(requestData, content, { completeSource: sourceCountComplete && !upstreamFailures }) : undefined
+   }
 		));
 		converterNotices.push(conversion.notice);
 		converterRoute = conversion.route;
-		if (!conversion.result) return finish('订阅转换失败，请稍后重试或在管理页检查转换服务配置', responseHeaders, 502);
+		if (!conversion.result) {
+   conversionAudit = conversion.audit;
+   if (conversionAudit) {
+    responseHeaders['X-Node2Link-Conversion-Check'] = conversionAudit.check;
+    responseHeaders['X-Node2Link-Input-Nodes'] = String(conversionAudit.inputCount);
+    responseHeaders['X-Node2Link-Output-Nodes'] = String(conversionAudit.outputCount);
+    converterNotices.push('节点数量: 已读取 ' + conversionAudit.inputCount + '，转换输出 ' + conversionAudit.outputCount);
+   }
+   const missing = conversionAudit?.missing.map(item => item.protocol.toUpperCase() + ' ' + item.count + ' 个').join('、');
+   return finish('订阅转换失败：' + (missing ? '转换结果缺少 ' + missing : '转换服务不可用') + '，请检查转换配置', responseHeaders, 502);
+  }
 
 		responseHeaders['X-Subconverter-Used'] = converterOrigin(conversion.result.converter);
 		let convertedContent = await conversion.result.response.text();
+		if (subscriptionFormat === 'loon') {
+			conversionAudit = conversion.result.audit;
+			responseHeaders['X-Node2Link-Conversion-Check'] = conversionAudit.check;
+			responseHeaders['X-Node2Link-Input-Nodes'] = String(conversionAudit.inputCount);
+			responseHeaders['X-Node2Link-Output-Nodes'] = String(conversionAudit.outputCount);
+			converterNotices.push('节点数量: 已读取 ' + conversionAudit.inputCount + '，转换输出 ' + conversionAudit.outputCount + (conversionAudit.hasRemoteNodes ? '（另含远程节点，无法核对总数）' : sourceCountComplete && !upstreamFailures ? '' : '（来源总数未完全确定）'));
+			if (conversionAudit.check === 'unverified') converterNotices.push('提示: 节点数量未完全核验，请在客户端确认节点完整性');
+		}
+
 		if (subscriptionFormat === 'clash') convertedContent = await clashFix(convertedContent);
 		return finish(convertedContent, responseHeaders);
 	}

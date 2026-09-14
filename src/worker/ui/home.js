@@ -1,3 +1,4 @@
+import { converterTypeLabel } from '../adapters/converters.js';
 import { DEFAULT_DISPLAY_FORMATS, SUBSCRIPTION_FORMAT_CATALOG, SUPPORTED_NODE_PROTOCOLS } from '../config.js';
 import { escapeHTML } from '../http.js';
 import { assetURL, basePageStyles, pageScript } from './assets.js';
@@ -22,11 +23,11 @@ export function renderMainPage(request, runtime, record) {
 			`<span class="converter-entry"><b>${index === 0 ? "主" : "备" + index}</b><code title="${escapeHTML(converter)}">${escapeHTML(converter)}</code></span>`
 		).join("");
 		const activeConverterHTML = runtime.converterMode === 'custom'
-			? `<span class="converter-entry"><b>自建</b><code title="${escapeHTML(runtime.customConverterURL)}">${escapeHTML(runtime.customConverterURL)}</code></span>`
+			? `<span class="converter-entry"><b>${escapeHTML(converterTypeLabel(runtime.customConverterType))}</b><code title="${escapeHTML(runtime.customConverterURL)}">${escapeHTML(runtime.customConverterURL)}</code></span>`
 			: converterListHTML;
 		const converterWarningHTML = runtime.converterMode !== 'custom'
-			? '<div class="converter-warning" role="note"><strong>注意：当前未启用自建转换</strong><p>需要转换时将使用默认服务，该服务可读取订阅来源和节点信息。</p><a href="/settings">配置自建 Subconverter</a></div>'
-			: !runtime.customConverterURL ? '<div class="converter-warning" role="note"><strong>自建转换地址未配置或无效</strong><p>需要转换时将失败，不会使用默认服务。</p><a href="/settings">检查转换配置</a></div>' : '';
+			? '<div class="converter-warning" role="note"><strong>注意：当前未启用自建转换</strong><p>需要转换时将使用默认服务，该服务可读取订阅来源和节点信息。</p><a href="/settings">配置自定义转换</a></div>'
+			: !runtime.customConverterURL ? '<div class="converter-warning" role="note"><strong>自建转换地址未配置或无效</strong><p>需要转换时将回退默认服务。</p><a href="/settings">检查转换配置</a></div>' : '<div class="converter-warning" role="note"><strong>自定义不可用时回退默认</strong><p>默认服务可读取订阅来源和节点信息；回退原因与实际服务会写入通知。</p></div>';
 		const formats = runtime.displayFormats
 			.map((key) => SUBSCRIPTION_FORMAT_CATALOG.find((item) => item.key === key))
 			.filter(Boolean);
@@ -271,7 +272,7 @@ export function renderMainPage(request, runtime, record) {
 					<div class="workspace-grid">
 						<aside class="workspace-config" aria-label="当前转换信息">
 							<section class="section" aria-labelledby="converter-info-title">
-								<div class="section-heading"><div><h2 id="converter-info-title">转换信息</h2><p>配置请前往设置页面修改</p></div></div>
+								<div class="section-heading"><div><h2 id="converter-info-title">转换信息</h2><p>无需格式转换时本地生成，需要转换时使用以下服务</p></div></div>
 								${converterWarningHTML}
 								<div class="settings-grid">
 									<div class="setting"><span class="setting-label"><i data-lucide="server-cog"></i>当前转换后端</span><div class="converter-list">${activeConverterHTML}</div></div>
