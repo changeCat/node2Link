@@ -45,6 +45,27 @@ export function mainNodeName(content, fallback = '未命名节点') {
  return hash >= 0 && content.slice(hash + 1) ? decodeName(content.slice(hash + 1)) : fallback;
 }
 
+// Summaries never expose credentials or query parameters. Malformed links remain editable.
+export function mainNodeSummary(content) {
+ const protocol = content.split(':')[0].toUpperCase();
+ try {
+  let body = content.slice(content.indexOf('://') + 3).split('#')[0];
+  if (protocol === 'VMESS' && !body.includes('@')) {
+   const data = JSON.parse(decode64(body));
+   return { protocol, address: `${data.add.includes(':') ? `[${data.add}]` : data.add}:${data.port}` };
+  }
+  if (protocol === 'SSR') {
+   const match = decode64(body).match(/^(.*?):(\d+):/);
+   if (!match) throw new Error('Invalid SSR');
+   return { protocol, address: `${match[1]}:${match[2]}` };
+  }
+  if (protocol === 'SS' && !body.includes('@')) body = decode64(body.split('?')[0].replace(/\/$/, ''));
+  const authority = body.split(/[/?]/)[0].split('@').pop();
+  if (!authority) throw new Error('Missing address');
+  return { protocol, address: authority };
+ } catch { return { protocol, address: '地址无法解析，请查看完整链接' }; }
+}
+
 export function normalizeMainAddress(value) {
  let address = String(value || '').trim().toLowerCase().replace(/\.$/, '');
  if (address.startsWith('[') && address.endsWith(']')) address = address.slice(1, -1);
@@ -190,7 +211,7 @@ export function compileMainConfig(input) {
   add(original.content, isMainNode(original.content) ? { ...base, id: `main-original-${original.id}`, kind: 'original', name } : null);
   for (const endpoint of endpointsByOriginal.get(original.id) || []) {
    const nameSuffix = endpoint.label || `${endpoint.address}:${endpoint.port}`;
-   const extendedName = `${name} · ${nameSuffix}`;
+   const extendedName = `${name}-${nameSuffix}`;
    try {
     add(extendMainNode(original.content, endpoint, extendedName), { ...base, id: `main-extension-${original.id}-${endpoint.id}`, kind: 'extension', endpointId: endpoint.id, name: extendedName });
    } catch (error) { fail(`${name} → ${nameSuffix}：${error.message}`); }

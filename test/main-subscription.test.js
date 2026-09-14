@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compileMainConfig, legacyMainConfig, extendMainNode, mainNodeName, parseMainEndpointLine } from '../src/shared/main-subscription.js';
+import { compileMainConfig, legacyMainConfig, extendMainNode, mainNodeName, mainNodeSummary, parseMainEndpointLine } from '../src/shared/main-subscription.js';
 import { readMainRecord, readMainBackup, saveMainRecord, MAIN_HEAD_KEY } from '../src/worker/storage/main.js';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
 import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
@@ -13,6 +13,16 @@ const other = 'hysteria2://secret@origin2.example.com:443?sni=origin2.example.co
 const endpoint = { id: 'endpoint-1', address: 'cf.example.com', port: 8443, label: '优选 A', enabled: true, originalIds: ['original-1'] };
 const fixtureConfig = () => ({ version: 2, originals: [{ id: 'original-1', content: raw }, { id: 'original-2', content: other }], endpoints: [structuredClone(endpoint)] });
 
+test('compact summaries decode supported formats and omit credentials and query parameters', () => {
+ assert.deepEqual(mainNodeSummary(raw), { protocol: 'VLESS', address: 'origin.example.com:443' });
+ assert.deepEqual(mainNodeSummary('trojan://secret@[2001:db8::1]:8443?sni=private#Name'), { protocol: 'TROJAN', address: '[2001:db8::1]:8443' });
+ assert.deepEqual(mainNodeSummary('vmess://' + btoa(JSON.stringify({ add: 'host.example.com', port: 443, id: 'secret' }))), { protocol: 'VMESS', address: 'host.example.com:443' });
+ assert.deepEqual(mainNodeSummary('ss://' + btoa('aes-256-gcm:secret@ss.example.com:443')), { protocol: 'SS', address: 'ss.example.com:443' });
+ assert.deepEqual(mainNodeSummary('ssr://' + btoa('ssr.example.com:8443:origin:aes-256-cfb:plain:c2VjcmV0/?remarks=TmFtZQ')), { protocol: 'SSR', address: 'ssr.example.com:8443' });
+ assert.deepEqual(mainNodeSummary('https://sub.example.com/private-token?secret=1'), { protocol: 'HTTPS', address: 'sub.example.com' });
+ assert.equal(mainNodeSummary('vmess://invalid').address, '地址无法解析，请查看完整链接');
+});
+
 test('main compilation preserves originals, credentials and query bytes and expands only selected pairs', () => {
  const { nodes, content } = compileMainConfig(fixtureConfig());
  assert.equal(nodes.length, 3);
@@ -22,7 +32,7 @@ test('main compilation preserves originals, credentials and query bytes and expa
  const extended = nodes[1].content;
  assert.equal(extended.split('?')[1].split('#')[0], raw.split('?')[1].split('#')[0]);
  assert.match(extended, /^vless:\/\/uuid@cf\.example\.com:8443\?/);
- assert.equal(mainNodeName(extended), 'HongKong · 优选 A');
+ assert.equal(mainNodeName(extended), 'HongKong-优选 A');
  assert.equal(content.split('\n').length, 3);
 });
 

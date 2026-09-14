@@ -1,3 +1,4 @@
+import { setOriginals } from './main-helpers.js';
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 const first = 'vless://uuid@origin.example.com:443?security=tls&type=ws&host=origin.example.com&sni=origin.example.com&path=%2Fws#Main-HK';
@@ -27,10 +28,17 @@ async function save(page) {
  await page.locator('#saveButton').click();
  await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
 }
-async function seed(page) { await page.locator('#content').fill(first + '\n' + second); await save(page); }
+async function seed(page) { await setOriginals(page, first + '\n' + second); await save(page); }
 async function addEndpoints(page, addresses = 'cf.example.com\n203.0.113.10:8443') {
  await page.locator('#addEndpoint').click();
- await page.locator('#endpointAddresses').fill(addresses);
+ for (const [i, value] of addresses.split('\n').entries()) {
+  if (i) await page.locator('#addEndpointRow').click();
+  const [address, port = '443'] = value.split(':');
+  const row = page.locator('.endpoint-input-row').nth(i);
+  await row.locator('[data-address]').fill(address);
+  await row.locator('[data-port]').fill(port);
+  await row.locator('[data-label]').fill('优选 ' + (i + 1));
+ }
  await page.locator('#selectTargets').click();
  await page.locator('#endpointForm button[type="submit"]').click();
  await expect(page.locator('#endpointDialog')).not.toBeVisible();
@@ -96,12 +104,14 @@ test('complete JSON backup, undo, deletion and invalid drafts preserve main asso
  await expect(page.locator('#duplicateCount')).toHaveText('1');
  await page.locator('#undoButton').click();
  await expect(page.locator('#duplicateCount')).toHaveText('2');
- await page.locator('#content').fill(first.replace('uuid@', 'bulk-new@') + '\n' + second);
- await expect(page.locator('#validationIssues')).toContainText('原始节点已不存在');
+ await setOriginals(page, first.replace('uuid@', 'bulk-new@') + '\n' + second);
+ await expect(page.locator('#validationIssues')).toHaveText('');
+ await expect(page.locator('#duplicateCount')).toHaveText('1');
  await page.reload();
  await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
  await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
- await expect(page.locator('#validationIssues')).toContainText('原始节点已不存在');
+ await expect(page.locator('#validationIssues')).toHaveText('');
+ await expect(page.locator('#duplicateCount')).toHaveText('1');
  await expect(page.locator('#content')).toHaveValue(/bulk-new@/);
  await page.locator('#restoreInput').setInputFiles({ name: backup.suggestedFilename(), mimeType: 'application/json', buffer: await readFile(path) });
  await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
@@ -111,10 +121,10 @@ test('complete JSON backup, undo, deletion and invalid drafts preserve main asso
 test('endpoint validation retains input, and failed saves keep the current subscription', async ({ page }) => {
  await seed(page);
  await page.locator('#addEndpoint').click();
- await page.locator('#endpointAddresses').fill('cf.example.com');
+ await page.locator('#endpointRows [data-address]').fill('cf.example.com');
  await page.locator('#endpointForm button[type="submit"]').click();
  await expect(page.locator('#endpointError')).toContainText('至少勾选');
- await expect(page.locator('#endpointAddresses')).toHaveValue('cf.example.com');
+ await expect(page.locator('#endpointRows [data-address]')).toHaveValue('cf.example.com');
  await page.locator('#endpointTargets input').first().check();
  await page.locator('#endpointForm button[type="submit"]').click();
  await page.route('http://127.0.0.1:8790/', route => route.request().method() === 'POST' ? route.fulfill({ status: 503, json: { message: '模拟保存失败' } }) : route.continue());
@@ -125,4 +135,47 @@ test('endpoint validation retains input, and failed saves keep the current subsc
  await page.unroute('http://127.0.0.1:8790/');
  await save(page);
  expect(await subscription(page)).toHaveLength(3);
+});
+
+test('compact cards, append, independent endpoints, exports and replacement cleanup', async ({ page }) => {
+ await setOriginals(page, first, 'append');
+ await setOriginals(page, second, 'append');
+ await expect(page.locator('#content')).toBeHidden();
+ await expect(page.locator('#originalList .main-node-row')).toHaveCount(2);
+ await expect(page.locator('#originalList')).not.toContainText('uuid');
+ await page.locator('[data-view-original]').first().click();
+ await expect(page.locator('#nodeViewValue')).toHaveValue(first);
+ await page.locator('#closeNodeView').click();
+ await addEndpoints(page);
+ await page.locator('[data-edit-original]').first().click();
+ const updated = first.replace('uuid@', 'reset-uuid@').replace('#Main-HK', '#Renamed').replace('security=tls', 'security=none');
+ await page.locator('#originalValue').fill(updated);
+ await page.locator('#originalForm button[type="submit"]').click();
+ await expect(page.locator('#duplicateCount')).toHaveText('4');
+ await expect(page.locator('#mainPreview')).toContainText('Renamed-优选 1');
+ await save(page);
+ const output = await subscription(page);
+ expect(output.filter(line => line.includes('reset-uuid@'))).toHaveLength(3);
+ expect(output.some(line => line.includes('@cf.example.com:443') && decodeURIComponent(line).endsWith('-优选 1'))).toBe(true);
+ expect(output.some(line => line.includes('@203.0.113.10:8443') && decodeURIComponent(line).endsWith('-优选 2'))).toBe(true);
+ await page.locator('#previewSearch').fill('no matches');
+ for (const [button, kind, count] of [['exportOriginals', 'originals', 2], ['exportExtensions', 'extensions', 4], ['exportMain', 'all', 6]]) {
+  const pending = page.waitForEvent('download');
+  await page.locator('#' + button).click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toContain(kind);
+  const lines = (await readFile(await download.path(), 'utf8')).split('\n');
+  expect(lines).toHaveLength(count);
+  if (kind === 'originals') expect(lines).toEqual([updated, second]);
+  if (kind === 'extensions') expect(lines.every(line => ![updated, second].includes(line))).toBe(true);
+ }
+ await setOriginals(page, 'vless://new@new.example.com:443#New');
+ await expect(page.locator('#duplicateCount')).toHaveText('0');
+ await expect(page.locator('#endpointList .main-badge')).toHaveText(['停用', '停用']);
+ await page.locator('#undoButton').click();
+ await expect(page.locator('#duplicateCount')).toHaveText('4');
+ const converter = await page.locator('.workspace-config').boundingBox();
+ const subscriptions = await page.locator('#owner-title').boundingBox();
+ expect(converter.y + converter.height).toBeLessThan(subscriptions.y);
+ expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
