@@ -44,9 +44,6 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 	const customConverters = readCustomConverterProfiles(persistedSettings);
  const activeCustomConverterId = Array.isArray(persistedSettings.customConverters) ? String(persistedSettings.activeCustomConverterId || '') : (customConverters[0]?.id || '');
  const activeConverter = customConverters.find(item => item.id === activeCustomConverterId);
-	const defaultSubConfig = normalizeHTTPURL(env.SUBCONFIG) || DEFAULT_SUB_CONFIG;
-	const persistedCustomSubConfigURL = normalizeHTTPURL(persistedSettings.customSubConfigURL);
-	const ruleMode = persistedSettings.ruleMode === 'custom' && persistedCustomSubConfigURL ? 'custom' : 'default';
 	const storedMainId = isValidShareId(persistedSettings.mainSubscriptionId) ? persistedSettings.mainSubscriptionId : '';
 	const configuredMainId = isValidShareId(env.SUBSCRIPTION_ID) ? env.SUBSCRIPTION_ID : '';
 	const mainSubscriptionId = storedMainId
@@ -60,10 +57,7 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 		FileName: sanitizeSubscriptionName(persistedSettings.subscriptionName || env.SUBNAME || DEFAULT_FILE_NAME),
 		pageTitle: sanitizePageTitle(persistedSettings.pageTitle || DEFAULT_PAGE_TITLE),
 		SUBUpdateTime: Number.isFinite(updateTime) && updateTime > 0 ? updateTime : DEFAULT_SUB_UPDATE_TIME,
-		subConfig: ruleMode === 'custom' ? persistedCustomSubConfigURL : defaultSubConfig,
-		defaultSubConfig,
-		ruleMode,
-		customSubConfigURL: persistedCustomSubConfigURL,
+		subConfig: DEFAULT_SUB_CONFIG,
 		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER),
 		converterMode: persistedSettings.converterMode === 'custom' ? 'custom' : 'default',
 		customConverters, activeCustomConverterId,

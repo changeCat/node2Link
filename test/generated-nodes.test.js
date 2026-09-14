@@ -253,13 +253,13 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(settingsHTML, /当前使用的转换后端/);
 	assert.match(settingsHTML, /id="activeConverterMode"/);
 	assert.match(settingsHTML, /id="activeConverterValue"/);
-	assert.match(settingsHTML, /当前使用的规则配置/);
-	assert.match(settingsHTML, /id="activeRuleMode"/);
-	assert.match(settingsHTML, /id="activeRuleValue"/);
+	assert.doesNotMatch(settingsHTML, /当前使用的规则配置/);
+	assert.doesNotMatch(settingsHTML, /id="activeRuleMode"/);
+	assert.doesNotMatch(settingsHTML, /id="activeRuleValue"/);
 	assert.match(settingsHTML, /defaultConverterURLs/);
-	assert.match(settingsHTML, /defaultSubConfig/);
+	assert.doesNotMatch(settingsHTML, /defaultSubConfig/);
 	assert.match(settingsHTML, /customConverterList/);
-	assert.match(settingsHTML, /ruleURLInput\.addEventListener\('input',\s*syncModes\)/);
+	assert.doesNotMatch(settingsHTML, /customSubConfigURL|ruleMode/);
 	assert.doesNotMatch(settingsHTML, /当前默认转换后端|当前默认规则配置|默认服务后端（仅默认模式使用）/);
 	assert.doesNotMatch(settingsHTML, /客户端展示|clientsForm|clientList|clientSelect|displayFormats|formatCatalog/);
 	assert.doesNotMatch(settingsHTML, /请求记录|loggingForm|requestLog/);

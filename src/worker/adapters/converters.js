@@ -36,7 +36,6 @@ export function createNoStoreFetchInit(init = {}) {
 }
 
 export const converterTypeLabel = type => type === 'sublink' ? 'Sublink Worker' : 'Subconverter';
-export function supportsSublinkTarget(target) { return ['base64', 'clash', 'singbox', 'surge'].includes(target); }
 export function createSublinkURL(converter, target, sourceURL) {
  const config = String(sourceURL || '').split('|').map(value => value.trim()).filter(Boolean).join('\n');
  return converter + '/' + (target === 'base64' ? 'xray' : target) + '?' + new URLSearchParams({ config });
@@ -55,7 +54,6 @@ export async function fetchCustomSubscription(converter, target, sourceURL, init
  const startedAt = Date.now();
  const fail = (reason, audit) => { options.onFailure?.({ reason, audit }); return null; };
  const type = options.converterType || 'subconverter';
- if (type === 'sublink' && !supportsSublinkTarget(target)) return fail('不支持目标格式');
  if (!converter) return fail('地址未配置或无效');
  if (init.signal?.aborted) return fail('请求已取消');
  try {

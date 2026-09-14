@@ -32,7 +32,7 @@ Root directory: 留空
 - `SESSION_SECRET`
 - `TOKEN`、`SUBSCRIPTION_ID`
 - `LINK`、`LINKSUB`
-- `SUBNAME`、`SUBAPI`、`SUBCONFIG`、`SUBUPTIME`
+- `SUBNAME`、`SUBAPI`、`SUBUPTIME`
 - `API_SUBSCRIPTION_ENABLED`
 - `TGTOKEN`、`TGID`
 - `WARP`
@@ -115,11 +115,11 @@ npm run test:e2e
 
 ### 自定义转换与默认回退
 
-设置 → 转换配置中选择“自定义服务”，添加名称、类型和基础地址，再单选启用其中一条并保存。支持 Sublink Worker 与 Subconverter，可保存多条但只有一条生效；该项失败后只回退默认，不尝试其他未启用的自定义项。旧的单地址 Subconverter 配置会保留地址和访问密钥路径。
+设置 → 转换配置中选择“自定义服务”，添加名称、类型和基础地址，再单选启用其中一条。添加、编辑、启用、模式切换和删除直接保存，无需二次点击保存。保存失败时保留输入，列表和生效项保持原值；删除最后一条后自动使用默认。支持 Sublink Worker 与 Subconverter，可保存多条但只有一条生效；该项失败后只回退默认，不尝试其他未启用的自定义项。旧的单地址 Subconverter 配置会保留地址和访问密钥路径。
 
 现有 VPS 可以继续使用 `tindy2013/subconverter`，不用更换镜像。已采用校验网关的部署可保留 8100 端口、域名与访问密钥，后端不要额外映射宿主机端口。项目填带密钥路径的基础地址，不附加 `/sub` 或查询参数。
 
-官方原版 a0d4eab 的 [协议模型](https://github.com/tindy2013/subconverter/blob/a0d4eab/src/parser/config/proxy.h) 不包含 VLESS。向 Loon 转换时，项目会拒绝已知节点丢失的结果并回退默认。Sublink Worker 使用对应类型接口；其不支持的 Loon / QuanX 会直接回退默认，省去无效请求。Sublink 使用自身规则，设置页 INI 规则用于 Subconverter 和默认回退。
+官方原版 a0d4eab 的 [协议模型](https://github.com/tindy2013/subconverter/blob/a0d4eab/src/parser/config/proxy.h) 不包含 VLESS。向 Loon 转换时，项目会拒绝已知节点丢失的结果并回退默认。Sublink Worker 会实际尝试目标接口（包括 /loon、/quanx），不可用或返回无效内容才回退。后续服务沿用这些接口新增支持时可直接使用。Sublink 使用自身规则；Subconverter 与默认回退固定使用代码中的内置规则，不再允许设置自定义规则，旧规则配置和 SUBCONFIG 环境变量不再生效。
 
 `/version` 成功只能证明服务能响应。请实际更新订阅，在通知中核对目标格式、实际转换服务、回退原因，以及 Loon 输入和输出节点数量，再检查节点连接。默认回退也会校验内容；全部转换失败或仍丢失已知节点时返回 502，避免成功更新为残缺节点。来源含远程结构化配置或输出 Remote Proxy 时，通知会说明数量未完全核验。
 
