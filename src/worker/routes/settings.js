@@ -3,7 +3,7 @@ import { saveSettingsSections } from '../storage/settings.js';
 import { StorageError } from '../storage/kv.js';
 import { readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
 import { normalizeCustomConverter, readCustomConverterProfiles } from '../adapters/converters.js';
-import { sanitizeSubscriptionName, sanitizePageTitle, normalizeBrowserIconURL, sanitizeSubscriptionToken, normalizeHTTPURL, normalizeDisplayFormats, DEFAULT_FILE_NAME, DEFAULT_PAGE_TITLE, DEFAULT_DISPLAY_FORMATS } from '../config.js';
+import { sanitizeSubscriptionName, sanitizePageTitle, normalizeBrowserIconURL, sanitizeSubscriptionToken, normalizeDisplayFormats, DEFAULT_FILE_NAME, DEFAULT_PAGE_TITLE, DEFAULT_DISPLAY_FORMATS } from '../config.js';
 
 export async function saveSettings(request, env, currentSettings) {
 	if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
@@ -14,6 +14,9 @@ export async function saveSettings(request, env, currentSettings) {
 			? 'all' : allowedSections.includes(payload.section) ? payload.section : '';
 		if (!section) return jsonResponse({ ok: false, message: '设置分区不存在' }, 400);
 		const settings = { ...currentSettings };
+		delete settings.ruleMode;
+		delete settings.customSubConfigURL;
+		if (Object.hasOwn(payload, 'ruleMode') || Object.hasOwn(payload, 'customSubConfigURL')) return jsonResponse({ ok: false, message: '规则固定使用内置默认，不支持自定义' }, 400);
 
 		if (section === 'display' || section === 'all') {
 			settings.subscriptionName = sanitizeSubscriptionName(payload.subscriptionName ?? currentSettings.subscriptionName ?? env.SUBNAME ?? DEFAULT_FILE_NAME);
@@ -57,12 +60,7 @@ export async function saveSettings(request, env, currentSettings) {
    if (settings.activeCustomConverterId && !active) throw new Error('请选择存在的自定义转换配置');
    settings.customConverterURL = active?.url || '';
    settings.customConverterType = active?.type || 'subconverter';
-			const customSubConfigInput = String(payload.customSubConfigURL ?? currentSettings.customSubConfigURL ?? '').trim();
-			settings.customSubConfigURL = normalizeHTTPURL(customSubConfigInput);
-			settings.ruleMode = payload.ruleMode === 'custom' ? 'custom' : 'default';
 			if (settings.converterMode === 'custom' && !settings.customConverterURL) return jsonResponse({ ok: false, message: '请输入有效的自建转换服务地址' }, 400);
-			if (settings.ruleMode === 'custom' && !settings.customSubConfigURL) return jsonResponse({ ok: false, message: '请输入有效的自建规则配置地址（HTTP 或 HTTPS）' }, 400);
-			if (customSubConfigInput && !settings.customSubConfigURL) return jsonResponse({ ok: false, message: '自建规则配置地址无效，请使用 HTTP 或 HTTPS 地址' }, 400);
 		}
 
 		if (section === 'clients' || section === 'all') {

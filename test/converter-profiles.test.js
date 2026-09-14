@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRuntimeConfig } from '../src/worker/config.js';
+import { createRuntimeConfig, DEFAULT_SUB_CONFIG } from '../src/worker/config.js';
 import { fetchCustomSubscription } from '../src/worker/adapters/converters.js';
 import { serveSubscription } from '../src/worker/services/subscription.js';
 import { saveSettings } from '../src/worker/routes/settings.js';
@@ -90,14 +90,35 @@ test('only the active profile is attempted and failure goes straight to default'
  }
 });
 
-test('unsupported Sublink targets skip network attempts and immediately use defaults', async () => {
+test('Sublink Loon and QuanX support is determined by actual responses, including after an upgrade', async () => {
  for (const target of ['loon', 'quanx']) {
-  const calls = [];
-  const response = await serve('worker', target, async input => { calls.push(new URL(input).hostname); return new Response(outputs[target]); });
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'fallback');
-  assert.deepEqual(calls, ['subapi.cmliussss.net']);
+  for (const customOutput of [null, '<html>missing endpoint</html>', outputs[target]]) {
+   const calls = [];
+   const response = await serve('worker', target, async input => {
+    const url = new URL(input); calls.push(url.hostname);
+    if (url.hostname === 'worker.example.com') {
+     assert.equal(url.pathname, '/private-key/' + target);
+     assert.match(url.searchParams.get('config'), /source=normalized/);
+     return customOutput === null ? new Response('missing', { status: 404 }) : new Response(customOutput);
+    }
+    return new Response(outputs[target]);
+   });
+   const supported = customOutput === outputs[target];
+   assert.equal(response.status, 200);
+   assert.equal(response.headers.get('X-Node2Link-Converter-Route'), supported ? 'custom' : 'fallback');
+   assert.deepEqual(calls, supported ? ['worker.example.com'] : ['worker.example.com', 'subapi.cmliussss.net']);
+  }
  }
+});
+
+test('rule configuration is fixed in code and cannot be overridden through old settings or the API', async () => {
+ const runtime = await createRuntimeConfig({ SUBCONFIG: 'https://environment.example.com/rules.ini' }, { ruleMode: 'custom', customSubConfigURL: 'https://old.example.com/rules.ini' });
+ assert.equal(runtime.subConfig, DEFAULT_SUB_CONFIG);
+ assert.equal('ruleMode' in runtime, false);
+ const env = withStorageBindings({ KV: new MemoryKV(), DB: new MemoryD1() });
+ const response = await saveSettings(settingsRequest({ customConverters: profiles, activeCustomConverterId: 'vps', ruleMode: 'custom', customSubConfigURL: 'https://new.example.com/rules.ini' }), env, {});
+ assert.equal(response.status, 400);
+ assert.match(await response.text(), /不支持自定义/);
 });
 
 test('normalized callbacks cannot recursively convert structured sources with a Sublink user agent', async () => {
