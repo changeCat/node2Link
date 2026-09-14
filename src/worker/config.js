@@ -1,6 +1,6 @@
 import { isValidShareId } from './storage/shares.js';
 import { sha256Base64Url, adminPassword } from './auth.js';
-import { parseSubConverters, normalizeCustomConverter } from './adapters/converters.js';
+import { parseSubConverters, readCustomConverterProfiles } from './adapters/converters.js';
 
 export const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
 export const DEFAULT_PAGE_TITLE = DEFAULT_FILE_NAME;
@@ -41,7 +41,9 @@ export function isAPISubscriptionEnabled(env) {
 
 export async function createRuntimeConfig(env, persistedSettings = {}) {
 	const updateTime = Number(env.SUBUPTIME);
-	const persistedCustomConverterURL = normalizeCustomConverter(persistedSettings.customConverterURL);
+	const customConverters = readCustomConverterProfiles(persistedSettings);
+ const activeCustomConverterId = Array.isArray(persistedSettings.customConverters) ? String(persistedSettings.activeCustomConverterId || '') : (customConverters[0]?.id || '');
+ const activeConverter = customConverters.find(item => item.id === activeCustomConverterId);
 	const defaultSubConfig = normalizeHTTPURL(env.SUBCONFIG) || DEFAULT_SUB_CONFIG;
 	const persistedCustomSubConfigURL = normalizeHTTPURL(persistedSettings.customSubConfigURL);
 	const ruleMode = persistedSettings.ruleMode === 'custom' && persistedCustomSubConfigURL ? 'custom' : 'default';
@@ -64,7 +66,9 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 		customSubConfigURL: persistedCustomSubConfigURL,
 		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER),
 		converterMode: persistedSettings.converterMode === 'custom' ? 'custom' : 'default',
-		customConverterURL: persistedCustomConverterURL,
+		customConverters, activeCustomConverterId,
+  customConverterURL: activeConverter?.url || '',
+  customConverterType: activeConverter?.type || 'subconverter',
 		mainSubscriptionId,
 		subscriptionToken: Object.prototype.hasOwnProperty.call(persistedSettings, 'subscriptionToken')
 			? sanitizeSubscriptionToken(persistedSettings.subscriptionToken)

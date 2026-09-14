@@ -2,7 +2,7 @@ import { jsonResponse, requestHasSameOrigin } from '../http.js';
 import { saveSettingsSections } from '../storage/settings.js';
 import { StorageError } from '../storage/kv.js';
 import { readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
-import { normalizeCustomConverter } from '../adapters/converters.js';
+import { normalizeCustomConverter, readCustomConverterProfiles } from '../adapters/converters.js';
 import { sanitizeSubscriptionName, sanitizePageTitle, normalizeBrowserIconURL, sanitizeSubscriptionToken, normalizeHTTPURL, normalizeDisplayFormats, DEFAULT_FILE_NAME, DEFAULT_PAGE_TITLE, DEFAULT_DISPLAY_FORMATS } from '../config.js';
 
 export async function saveSettings(request, env, currentSettings) {
@@ -32,7 +32,31 @@ export async function saveSettings(request, env, currentSettings) {
 
 		if (section === 'conversion' || section === 'all') {
 			settings.converterMode = payload.converterMode === 'custom' ? 'custom' : 'default';
-			settings.customConverterURL = normalizeCustomConverter(payload.customConverterURL ?? currentSettings.customConverterURL);
+			if (Object.hasOwn(payload, 'customConverters')) {
+    if (!Array.isArray(payload.customConverters) || payload.customConverters.length > 10) throw new Error('自定义转换最多保存 10 条');
+    const ids = new Set();
+    settings.customConverters = payload.customConverters.map(item => {
+     if (!item || !/^[a-zA-Z0-9_-]{1,64}$/.test(item.id) || ids.has(item.id)) throw new Error('转换配置标识无效或重复');
+     ids.add(item.id);
+     if (!['sublink', 'subconverter'].includes(item.type)) throw new Error('请选择 Sublink Worker 或 Subconverter');
+     const url = normalizeCustomConverter(item.url);
+     if (!url) throw new Error('请输入有效的自建转换服务地址');
+     return { id: item.id, name: String(item.name || '').trim().replace(/[\r\n\0]/g, '').slice(0, 60) || '自建转换', type: item.type, url };
+    });
+    settings.activeCustomConverterId = String(payload.activeCustomConverterId || '');
+   } else {
+    // Existing single-address configurations retain their protocol type.
+    const legacy = Object.hasOwn(payload, 'customConverterURL')
+     ? { customConverterURL: payload.customConverterURL, customConverterType: payload.customConverterType ?? currentSettings.customConverterType }
+     : currentSettings;
+    settings.customConverters = readCustomConverterProfiles(legacy);
+    settings.activeCustomConverterId = Object.hasOwn(payload, 'customConverterURL') ? (settings.customConverters[0]?.id || '')
+     : (currentSettings.activeCustomConverterId || settings.customConverters[0]?.id || '');
+   }
+   const active = settings.customConverters.find(item => item.id === settings.activeCustomConverterId);
+   if (settings.activeCustomConverterId && !active) throw new Error('请选择存在的自定义转换配置');
+   settings.customConverterURL = active?.url || '';
+   settings.customConverterType = active?.type || 'subconverter';
 			const customSubConfigInput = String(payload.customSubConfigURL ?? currentSettings.customSubConfigURL ?? '').trim();
 			settings.customSubConfigURL = normalizeHTTPURL(customSubConfigInput);
 			settings.ruleMode = payload.ruleMode === 'custom' ? 'custom' : 'default';

@@ -11,7 +11,7 @@ import { readPersistedSettings } from '../src/worker/storage/settings.js';
 import { renderMainPage } from '../src/worker/ui/home.js';
 import { renderSettingsPage } from '../src/worker/ui/pages.js';
 
-const source = 'https://app.example.com/s/private_subscription_id?base64';
+const source = 'https://app.example.com/s/private_subscription_id?base64&source=normalized';
 const custom = 'https://custom.example.com/private_gateway_key';
 const node = 'trojan://node-secret@node.example.com:443#Node';
 const outputs = {
@@ -50,36 +50,36 @@ test('every custom target uses Subconverter and preserves the gateway path witho
  }
 });
 
-test('HTTP 200 error pages, empty bodies and wrong formats fail without contacting defaults', async () => {
+test('HTTP 200 invalid content falls back and fails when defaults also return invalid content', async () => {
  for (const format of ['loon', 'quanx']) {
   for (const content of ['', '<html>Not found</html>', '{"error":"unsupported target"}', 'proxies: []', Buffer.from(node).toString('base64')]) {
    const calls = [], timings = [];
    const response = await serve(format, async input => { calls.push(new URL(input).hostname); return new Response(content); }, { timings });
    assert.equal(response.status, 502);
    assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'failed');
-   assert.deepEqual(calls, ['custom.example.com']);
+   assert.deepEqual(calls, ['custom.example.com', 'subapi.cmliussss.net']);
    assert.ok(timings.some(value => value.startsWith('conversion_custom;')));
-   assert.ok(!timings.some(value => value.startsWith('conversion_fallback;')));
+   assert.ok(timings.some(value => value.startsWith('conversion_fallback;')));
   }
  }
 });
 
-test('all converted targets stop after custom HTTP failure for main and shared subscriptions', async () => {
+test('all converted targets attempt defaults after custom HTTP failure for main and shared subscriptions', async () => {
  for (const access of ['main', 'share']) {
   for (const format of ['loon', 'quanx', 'surge', 'clash', 'singbox']) {
    let calls = 0;
    const response = await serve(format, async input => {
     calls++;
-    assert.equal(new URL(input).hostname, 'custom.example.com');
+    assert.equal(new URL(input).hostname, calls === 1 ? 'custom.example.com' : 'subapi.cmliussss.net');
     return new Response('unavailable', { status: 503 });
    }, { access });
    assert.equal(response.status, 502);
-   assert.equal(calls, 1);
+   assert.equal(calls, 2);
   }
  }
 });
 
-test('stalled HTTP error bodies are cancelled immediately without reading or fallback', async () => {
+test('stalled HTTP error bodies are cancelled immediately before fallback', async () => {
  for (const status of [404, 429, 500, 502, 503]) {
   let read = false, cancelled = false, calls = 0;
   const response = await serve('loon', async () => {
@@ -89,7 +89,7 @@ test('stalled HTTP error bodies are cancelled immediately without reading or fal
   assert.equal(response.status, 502);
   assert.equal(cancelled, true);
   assert.equal(read, false);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
  }
 });
 
@@ -108,7 +108,7 @@ test('default converter backups still skip stalled error bodies', async () => {
  assert.equal(result.converter, 'https://backup.example.com');
 });
 
-test('cancellation and network errors never contact the default service', async () => {
+test('network failures fall back while caller cancellation stops further requests', async () => {
  for (const cancel of [false, true]) {
   const controller = new AbortController(), calls = [];
   const response = await serve('loon', async input => {
@@ -117,14 +117,14 @@ test('cancellation and network errors never contact the default service', async 
    throw new TypeError('connection failed');
   }, { signal: controller.signal });
   assert.equal(response.status, 502);
-  assert.deepEqual(calls, ['custom.example.com']);
+  assert.deepEqual(calls, cancel ? ['custom.example.com'] : ['custom.example.com', 'subapi.cmliussss.net']);
  }
 });
 
-test('custom mode with a missing or malformed address stays closed instead of enabling defaults', async () => {
+test('legacy invalid active addresses fall back to defaults', async () => {
  for (const customConverterURL of ['', 'invalid']) {
-  const response = await serve('loon', async () => { assert.fail('must not call a converter'); }, { settings: { customConverterURL } });
-  assert.equal(response.status, 502);
+  const response = await serve('loon', async input => { assert.equal(new URL(input).hostname, 'subapi.cmliussss.net'); return new Response(outputs.loon); }, { settings: { customConverterURL } });
+  assert.equal(response.status, 200);
  }
 });
 
@@ -136,7 +136,7 @@ test('structured upstream Base64 conversion failure returns 502 instead of parti
   return url.hostname === 'upstream.example.com' ? new Response('proxies: []') : new Response('unavailable', { status: 503 });
  }, { sourceData: node + '\nhttps://upstream.example.com/sub' });
  assert.equal(response.status, 502);
- assert.deepEqual(calls, ['upstream.example.com', 'custom.example.com']);
+ assert.deepEqual(calls, ['upstream.example.com', 'custom.example.com', 'subapi.cmliussss.net']);
  assert.doesNotMatch(await response.text(), /node-secret/);
 });
 
@@ -148,7 +148,7 @@ test('pure node Base64 stays local and converter callbacks never recurse', async
  }
 });
 
-test('settings preserve custom gateway paths and remove obsolete type state', async () => {
+test('legacy settings migrate to one active typed profile without losing gateway paths', async () => {
  const env = withStorageBindings({ KV: new MemoryKV(), DB: new MemoryD1() });
  const request = body => new Request('https://app.example.com/api/settings', {
   method: 'POST', headers: { Origin: 'https://app.example.com', 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -157,13 +157,15 @@ test('settings preserve custom gateway paths and remove obsolete type state', as
  assert.equal(saved.status, 200);
  const stored = await readPersistedSettings(env);
  assert.equal(stored.customConverterURL, custom);
- assert.equal('customConverterType' in stored, false);
+ assert.equal(stored.customConverterType, 'subconverter');
+ assert.equal(stored.customConverters.length, 1);
+ assert.equal(stored.activeCustomConverterId, 'legacy');
  assert.equal((await createRuntimeConfig({}, stored)).converterMode, 'custom');
  assert.equal((await saveSettings(request({ section: 'conversion', converterMode: 'custom', customConverterURL: '' }), env, stored)).status, 400);
  assert.equal((await readPersistedSettings(env)).customConverterURL, custom);
 });
 
-test('main page highlights default conversion and settings only offer Subconverter', async () => {
+test('main page highlights defaults and settings describe both custom types and fallback', async () => {
  const request = new Request('https://app.example.com');
  const defaultRuntime = await runtime({ converterMode: 'default' });
  const html = await renderMainPage(request, defaultRuntime, { content: node }).text();
@@ -173,7 +175,9 @@ test('main page highlights default conversion and settings only offer Subconvert
  const customHTML = await renderMainPage(request, customRuntime, { content: node }).text();
  assert.doesNotMatch(customHTML, /注意：当前未启用自建转换/);
  const settingsHTML = await renderSettingsPage(request, customRuntime).text();
- assert.match(settingsHTML, /自建 Subconverter/);
+ assert.match(settingsHTML, /Subconverter/);
+ assert.match(settingsHTML, /Sublink Worker/);
+ assert.match(settingsHTML, /customConverterList/);
  assert.doesNotMatch(settingsHTML, /customConverterType/);
 });
 
@@ -199,9 +203,9 @@ test('notifications identify local, custom and default results without exposing 
   return new Response('{"ok":true}');
  });
  for (const scenario of [
-  { mode: 'custom', format: 'base64', fail: false, service: '本地生成' },
+  { mode: 'custom', format: 'base64', fail: false, service: '未调用（无需转换）' },
   { mode: 'custom', format: 'loon', fail: false, service: '自建 Subconverter' },
-  { mode: 'custom', format: 'loon', fail: true, service: '自建 Subconverter' },
+  { mode: 'custom', format: 'loon', fail: true, service: '默认 Subconverter' },
   { mode: 'default', format: 'loon', fail: false, service: '默认 Subconverter' },
   { mode: 'default', format: 'loon', fail: true, service: '默认 Subconverter' }
  ]) {
@@ -210,7 +214,7 @@ test('notifications identify local, custom and default results without exposing 
   const response = await serveSubscription(new Request('https://app.example.com/s/notify_unique_' + messages.length + '?' + scenario.format, { headers: { 'User-Agent': 'Loon/3.2.4' } }),
    {}, { waitUntil(task) { pending.push(task); } }, config, node, 'share', false, 'notify_unique_id', 'Share', {
     fetchImpl: async input => {
-     assert.equal(new URL(input).hostname, scenario.mode === 'custom' ? 'custom.example.com' : 'subapi.cmliussss.net');
+     assert.ok(['custom.example.com', 'subapi.cmliussss.net'].includes(new URL(input).hostname));
      return scenario.fail ? new Response('failed', { status: 503 }) : new Response(outputs.loon);
     }
    });
@@ -219,7 +223,7 @@ test('notifications identify local, custom and default results without exposing 
   const message = messages.at(-1);
   assert.ok(message.includes('转换服务: ' + scenario.service));
   assert.ok(message.includes('订阅结果: ' + (scenario.fail ? '失败（HTTP 502）' : '成功')));
-  if (scenario.fail && scenario.mode === 'custom') assert.match(message, /自建转换不可用.*未使用默认服务/);
+  if (scenario.fail && scenario.mode === 'custom') assert.match(message, /默认服务也不可用，已停止更新/);
   assert.doesNotMatch(message, /private_gateway_key|node-secret/);
  }
  assert.equal(messages.length, 5);
