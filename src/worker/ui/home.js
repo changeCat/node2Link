@@ -147,8 +147,9 @@ export function renderMainPage(request, runtime, record) {
 					.converter-warning p { margin: 5px 0; }
 					.converter-warning a { color: inherit; font-weight: 600; text-decoration: underline; }
 					.converter-list { display: flex; flex-direction: column; gap: 7px; }
-					.converter-entry { min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; }
-					.converter-entry b { padding: 2px 4px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: 10px; text-align: center; }
+					.converter-entry { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 7px; }
+					.converter-entry b { justify-self: start; max-width: 100%; overflow-wrap: anywhere; padding: 2px 4px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: 10px; text-align: center; }
+					.converter-entry code { display:block; min-width:0; white-space:normal; overflow:visible; overflow-wrap:anywhere; word-break:break-word; text-overflow:clip; line-height:1.7; }
 					.converter-picker { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 					.converter-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 					.converter-option { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
@@ -285,15 +286,7 @@ export function renderMainPage(request, runtime, record) {
 										<span id="saveStatus" class="save-state">已同步</span>
 										<span><i data-lucide="clock-3"></i><span id="lastSaved" data-saved-at="${escapeHTML(savedMetadata.savedAt || "")}">读取中</span></span>
 									</div>
-									<div class="editor-actions">
-										<button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
-										<button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
-										<button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
-										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
-										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
-										<input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
-										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存并生效</span></button>
-									</div>
+
 								</div>
 								<div class="editor-insights" aria-label="内容统计">
 									<div class="metric"><span>原始节点</span><strong id="nodeCount">0</strong></div>
