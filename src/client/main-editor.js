@@ -11,6 +11,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  let originalLimit = 100, previewLimit = 100, endpointLimit = 50, targetLimit = 100;
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
  let endpointDirty = false;
+ const selectedOriginals = new Set();
  const undo = [];
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
  const state = (message, kind = '') => { el('saveStatus').textContent = message; el('saveStatus').className = 'save-state ' + kind; };
@@ -50,12 +51,28 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   textarea.value = typeof next.text === 'string' ? next.text : originalText(config);
   lastText = originalText(config); syncText(); render(); dirty('已载入，尚未保存');
  }
- function renderOriginals() {
+ function filteredOriginals() {
   const query = el('originalSearch').value.trim().toLowerCase();
-  const nodes = config.originals.map((node, index) => ({ ...node, name: mainNodeName(node.content, `主订阅节点 ${index + 1}`) })).filter(node => (node.name + '\n' + node.content).toLowerCase().includes(query));
-  el('originalList').innerHTML = nodes.slice(0, originalLimit).map(node => `<article class="main-node-row"><div>${summary(node.content, isMainSource(node.content) ? '订阅源' : node.name)}</div><div class="main-row-actions"><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-delete-original="${esc(node.id)}">删除</button></div></article>`).join('') || '<p class="main-empty">点击“批量添加”粘贴节点或订阅源。</p>';
+  return config.originals.map((node, index) => ({ ...node, name: mainNodeName(node.content, `主订阅节点 ${index + 1}`) })).filter(node => (node.name + '\n' + node.content).toLowerCase().includes(query));
+ }
+ function renderOriginals() {
+  const ids = new Set(config.originals.map(node => node.id));
+  for (const id of selectedOriginals) if (!ids.has(id)) selectedOriginals.delete(id);
+  const nodes = filteredOriginals();
+  el('originalList').innerHTML = nodes.slice(0, originalLimit).map(node => `<article class="main-node-row"><div class="node-heading"><input type="checkbox" data-select-original="${esc(node.id)}" aria-label="选择 ${esc(node.name)}" ${selectedOriginals.has(node.id) ? 'checked' : ''}><div>${summary(node.content, isMainSource(node.content) ? '订阅源' : node.name)}</div></div><div class="main-row-actions"><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-delete-original="${esc(node.id)}">删除</button></div></article>`).join('') || '<p class="main-empty">没有匹配的节点，可点击“批量添加”添加节点或订阅源。</p>';
+  updateOriginalSelection();
+  el('selectOriginals').disabled = !nodes.length;
   el('originalProgress').textContent = `${Math.min(originalLimit, nodes.length)} / ${nodes.length} 项`;
   el('moreOriginals').hidden = nodes.length <= originalLimit;
+ }
+ function updateOriginalSelection() {
+  el('originalSelectionCount').textContent = `已选 ${selectedOriginals.size} 项（含筛选外）`;
+  el('deleteOriginals').disabled = el('clearOriginalSelection').disabled = !selectedOriginals.size;
+ }
+ function removeOriginals(ids) {
+  remember(); config.originals = config.originals.filter(node => !ids.has(node.id));
+  config.endpoints.forEach(endpoint => { endpoint.originalIds = endpoint.originalIds.filter(id => !ids.has(id)); if (!endpoint.originalIds.length) endpoint.enabled = false; });
+  changed('节点已删除，关联已清理，尚未保存');
  }
  function summary(content, name) {
   const info = mainNodeSummary(content);
@@ -203,9 +220,22 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   }
   const count = config.endpoints.filter(endpoint => endpoint.originalIds.includes(id)).length;
   if (!await askMainConfirm(`删除此原始节点？它关联 ${count} 条优选地址，保存后将移除对应扩展节点；没有剩余关联的地址会停用。`, '删除原始节点')) return;
-  remember(); config.originals = config.originals.filter(item => item.id !== id);
-  config.endpoints.forEach(endpoint => { endpoint.originalIds = endpoint.originalIds.filter(item => item !== id); if (!endpoint.originalIds.length) endpoint.enabled = false; });
-  changed();
+  removeOriginals(new Set([id]));
+ });
+ el('originalList').addEventListener('change', event => {
+  const id = event.target.dataset.selectOriginal;
+  if (!id) return;
+  if (event.target.checked) selectedOriginals.add(id); else selectedOriginals.delete(id);
+  updateOriginalSelection();
+ });
+ el('selectOriginals').addEventListener('click', () => { filteredOriginals().forEach(node => selectedOriginals.add(node.id)); renderOriginals(); });
+ el('clearOriginalSelection').addEventListener('click', () => { selectedOriginals.clear(); renderOriginals(); });
+ el('deleteOriginals').addEventListener('click', async () => {
+  const ids = new Set(selectedOriginals);
+  if (!ids.size) return;
+  const associations = config.endpoints.reduce((sum, endpoint) => sum + endpoint.originalIds.filter(id => ids.has(id)).length, 0);
+  if (!await askMainConfirm(`删除所选 ${ids.size} 项（含筛选外已选节点）及 ${associations} 个优选关联？没有剩余关联的地址会停用。可撤销，保存后生效。`, '批量删除原始节点')) return;
+  removeOriginals(ids);
  });
  el('originalForm').addEventListener('submit', event => {
   event.preventDefault();
@@ -243,7 +273,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   event.preventDefault(); el('batchError').textContent = '';
   const lines = mainLines(el('batchValue').value);
   const replace = event.submitter?.value === 'replace';
-  if (!lines.length && !replace) { el('batchError').textContent = '请至少填写一条节点或订阅源'; return; }
+  if (!lines.length) { el('batchError').textContent = '请至少填写一条节点或订阅源，不能用空内容覆盖列表'; return; }
   const byContent = new Map();
   config.originals.forEach(node => { if (!byContent.has(node.content)) byContent.set(node.content, []); byContent.get(node.content).push(node); });
   const originals = replace ? lines.map(content => byContent.get(content)?.shift() || { id: mainId(), content }) : [...config.originals, ...lines.map(content => ({ id: mainId(), content }))];

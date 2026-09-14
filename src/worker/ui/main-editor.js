@@ -1,6 +1,10 @@
 export const mainEditorStyles = `
  .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
  #content[hidden]{display:none!important}
+ .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;align-content:start}
+ .node-heading{display:flex;align-items:flex-start;gap:8px}.node-heading>div{min-width:0;flex:1}.node-heading input{flex:none;margin:3px 0;accent-color:var(--green)}
+ #originalSection>.editor-actions{justify-content:flex-start;margin:10px 0}
+ @media(max-width:760px){.main-scroll{max-height:360px}}
  .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
  .node-grid .main-node-row{display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px;min-width:0}
  .node-grid strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -29,27 +33,37 @@ export const mainEditorStyles = `
 `;
 
 export function renderMainEditorSections() {
- return `<div class="main-section">
+ return `<div class="main-section" id="originalSection">
   <div class="main-section-head"><h3>原始节点</h3><div class="main-row-actions"><button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button><button id="addOriginals" class="primary-button" type="button">批量添加</button></div></div>
+<div class="editor-actions">
+										<button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
+										<button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
+										<button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
+										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
+										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
+										<input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
+										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存并生效</span></button>
+									</div>
   <p>批量添加节点或订阅源；修改名称、参数或重置 UUID 请使用“编辑”，保留已有优选关联。</p>
   <div class="main-filter"><input id="originalSearch" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点"></div>
-  <div id="originalList" class="node-grid"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
+  <div class="main-filter"><button id="selectOriginals" class="tool-button" type="button">全选筛选结果</button><button id="clearOriginalSelection" class="tool-button" type="button" disabled>取消选择</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
+  <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
  <div class="main-section">
   <div class="main-section-head"><h3>优选域名 / IP 与端口</h3><button id="addEndpoint" class="primary-button" type="button">添加优选地址</button></div>
   <p>填写优选地址，并勾选要扩展的原始节点。协议适用性由你确认；生成时仅替换连接地址、端口及名称，保留 Host、SNI、路径等其他参数。</p>
-  <div id="endpointList"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
+  <div id="endpointList" class="main-scroll" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
  <div class="main-section">
   <div class="main-section-head"><h3>生成结果预览</h3><div class="main-row-actions"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button><button class="primary-button" type="button" onclick="saveContent()">保存并生效</button></div></div>
   <p id="mainPreviewNote" role="status"></p>
   <div class="main-filter"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
-  <div id="mainPreview" class="node-grid"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
+  <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>`;
 }
 
 export function renderMainEditorDialogs() {
- return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加保留当前节点；留空并覆盖可清空列表。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。应用后可撤销，保存并生效后发布。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖列表</button><button type="submit" value="append" class="primary-button">追加到列表</button></div></form></dialog>
+ return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加和覆盖都必须填写节点。删除节点请使用列表中的删除操作。追加保留当前节点。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。应用后可撤销，保存并生效后发布。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖列表</button><button type="submit" value="append" class="primary-button">追加到列表</button></div></form></dialog>
  <dialog id="nodeViewDialog" class="main-edit-dialog" aria-labelledby="nodeViewTitle"><div class="dialog-head"><strong id="nodeViewTitle">完整链接</strong><button id="closeNodeView" type="button" class="icon-button" aria-label="关闭">×</button></div><div class="dialog-body"><div class="main-field"><label for="nodeViewValue">完整链接</label><textarea id="nodeViewValue" readonly spellcheck="false"></textarea></div><div class="dialog-actions"><button id="copyNodeView" class="primary-button" type="button">复制链接</button></div></div></dialog>
  <dialog id="endpointDialog" class="main-edit-dialog" aria-labelledby="endpointTitle">
   <div class="dialog-head"><strong id="endpointTitle">添加优选地址</strong><button id="closeEndpoint" class="icon-button" type="button" aria-label="关闭">×</button></div>

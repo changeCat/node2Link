@@ -179,3 +179,87 @@ test('compact cards, append, independent endpoints, exports and replacement clea
  expect(converter.y + converter.height).toBeLessThan(subscriptions.y);
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('empty batches are rejected and bulk deletion preserves undo and associations', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ await expect(page.locator('.editor-toolbar button')).toHaveCount(0);
+ await expect(page.locator('#originalSection #undoButton')).toHaveCount(1);
+ await expect(page.locator('#originalSection #saveButton')).toHaveCount(1);
+ await page.locator('#addOriginals').click();
+ for (const mode of ['append', 'replace']) {
+  await page.locator('#batchValue').fill(' \n\t ');
+  await page.locator(`#batchForm button[value="${mode}"]`).click();
+  await expect(page.locator('#batchError')).toContainText('请至少填写');
+  await expect(page.locator('#mainConfirmDialog')).not.toBeVisible();
+  await expect(page.locator('#content')).toHaveValue(first + '\n' + second);
+ }
+ await page.locator('#closeBatch').click();
+ await page.locator('[data-select-original]').first().check();
+ await page.locator('#originalSearch').fill('Main-HY2');
+ await page.locator('#selectOriginals').click();
+ await expect(page.locator('#originalSelectionCount')).toContainText('已选 2 项');
+ await page.locator('#deleteOriginals').click();
+ await expect(page.locator('#mainConfirmText')).toContainText('2 个优选关联');
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '取消', exact: true }).click();
+ await expect(page.locator('#nodeCount')).toHaveText('2');
+ await page.locator('#deleteOriginals').click();
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#nodeCount')).toHaveText('0');
+ await expect(page.locator('#endpointList')).toContainText('停用');
+ await expect(page.locator('#deleteOriginals')).toBeDisabled();
+ await page.locator('#undoButton').click();
+ await expect(page.locator('#duplicateCount')).toHaveText('2');
+ expect(await subscription(page)).toHaveLength(4);
+});
+
+test('lists scroll independently and selection includes unloaded matching nodes', async ({ page }) => {
+ const lines = Array.from({ length: 105 }, (_, i) => first.replace('#Main-HK', '#Node-' + i));
+ await setOriginals(page, lines.join('\n'));
+ await addEndpoints(page, Array.from({ length: 8 }, (_, i) => `cf${i}.example.com`).join('\n'));
+ for (const id of ['originalList', 'endpointList', 'mainPreview']) {
+  const metrics = await page.locator('#' + id).evaluate(el => ({ height: el.clientHeight, scroll: el.scrollHeight, overflow: getComputedStyle(el).overflowY }));
+  expect(metrics.height).toBeLessThanOrEqual(480);
+  expect(metrics.scroll).toBeGreaterThan(metrics.height);
+  expect(metrics.overflow).toBe('auto');
+ }
+ await expect(page.locator('[data-select-original]')).toHaveCount(100);
+ await page.locator('#selectOriginals').click();
+ await expect(page.locator('#originalSelectionCount')).toContainText('已选 105 项');
+ await page.locator('#clearOriginalSelection').click();
+ await expect(page.locator('#deleteOriginals')).toBeDisabled();
+ await page.locator('#selectOriginals').click();
+ await page.locator('#deleteOriginals').click();
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#nodeCount')).toHaveText('0');
+ await page.locator('#undoButton').click();
+ await expect(page.locator('#nodeCount')).toHaveText('105');
+ await expect(page.locator('#duplicateCount')).toHaveText('840');
+});
+
+test('custom converter labels and long URLs wrap without overlap', async ({ page }) => {
+ const url = 'https://converter.example.com/' + 'long-path-'.repeat(20);
+ await page.goto('/settings');
+ await page.locator('#addConverter').click();
+ await page.locator('#converterName').fill('换行测试');
+ await page.locator('#converterURL').fill(url);
+ await page.locator('#applyConverter').click();
+ const profile = page.locator('.converter-profile').filter({ hasText: '换行测试' });
+ await profile.locator('input[type="radio"]').check();
+ await page.locator('#saveConverterSelection').click();
+ await expect(page.locator('#conversionMessage')).toHaveText('已保存');
+ await page.goto('/');
+ const entry = page.locator('.converter-entry').first();
+ await expect(entry.locator('code')).toHaveText(url);
+ const label = await entry.locator('b').boundingBox(), code = await entry.locator('code').boundingBox();
+ expect(code.y).toBeGreaterThanOrEqual(label.y + label.height);
+ expect(await entry.locator('code').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+ expect(code.height).toBeGreaterThan(40);
+ await page.screenshot({ path: test.info().outputPath('converter-wrap.png'), fullPage: true });
+ await page.goto('/settings');
+ await page.locator('input[name="converterMode"][value="default"]').check();
+ await page.locator('#saveConverterSelection').click();
+ await expect(page.locator('#conversionMessage')).toHaveText('已保存');
+ await page.locator('.converter-profile').filter({ hasText: '换行测试' }).locator('[data-remove]').click();
+ await expect(page.locator('#conversionMessage')).toHaveText('已保存');
+ await page.goto('/');
+});
