@@ -3,7 +3,7 @@ export const mainEditorStyles = `
  #content[hidden]{display:none!important}
  .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable;align-content:start}
  .node-heading{display:flex;align-items:flex-start;gap:8px}.node-heading>div{min-width:0;flex:1}.node-heading input{flex:none;margin:3px 0;accent-color:var(--green)}
- #originalSection>.editor-actions{justify-content:flex-start;margin:10px 0;gap:7px}
+ #originalSection>.editor-actions{justify-content:flex-end;margin:10px 0;gap:7px}
  #originalSection>.editor-actions .primary-button{margin-left:0}
  @media(max-width:760px){.main-scroll{max-height:360px}}
  .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
@@ -18,6 +18,9 @@ export const mainEditorStyles = `
  .main-section h3{margin:0;font-size:15px}.main-section p,.main-help{color:var(--muted);font-size:12px;line-height:1.65}
  .main-section-head,.main-row-actions,.main-filter,.main-progress{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
  .main-section-head{justify-content:space-between;margin-bottom:10px}.main-filter{margin:10px 0}.main-progress{margin-top:10px;color:var(--muted);font-size:12px}
+ .main-section .main-row-actions,.main-section .main-filter:has(#selectOriginals){justify-content:flex-end}
+ .main-section-head>.main-row-actions,.main-section-head>button,.main-section .main-progress>button{margin-left:auto}
+ .main-section .main-row-actions>.main-badge{margin-right:auto}
  .main-filter input{flex:1;min-width:120px}.main-filter select{max-width:100%}
  .main-section input,.main-section select,.main-edit-dialog input:not([type=checkbox]),.main-edit-dialog textarea{padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font:inherit;min-width:0}
  .main-section input,.main-section select{font-size:12px}.main-node-row,.main-endpoint-row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
