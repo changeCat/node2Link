@@ -2,7 +2,7 @@ import { jsonResponse, requestHasSameOrigin } from '../http.js';
 import { saveSettingsSections } from '../storage/settings.js';
 import { StorageError } from '../storage/kv.js';
 import { readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
-import { normalizeSublinkConverter } from '../adapters/converters.js';
+import { normalizeCustomConverter } from '../adapters/converters.js';
 import { sanitizeSubscriptionName, sanitizePageTitle, normalizeBrowserIconURL, sanitizeSubscriptionToken, normalizeHTTPURL, normalizeDisplayFormats, DEFAULT_FILE_NAME, DEFAULT_PAGE_TITLE, DEFAULT_DISPLAY_FORMATS } from '../config.js';
 
 export async function saveSettings(request, env, currentSettings) {
@@ -32,7 +32,7 @@ export async function saveSettings(request, env, currentSettings) {
 
 		if (section === 'conversion' || section === 'all') {
 			settings.converterMode = payload.converterMode === 'custom' ? 'custom' : 'default';
-			settings.customConverterURL = normalizeSublinkConverter(payload.customConverterURL ?? currentSettings.customConverterURL);
+			settings.customConverterURL = normalizeCustomConverter(payload.customConverterURL ?? currentSettings.customConverterURL);
 			const customSubConfigInput = String(payload.customSubConfigURL ?? currentSettings.customSubConfigURL ?? '').trim();
 			settings.customSubConfigURL = normalizeHTTPURL(customSubConfigInput);
 			settings.ruleMode = payload.ruleMode === 'custom' ? 'custom' : 'default';

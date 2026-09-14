@@ -1,6 +1,6 @@
 import { isValidShareId } from './storage/shares.js';
 import { sha256Base64Url, adminPassword } from './auth.js';
-import { parseSubConverters, normalizeSublinkConverter } from './adapters/converters.js';
+import { parseSubConverters, normalizeCustomConverter } from './adapters/converters.js';
 
 export const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
 export const DEFAULT_PAGE_TITLE = DEFAULT_FILE_NAME;
@@ -41,7 +41,7 @@ export function isAPISubscriptionEnabled(env) {
 
 export async function createRuntimeConfig(env, persistedSettings = {}) {
 	const updateTime = Number(env.SUBUPTIME);
-	const persistedCustomConverterURL = normalizeSublinkConverter(persistedSettings.customConverterURL);
+	const persistedCustomConverterURL = normalizeCustomConverter(persistedSettings.customConverterURL);
 	const defaultSubConfig = normalizeHTTPURL(env.SUBCONFIG) || DEFAULT_SUB_CONFIG;
 	const persistedCustomSubConfigURL = normalizeHTTPURL(persistedSettings.customSubConfigURL);
 	const ruleMode = persistedSettings.ruleMode === 'custom' && persistedCustomSubConfigURL ? 'custom' : 'default';
@@ -63,7 +63,7 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 		ruleMode,
 		customSubConfigURL: persistedCustomSubConfigURL,
 		subConverters: parseSubConverters(env.SUBAPI || DEFAULT_SUB_CONVERTER),
-		converterMode: persistedSettings.converterMode === 'custom' && persistedCustomConverterURL ? 'custom' : 'default',
+		converterMode: persistedSettings.converterMode === 'custom' ? 'custom' : 'default',
 		customConverterURL: persistedCustomConverterURL,
 		mainSubscriptionId,
 		subscriptionToken: Object.prototype.hasOwnProperty.call(persistedSettings, 'subscriptionToken')

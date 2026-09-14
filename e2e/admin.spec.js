@@ -478,3 +478,34 @@ test('personal dashboard displays saved data and remembers collapsed panels', as
 		}, ids);
 	}
 });
+
+
+test('conversion settings save a custom gateway and main page highlights default service', async ({ page }) => {
+ await page.goto('/settings');
+ await expect(page.locator('#customConverterType')).toHaveCount(0);
+ await expect(page.locator('#conversionForm')).toContainText('自建 Subconverter');
+ await expect(page.locator('#conversionForm')).toContainText('不回退默认');
+ await page.locator('input[name="converterMode"][value="default"]').check();
+ await page.locator('#conversionForm button[type="submit"]').click();
+ await expect(page.locator('#conversionMessage')).toHaveText('已保存');
+ await page.goto('/');
+ await expect(page.locator('.converter-warning')).toContainText('当前未启用自建转换');
+ await page.goto('/settings');
+ await page.locator('input[name="converterMode"][value="custom"]').check();
+ await page.locator('#customConverterURL').fill('https://custom.example.com/browser_test_key');
+ await page.locator('#conversionForm button[type="submit"]').click();
+ await expect(page.locator('#conversionMessage')).toHaveText('已保存');
+ await page.reload();
+ await expect(page.locator('input[name="converterMode"][value="custom"]')).toBeChecked();
+ await expect(page.locator('#customConverterURL')).toHaveValue('https://custom.example.com/browser_test_key');
+ await page.goto('/');
+ await expect(page.locator('.converter-warning')).toHaveCount(0);
+ await expect(page.locator('.converter-list')).toContainText('custom.example.com/browser_test_key');
+ // Restore default mode so this test does not affect other browser cases.
+ await page.goto('/settings');
+ await page.locator('input[name="converterMode"][value="default"]').check();
+ await page.locator('#conversionForm button[type="submit"]').click();
+ await expect(page.locator('#conversionMessage')).toHaveText('已保存');
+ await page.goto('/');
+ await expect(page.locator('.converter-warning')).toBeVisible();
+});

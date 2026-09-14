@@ -438,8 +438,9 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 			].join('\n');
 			return new Response(Buffer.from(convertedNodes).toString('base64'));
 		}
-		if (requestURL.startsWith('https://custom.example.com/xray?')) {
-			customConverterSources.push(new URL(requestURL).searchParams.get('config'));
+		if (requestURL.startsWith('https://custom.example.com/sub?')) {
+			customConverterSources.push(new URL(requestURL).searchParams.get('url'));
+			assert.equal(new URL(requestURL).searchParams.get('target'), 'mixed');
 			return new Response(Buffer.from('vless://custom@custom.example.com:443#Custom').toString('base64'));
 		}
 		return originalFetch(input);
@@ -493,7 +494,7 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 			headers: { 'User-Agent': 'v2rayN' }
 		})).text();
 		assert.match(Buffer.from(customEncoded, 'base64').toString('utf8'), /custom\.example\.com:443/);
-		assert.deepEqual(customConverterSources, [[clashURL, singboxURL].join('\n')]);
+		assert.deepEqual(customConverterSources, [[clashURL, singboxURL].join('|')]);
 		assert.equal(converterSources.length, 2);
 	} finally {
 		globalThis.fetch = originalFetch;

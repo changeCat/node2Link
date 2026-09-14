@@ -24,6 +24,9 @@ export function renderMainPage(request, runtime, record) {
 		const activeConverterHTML = runtime.converterMode === 'custom'
 			? `<span class="converter-entry"><b>自建</b><code title="${escapeHTML(runtime.customConverterURL)}">${escapeHTML(runtime.customConverterURL)}</code></span>`
 			: converterListHTML;
+		const converterWarningHTML = runtime.converterMode !== 'custom'
+			? '<div class="converter-warning" role="note"><strong>注意：当前未启用自建转换</strong><p>需要转换时将使用默认服务，该服务可读取订阅来源和节点信息。</p><a href="/settings">配置自建 Subconverter</a></div>'
+			: !runtime.customConverterURL ? '<div class="converter-warning" role="note"><strong>自建转换地址未配置或无效</strong><p>需要转换时将失败，不会使用默认服务。</p><a href="/settings">检查转换配置</a></div>' : '';
 		const formats = runtime.displayFormats
 			.map((key) => SUBSCRIPTION_FORMAT_CATALOG.find((item) => item.key === key))
 			.filter(Boolean);
@@ -136,6 +139,10 @@ export function renderMainPage(request, runtime, record) {
 					.setting-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
 					.setting-label svg { width: 15px; color: var(--green); }
 					.setting code { display: block; overflow: hidden; color: var(--text); font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+					.converter-warning { margin-bottom: 12px; padding: 12px; border: 1px solid #d99a35; border-radius: 8px; background: #fff5df; color: #744609; font-size: 12px; line-height: 1.6; }
+					.converter-warning strong { display: block; font-size: 13px; }
+					.converter-warning p { margin: 5px 0; }
+					.converter-warning a { color: inherit; font-weight: 600; text-decoration: underline; }
 					.converter-list { display: flex; flex-direction: column; gap: 7px; }
 					.converter-entry { min-width: 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; }
 					.converter-entry b { padding: 2px 4px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: 10px; text-align: center; }
@@ -265,6 +272,7 @@ export function renderMainPage(request, runtime, record) {
 						<aside class="workspace-config" aria-label="当前转换信息">
 							<section class="section" aria-labelledby="converter-info-title">
 								<div class="section-heading"><div><h2 id="converter-info-title">转换信息</h2><p>配置请前往设置页面修改</p></div></div>
+								${converterWarningHTML}
 								<div class="settings-grid">
 									<div class="setting"><span class="setting-label"><i data-lucide="server-cog"></i>当前转换后端</span><div class="converter-list">${activeConverterHTML}</div></div>
 									<div class="setting"><span class="setting-label"><i data-lucide="file-cog"></i>规则配置</span><code title="${escapeHTML(runtime.subConfig)}">${escapeHTML(runtime.subConfig)}</code></div>
