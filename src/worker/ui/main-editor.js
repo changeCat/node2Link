@@ -1,6 +1,14 @@
 export const mainEditorStyles = `
  .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
- .workspace-main .editor{height:220px;min-height:160px;border-bottom:1px solid var(--line)}
+ #content[hidden]{display:none!important}
+ .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
+ .node-grid .main-node-row{display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px;min-width:0}
+ .node-grid strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .node-grid .main-row-actions{margin-top:8px;gap:6px}.node-grid .tool-button{height:28px;padding:0 8px}
+ .endpoint-input-row{display:grid;grid-template-columns:minmax(0,2fr) 90px minmax(0,1fr) auto;gap:8px;margin-bottom:10px;align-items:end}
+ .endpoint-input-row label{display:flex;flex-direction:column;gap:6px;min-width:0}
+ @media(max-width:600px){.endpoint-input-row{grid-template-columns:minmax(0,1fr) 85px}.endpoint-input-row label:nth-child(3){grid-column:1}.endpoint-input-row button{grid-column:2}}
+
  .main-section{padding:18px;border-top:1px solid var(--line)}
  .main-section h3{margin:0;font-size:15px}.main-section p,.main-help{color:var(--muted);font-size:12px;line-height:1.65}
  .main-section-head,.main-row-actions,.main-filter,.main-progress{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -22,10 +30,10 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<div class="main-section">
-  <div class="main-section-head"><h3>原始节点列表</h3><span class="main-help">逐条编辑会保留优选关联</span></div>
-  <p>上方可批量粘贴节点或订阅源。批量替换已关联的链接后，需要重新选择关联；修改已有节点请使用列表中的“编辑”。</p>
+  <div class="main-section-head"><h3>原始节点</h3><div class="main-row-actions"><button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button><button id="addOriginals" class="primary-button" type="button">批量添加</button></div></div>
+  <p>批量添加节点或订阅源；修改名称、参数或重置 UUID 请使用“编辑”，保留已有优选关联。</p>
   <div class="main-filter"><input id="originalSearch" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点"></div>
-  <div id="originalList"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
+  <div id="originalList" class="node-grid"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
  <div class="main-section">
   <div class="main-section-head"><h3>优选域名 / IP 与端口</h3><button id="addEndpoint" class="primary-button" type="button">添加优选地址</button></div>
@@ -33,19 +41,21 @@ export function renderMainEditorSections() {
   <div id="endpointList"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
  <div class="main-section">
-  <div class="main-section-head"><h3>生成结果预览</h3><button id="exportMain" class="tool-button" type="button">导出节点 TXT</button></div>
+  <div class="main-section-head"><h3>生成结果预览</h3><div class="main-row-actions"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button><button class="primary-button" type="button" onclick="saveContent()">保存并生效</button></div></div>
   <p id="mainPreviewNote" role="status"></p>
-  <div class="main-filter"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension">仅扩展</option></select></div>
-  <div id="mainPreview"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div><div class="main-section-head" style="margin-top:18px;margin-bottom:0"><span class="main-help">编辑完成后统一发布</span><button class="primary-button" type="button" onclick="saveContent()">保存并生效</button></div>
+  <div class="main-filter"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
+  <div id="mainPreview" class="node-grid"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>`;
 }
 
 export function renderMainEditorDialogs() {
- return `<dialog id="endpointDialog" class="main-edit-dialog" aria-labelledby="endpointTitle">
+ return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加保留当前节点；留空并覆盖可清空列表。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。应用后可撤销，保存并生效后发布。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖列表</button><button type="submit" value="append" class="primary-button">追加到列表</button></div></form></dialog>
+ <dialog id="nodeViewDialog" class="main-edit-dialog" aria-labelledby="nodeViewTitle"><div class="dialog-head"><strong id="nodeViewTitle">完整链接</strong><button id="closeNodeView" type="button" class="icon-button" aria-label="关闭">×</button></div><div class="dialog-body"><div class="main-field"><label for="nodeViewValue">完整链接</label><textarea id="nodeViewValue" readonly spellcheck="false"></textarea></div><div class="dialog-actions"><button id="copyNodeView" class="primary-button" type="button">复制链接</button></div></div></dialog>
+ <dialog id="endpointDialog" class="main-edit-dialog" aria-labelledby="endpointTitle">
   <div class="dialog-head"><strong id="endpointTitle">添加优选地址</strong><button id="closeEndpoint" class="icon-button" type="button" aria-label="关闭">×</button></div>
   <form id="endpointForm" class="dialog-body">
-   <div class="main-field"><label for="endpointAddresses">优选域名或 IP</label><textarea id="endpointAddresses" required spellcheck="false" placeholder="每行一个地址，可携带端口，例如：&#10;cf.example.com&#10;203.0.113.10:8443&#10;[2001:db8::1]:443"></textarea><small class="main-help">添加时支持批量输入；行内端口优先于下面的默认端口。IPv6 携带端口时使用方括号。</small></div>
-   <div class="main-field-row"><div class="main-field"><label for="endpointPort">默认端口</label><input id="endpointPort" type="number" min="1" max="65535" step="1" value="443" list="endpointPorts" required><datalist id="endpointPorts"></datalist></div><div class="main-field"><label for="endpointLabel">备注（可选）</label><input id="endpointLabel" maxlength="160" placeholder="例如：电信优选；不填则使用地址和端口"></div></div>
+   <div id="endpointRows"></div><button id="addEndpointRow" class="tool-button" type="button">再加一行</button><datalist id="endpointPorts"></datalist>
+   <p class="main-help">每个地址分别填写端口与备注，以下关联节点应用到本次所有地址。备注不填则使用地址和端口。</p>
    <label><input id="endpointEnabled" type="checkbox" checked> 启用此优选地址</label>
    <p class="main-help">选择要应用的原始节点。这里只生成链接，不进行协议适用性判断或测速。</p>
    <div class="main-filter"><input id="targetSearch" type="search" aria-label="搜索关联节点" placeholder="搜索原始节点"><button id="selectTargets" type="button" class="tool-button">选择筛选结果</button><button id="clearTargets" type="button" class="tool-button">清空选择</button></div>

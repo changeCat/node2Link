@@ -84,7 +84,7 @@ export function renderMainPage(request, runtime, record) {
 					.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
 					.section-heading h2 { margin: 0; font-size: 19px; }
 					.section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
-					.workspace-grid { display: grid; grid-template-columns: 230px minmax(0, 1fr) 330px; grid-template-areas: "config main sidebar"; gap: 16px; align-items: start; }
+					.workspace-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-areas: "main sidebar"; gap: 16px; align-items: start; }
 					.workspace-config, .workspace-main, .workspace-sidebar { min-width: 0; }
 					.workspace-config { grid-area: config; }
 					.workspace-main { grid-area: main; }
@@ -229,11 +229,11 @@ export function renderMainPage(request, runtime, record) {
 					.toast.show { opacity: 1; transform: translate(-50%, 0); }
 					.toast svg { width: 16px; color: #62d297; }
 					@media (max-width: 1180px) {
-						.workspace-grid { grid-template-columns: 230px minmax(0, 1fr); grid-template-areas: "config main" "sidebar sidebar"; }
-						.workspace-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+						.workspace-grid { grid-template-columns: minmax(0, 1fr) 300px; grid-template-areas: "main sidebar"; }
+						.workspace-sidebar { display: flex; }
 					}
 					@media (max-width: 980px) {
-						.workspace-grid { grid-template-columns: 1fr; grid-template-areas: "main" "config" "sidebar"; }
+						.workspace-grid { grid-template-columns: 1fr; grid-template-areas: "main" "sidebar"; }
 						.workspace-sidebar { display: flex; }
 					}
 					@media (max-width: 760px) {
@@ -273,16 +273,7 @@ export function renderMainPage(request, runtime, record) {
 				${renderTopbar('home', runtime)}
 				<main>
 					<div class="workspace-grid">
-						<aside class="workspace-config" aria-label="当前转换信息">
-							<section class="section" aria-labelledby="converter-info-title">
-								<div class="section-heading"><div><h2 id="converter-info-title">转换信息</h2><p>无需格式转换时本地生成，需要转换时使用以下服务</p></div></div>
-								${converterWarningHTML}
-								<div class="settings-grid">
-									<div class="setting"><span class="setting-label"><i data-lucide="server-cog"></i>当前转换后端</span><div class="converter-list">${activeConverterHTML}</div></div>
-								</div>
-								<a class="tool-button" href="/settings" style="width:100%;margin-top:10px;text-decoration:none"><i data-lucide="settings"></i><span>前往设置</span></a>
-							</section>
-						</aside>
+
 
 						<section class="section workspace-main" aria-labelledby="editor-title">
 							<div class="section-heading"><div><h2 id="editor-title">主订阅配置</h2><p>原始节点 + 优选地址关联，统一保存后生效</p></div></div>
@@ -315,12 +306,22 @@ export function renderMainPage(request, runtime, record) {
 									<span class="protocol-breakdown" id="protocolBreakdown">暂无节点协议</span>
 									<span class="validation-issues" id="validationIssues"></span>
 								</div>
-								<label for="content" class="main-help" style="display:block;padding:12px 18px 0">原始节点 / 订阅源（每行一条）</label><textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
+								<textarea id="content" hidden>${escapeHTML(content)}</textarea>
 ${renderMainEditorSections()}
 							</div>
 						</section>
 
 						<aside class="workspace-sidebar" aria-label="主订阅入口">
+							<div class="workspace-config" aria-label="当前转换信息">
+							<section class="section" aria-labelledby="converter-info-title">
+								<div class="section-heading"><div><h2 id="converter-info-title">转换信息</h2><p>无需格式转换时本地生成，需要转换时使用以下服务</p></div></div>
+								${converterWarningHTML}
+								<div class="settings-grid">
+									<div class="setting"><span class="setting-label"><i data-lucide="server-cog"></i>当前转换后端</span><div class="converter-list">${activeConverterHTML}</div></div>
+								</div>
+								<a class="tool-button" href="/settings" style="width:100%;margin-top:10px;text-decoration:none"><i data-lucide="settings"></i><span>前往设置</span></a>
+							</section>
+						</div>
 							<section class="section" aria-labelledby="owner-title">
 								<div class="section-heading"><div><h2 id="owner-title">我的订阅</h2><p>复制链接，或扫码导入客户端</p></div></div>
 								<div class="subscription-grid compact-subscription-grid">${renderSubscriptions(false)}</div>

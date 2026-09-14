@@ -1,4 +1,4 @@
-import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, isMainNode, isMainSource, originalText, parseMainEndpointLine, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS } from '../shared/main-subscription.js';
+import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, mainNodeSummary, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS } from '../shared/main-subscription.js';
 
 export function initializeMainEditor(pageData, { showToast, askMainConfirm, copyText }) {
  const el = id => document.getElementById(id);
@@ -53,10 +53,15 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function renderOriginals() {
   const query = el('originalSearch').value.trim().toLowerCase();
   const nodes = config.originals.map((node, index) => ({ ...node, name: mainNodeName(node.content, `主订阅节点 ${index + 1}`) })).filter(node => (node.name + '\n' + node.content).toLowerCase().includes(query));
-  el('originalList').innerHTML = nodes.slice(0, originalLimit).map(node => `<article class="main-node-row"><div><strong>${esc(isMainSource(node.content) ? '订阅源' : node.name)}</strong><small>${esc(node.content)}</small></div><button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-delete-original="${esc(node.id)}">删除</button></article>`).join('') || '<p class="main-empty">粘贴原始节点后，会在这里显示。已有手工扩展节点也按原始节点保留。</p>';
+  el('originalList').innerHTML = nodes.slice(0, originalLimit).map(node => `<article class="main-node-row"><div>${summary(node.content, isMainSource(node.content) ? '订阅源' : node.name)}</div><div class="main-row-actions"><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-delete-original="${esc(node.id)}">删除</button></div></article>`).join('') || '<p class="main-empty">点击“批量添加”粘贴节点或订阅源。</p>';
   el('originalProgress').textContent = `${Math.min(originalLimit, nodes.length)} / ${nodes.length} 项`;
   el('moreOriginals').hidden = nodes.length <= originalLimit;
  }
+ function summary(content, name) {
+  const info = mainNodeSummary(content);
+  return `<strong title="${esc(name)}">${esc(name)}</strong><small><span class="main-badge">${esc(info.protocol)}</span> ${esc(info.address)}</small>`;
+ }
+ function viewNode(content) { el('nodeViewValue').value = content; el('nodeViewDialog').showModal(); }
  function renderEndpoints() {
   const names = new Map(config.originals.map((node, index) => [node.id, mainNodeName(node.content, `主订阅节点 ${index + 1}`)]));
   el('endpointList').innerHTML = config.endpoints.slice(0, endpointLimit).map(endpoint => `<article class="main-endpoint-row"><div><strong>${esc(endpoint.label || endpoint.address)} <span class="main-badge">${endpoint.enabled ? '启用' : '停用'}</span></strong><small>${esc(endpoint.address.includes(':') ? `[${endpoint.address}]:${endpoint.port}` : `${endpoint.address}:${endpoint.port}`)}</small><p>应用到 ${endpoint.originalIds.length} 个节点：${esc(endpoint.originalIds.map(id => names.get(id) || '【原始节点已移除，请重新选择】').join('、'))}</p></div><div class="main-row-actions"><button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button" data-toggle-endpoint="${esc(endpoint.id)}">${endpoint.enabled ? '停用' : '启用'}</button><button type="button" class="tool-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button></div></article>`).join('') || '<p class="main-empty">添加优选域名或 IP，并勾选要应用的原始节点。</p>';
@@ -67,10 +72,11 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const query = el('previewSearch').value.trim().toLowerCase();
   const kind = el('previewKind').value;
   const nodes = (compiled?.nodes || []).filter(node => (kind === 'all' || node.kind === kind) && (node.name + '\n' + node.content).toLowerCase().includes(query));
-  el('mainPreview').innerHTML = nodes.slice(0, previewLimit).map(node => `<article class="main-node-row"><div><strong><span class="main-badge">${node.kind === 'original' ? '原始' : '扩展'}</span> ${esc(node.name)}</strong><small>${esc(node.content)}</small></div><button type="button" class="tool-button" data-copy-main="${esc(node.id)}">复制</button></article>`).join('') || `<p class="main-empty">${compiled ? '没有符合条件的节点' : '请先修正配置问题，再预览生成结果'}</p>`;
+  el('mainPreview').innerHTML = nodes.slice(0, previewLimit).map(node => `<article class="main-node-row"><div>${summary(node.content, node.name)}</div><div class="main-row-actions"><span class="main-badge">${node.kind === 'original' ? '原始' : '扩展'}</span><button type="button" class="tool-button" data-view-main="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-copy-main="${esc(node.id)}">复制</button></div></article>`).join('') || `<p class="main-empty">${compiled ? '没有符合条件的节点' : '请先修正配置问题，再预览生成结果'}</p>`;
   el('previewProgress').textContent = `${Math.min(previewLimit, nodes.length)} / ${nodes.length} 个`;
   el('morePreview').hidden = nodes.length <= previewLimit;
   el('exportMain').disabled = !compiled;
+  el('exportExtensions').disabled = !compiled;
  }
  function render() {
   renderOriginals(); renderEndpoints();
@@ -94,9 +100,9 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function updateMetadata(metadata) {
   el('lastSaved').textContent = metadata?.savedAt ? `${new Date(metadata.savedAt).toLocaleString()} · ${metadata.lines || 0} 行输出` : '尚无保存记录';
  }
- function download(text, extension) {
+ function download(text, extension, kind = 'config') {
   const url = URL.createObjectURL(new Blob([text], { type: extension === 'json' ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' }));
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = `node2link-main-${new Date().toISOString().slice(0, 10)}.${extension}`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = `node2link-main-${kind}-${new Date().toISOString().slice(0, 10)}.${extension}`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
  }
  async function saveContent() {
   const button = el('saveButton');
@@ -131,13 +137,25 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const existingIds = new Set(config.originals.filter(node => isMainNode(node.content)).map(node => node.id));
   selectedTargets = new Set((endpoint?.originalIds || []).filter(id => existingIds.has(id)));
   el('endpointTitle').textContent = endpoint ? '编辑优选地址与关联' : '添加优选地址';
-  el('endpointAddresses').value = endpoint?.address || '';
-  el('endpointPort').value = endpoint?.port || 443;
-  el('endpointLabel').value = endpoint?.label || '';
+  el('endpointRows').innerHTML = '';
+  addEndpointRow(endpoint);
+  el('addEndpointRow').hidden = Boolean(endpoint);
   el('endpointEnabled').checked = endpoint?.enabled ?? true;
   el('endpointError').textContent = ''; el('targetSearch').value = ''; targetLimit = 100;
   renderTargets(); endpointDirty = false; el('endpointDialog').showModal();
  }
+ function addEndpointRow(endpoint = {}) {
+  const row = document.createElement('div'); row.className = 'endpoint-input-row';
+  row.innerHTML = `<label>域名 / IP<input data-address required spellcheck="false" placeholder="cf.example.com" value="${esc(endpoint.address || '')}"></label><label>端口<input data-port type="number" min="1" max="65535" step="1" list="endpointPorts" required value="${esc(endpoint.port || 443)}"></label><label>备注<input data-label maxlength="160" placeholder="可选" value="${esc(endpoint.label || '')}"></label><button type="button" class="tool-button" data-remove-endpoint-row>移除</button>`;
+  el('endpointRows').append(row);
+  for (const button of el('endpointRows').querySelectorAll('[data-remove-endpoint-row]')) button.hidden = editingEndpoint !== '' || el('endpointRows').children.length === 1;
+ }
+ el('addEndpointRow').addEventListener('click', () => { addEndpointRow(); endpointDirty = true; });
+ el('endpointRows').addEventListener('click', event => {
+  if (!event.target.closest('[data-remove-endpoint-row]')) return;
+  event.target.closest('.endpoint-input-row').remove(); endpointDirty = true;
+  if (el('endpointRows').children.length === 1) el('endpointRows').querySelector('[data-remove-endpoint-row]').hidden = true;
+ });
  async function closeEndpoint() {
   if (endpointDirty && !await askMainConfirm('放弃本次优选地址编辑？已加入主页面的配置不受影响。', '放弃编辑')) return;
   el('endpointDialog').close();
@@ -147,10 +165,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  el('endpointForm').addEventListener('submit', event => {
   event.preventDefault(); el('endpointError').textContent = '';
   try {
-   const lines = mainLines(el('endpointAddresses').value);
-   if (!lines.length) throw new Error('请填写优选域名或 IP');
-   if (editingEndpoint && lines.length !== 1) throw new Error('编辑时只能填写一个地址；批量添加请使用“添加优选地址”');
-   const added = lines.map(line => ({ id: editingEndpoint || mainId(), ...parseMainEndpointLine(line, el('endpointPort').value), label: el('endpointLabel').value.trim(), enabled: el('endpointEnabled').checked, originalIds: [...selectedTargets] }));
+   const added = [...el('endpointRows').children].map(row => ({ id: editingEndpoint || mainId(), address: normalizeMainAddress(row.querySelector('[data-address]').value), port: Number(row.querySelector('[data-port]').value), label: row.querySelector('[data-label]').value.trim(), enabled: el('endpointEnabled').checked, originalIds: [...selectedTargets] }));
    const next = { ...config, endpoints: editingEndpoint ? config.endpoints.map(endpoint => endpoint.id === editingEndpoint ? added[0] : endpoint) : [...config.endpoints, ...added] };
    normalizeMainConfig({ ...config, endpoints: added });
    normalizeMainConfig(next, { allowIncomplete: true });
@@ -180,8 +195,9 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  });
  el('originalList').addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
-  const id = button.dataset.editOriginal || button.dataset.deleteOriginal;
+  const id = button.dataset.editOriginal || button.dataset.deleteOriginal || button.dataset.viewOriginal;
   const node = config.originals.find(item => item.id === id); if (!node) return;
+  if (button.dataset.viewOriginal) return viewNode(node.content);
   if (button.dataset.editOriginal) {
    editingOriginal = id; el('originalValue').value = node.content; el('originalError').textContent = ''; el('originalDialog').showModal(); return;
   }
@@ -201,8 +217,9 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  });
  for (const id of ['closeOriginal', 'cancelOriginal']) el(id).addEventListener('click', () => el('originalDialog').close());
  el('mainPreview').addEventListener('click', event => {
-  const button = event.target.closest('[data-copy-main]');
-  const node = compiled?.nodes.find(node => node.id === button?.dataset.copyMain);
+  const button = event.target.closest('[data-copy-main], [data-view-main]');
+  const node = compiled?.nodes.find(node => node.id === (button?.dataset.copyMain || button?.dataset.viewMain));
+  if (node && button.dataset.viewMain) return viewNode(node.content);
   if (node) copyText(node.content).then(() => showToast('节点已复制')).catch(() => showToast('复制失败'));
  });
  for (const id of ['previewSearch', 'previewKind']) el(id).addEventListener('input', () => { previewLimit = 100; renderPreview(); });
@@ -210,7 +227,36 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  el('moreOriginals').addEventListener('click', () => { originalLimit += 100; renderOriginals(); });
  el('moreEndpoints').addEventListener('click', () => { endpointLimit += 50; renderEndpoints(); });
  el('morePreview').addEventListener('click', () => { previewLimit += 100; renderPreview(); });
- el('exportMain').addEventListener('click', () => { flush(); if (compiled) download(compiled.content, 'txt'); });
+ el('exportMain').addEventListener('click', () => { flush(); if (compiled) download(compiled.content, 'txt', 'all'); });
+ el('exportOriginals').addEventListener('click', () => { flush(); download(originalText(config), 'txt', 'originals'); });
+ el('exportExtensions').addEventListener('click', () => { flush(); if (compiled) download(compiled.nodes.filter(node => node.kind === 'extension').map(node => node.content).join('\n'), 'txt', 'extensions'); });
+ el('closeNodeView').addEventListener('click', () => el('nodeViewDialog').close());
+ el('copyNodeView').addEventListener('click', () => copyText(el('nodeViewValue').value).then(() => showToast('节点已复制')).catch(() => showToast('复制失败')));
+ el('addOriginals').addEventListener('click', () => { flush(); el('batchValue').value = ''; el('batchError').textContent = ''; el('batchDialog').showModal(); });
+ async function closeBatch() {
+  if (el('batchValue').value.trim() && !await askMainConfirm('放弃本次输入的节点？', '放弃批量添加')) return;
+  el('batchDialog').close();
+ }
+ el('closeBatch').addEventListener('click', closeBatch);
+ el('batchDialog').addEventListener('cancel', event => { event.preventDefault(); closeBatch(); });
+ el('batchForm').addEventListener('submit', async event => {
+  event.preventDefault(); el('batchError').textContent = '';
+  const lines = mainLines(el('batchValue').value);
+  const replace = event.submitter?.value === 'replace';
+  if (!lines.length && !replace) { el('batchError').textContent = '请至少填写一条节点或订阅源'; return; }
+  const byContent = new Map();
+  config.originals.forEach(node => { if (!byContent.has(node.content)) byContent.set(node.content, []); byContent.get(node.content).push(node); });
+  const originals = replace ? lines.map(content => byContent.get(content)?.shift() || { id: mainId(), content }) : [...config.originals, ...lines.map(content => ({ id: mainId(), content }))];
+  const ids = new Set(originals.map(node => node.id));
+  const removed = config.originals.filter(node => !ids.has(node.id)).length;
+  const associations = config.endpoints.reduce((count, endpoint) => count + endpoint.originalIds.filter(id => !ids.has(id)).length, 0);
+  if (replace && !await askMainConfirm(`覆盖后保留 ${originals.length} 项，移除 ${removed} 个旧节点及 ${associations} 个优选关联。没有剩余关联的地址会停用。修改名称或 UUID 请取消并使用逐条编辑。是否覆盖？`, '覆盖原始节点')) return;
+  const endpoints = config.endpoints.map(endpoint => { const originalIds = endpoint.originalIds.filter(id => ids.has(id)); return { ...endpoint, originalIds, enabled: endpoint.enabled && originalIds.length > 0 }; });
+  try {
+   const next = normalizeMainConfig({ ...config, originals, endpoints: replace ? endpoints : config.endpoints }, { allowIncomplete: true });
+   remember(); config = next; changed('批量修改已应用，尚未保存'); el('batchDialog').close();
+  } catch (error) { el('batchError').textContent = error.message; }
+ });
  el('restoreInput').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
   try {
@@ -249,10 +295,10 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   }
  });
  textarea.addEventListener('input', () => dirty());
- document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!el('endpointDialog').open && !el('originalDialog').open) saveContent(); } });
+ document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!document.querySelector('dialog[open]')) saveContent(); } });
  window.addEventListener('pagehide', flush);
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
- window.addEventListener('beforeunload', event => { flush(); if (snapshot() !== saved || endpointDirty && el('endpointDialog').open) { event.preventDefault(); event.returnValue = ''; } });
+ window.addEventListener('beforeunload', event => { flush(); if (snapshot() !== saved || endpointDirty && el('endpointDialog').open || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
  el('endpointPorts').innerHTML = [...MAIN_HTTPS_PORTS, ...MAIN_HTTP_PORTS].map(port => `<option value="${port}">${MAIN_HTTPS_PORTS.includes(port) ? 'HTTPS' : 'HTTP'}</option>`).join('');
  updateMetadata(pageData.savedMetadata); render(); el('saveButton').disabled = false;
  if (textarea.value !== textarea.defaultValue) dirty();

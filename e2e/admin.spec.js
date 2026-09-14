@@ -1,3 +1,4 @@
+import { setOriginals } from './main-helpers.js';
 import { test, expect } from '@playwright/test';
 
 const first = 'vless://uuid@first.example.com:443#First';
@@ -21,7 +22,7 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 
 async function saveMain(page, content) {
-	await page.locator('#content').fill(content);
+	await setOriginals(page, content);
 	await page.locator('#saveButton').click();
 	await expect(page.locator('#saveStatus')).toHaveText(/^(刚刚已保存|已同步)$/);
 	// Filtered runs may already have this content. Verify storage rather than
@@ -35,25 +36,6 @@ async function saveMain(page, content) {
 	expect(stored).toBe(content);
 }
 
-test('edits entered while the client script is loading remain unsaved until published', async ({ page }) => {
-	await page.waitForLoadState('domcontentloaded');
-	let releaseScript;
-	const scriptReady = new Promise(resolve => { releaseScript = resolve; });
-	await page.route('**/assets/home.js?*', async route => { await scriptReady; await route.continue(); });
-	const content = 'vless://uuid@slow-load.example.com:443#Early-' + Date.now();
-	try {
-		await page.reload({ waitUntil: 'commit' });
-		await page.locator('#content').fill(content);
-		await expect(page.locator('#saveButton')).toBeDisabled();
-	} finally { releaseScript(); }
-	await page.waitForLoadState('domcontentloaded');
-	await expect(page.locator('#saveStatus')).toHaveText('有未保存更改');
-	await page.locator('#saveButton').click();
-	await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
-	await page.reload();
-	await expect(page.locator('#content')).toHaveValue(content);
-});
-
 test('manual save, reload, version restore, local draft, copy and QR', async ({ page }) => {
 	await saveMain(page, first);
 	await saveMain(page, second);
@@ -62,7 +44,7 @@ test('manual save, reload, version restore, local draft, copy and QR', async ({ 
 	await page.locator('[onclick="loadLastSavedVersion()"], [onclick="loadLastSavedVersion();"]').click();
 	await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
 	await expect(page.locator('#content')).toHaveValue(first);
-	await page.locator('#content').fill(first + '\n' + second);
+	await setOriginals(page, first + '\n' + second);
 	await page.reload();
 	await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
 	await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
@@ -142,7 +124,7 @@ test('stale tabs keep their edits on conflict and clearing the editor stays empt
 	try {
 		await stale.goto('/');
 		await saveMain(page, second);
-		await stale.locator('#content').fill(first + '\n' + second);
+		await setOriginals(stale, first + '\n' + second);
 		await stale.locator('#saveButton').click();
 		await expect(stale.locator('#saveStatus')).toContainText('已在其他页面更新');
 		await expect(stale.locator('#content')).toHaveValue(first + '\n' + second);
@@ -249,7 +231,7 @@ test('editor coalesces draft writes and flushes the latest edit before reload or
 	expect(immediate).toEqual({ writes: 0, status: '有未保存更改' });
 	await expect.poll(() => page.evaluate(() => window.draftWrites)).toBe(1);
 	await expect(page.locator('#nodeCount')).toHaveText('2');
-	await page.locator('#content').fill(latest);
+	await setOriginals(page, latest);
 	await page.reload();
 	await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
 	await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
