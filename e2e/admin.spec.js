@@ -480,78 +480,83 @@ test('personal dashboard displays saved data and remembers collapsed panels', as
 });
 
 
-test('conversion settings save each dialog and list action immediately', async ({ page }, testInfo) => {
+test('conversion settings save profiles immediately but commit activation only with Save', async ({ page }, testInfo) => {
  await page.goto('/settings');
- await expect(page.locator('#customSubConfigURL, input[name="ruleMode"]')).toHaveCount(0);
- await expect(page.locator('#conversionForm button[type="submit"]')).toHaveCount(0);
  async function saved() { await expect(page.locator('#conversionMessage')).toHaveText('已保存'); await expect(page.locator('input[name="converterMode"][value="default"]')).toBeEnabled(); }
+ async function saveSelection() { await page.locator('#saveConverterSelection').click(); await saved(); }
  if (!(await page.locator('input[name="converterMode"][value="default"]').isChecked())) {
-  await page.locator('input[name="converterMode"][value="default"]').click(); await saved();
+  await page.locator('input[name="converterMode"][value="default"]').check(); await saveSelection();
  }
  while (await page.locator('[data-remove]').count()) { await page.locator('[data-remove]').first().click(); await saved(); }
- await page.locator('#addConverter').click();
- await page.locator('#converterName').fill('取消添加');
- await page.locator('#cancelConverter').click();
- await expect(page.locator('.converter-profile')).toHaveCount(0);
- await page.locator('input[name="converterMode"][value="custom"]').click();
- await expect(page.locator('#converterDialog')).toBeVisible();
- await page.locator('#converterName').fill('VPS 转换');
- await page.locator('#converterURL').fill('https://custom.example.com/browser_test_key');
- await page.locator('#applyConverter').click(); await saved();
- await expect(page.locator('#converterDialog')).not.toBeVisible();
- await page.reload();
- await expect(page.locator('.converter-profile')).toHaveCount(1);
- await expect(page.locator('input[name="converterMode"][value="custom"]')).toBeChecked();
- async function add(name, type, url) {
+ async function add(name, url) {
   await page.locator('#addConverter').click();
   await page.locator('#converterName').fill(name);
-  await page.locator('#converterType').selectOption(type);
   await page.locator('#converterURL').fill(url);
-  await page.locator('#applyConverter').click(); await saved();
+  await page.locator('#applyConverter').click();
   await expect(page.locator('#converterDialog')).not.toBeVisible();
  }
- await add('Worker 转换', 'sublink', 'https://worker.example.com');
- const first = page.locator('.converter-profile').nth(0), second = page.locator('.converter-profile').nth(1);
- await second.locator('input[type="radio"]').click(); await saved();
+ await add('VPS 转换', 'https://custom.example.com/private-key');
  await page.reload();
- await expect(second.locator('input[type="radio"]')).toBeChecked();
- await expect(page.locator('#activeConverterMode')).toHaveText('自建 Sublink Worker');
- await first.locator('[data-edit]').click();
- await expect(page.locator('#converterURL')).toHaveValue('https://custom.example.com/browser_test_key');
- await page.locator('#converterName').fill('不应保存的名称'); await page.keyboard.press('Escape');
+ const first = page.locator('.converter-profile').nth(0), second = page.locator('.converter-profile').nth(1);
  await expect(first).toContainText('VPS 转换');
- await page.route('**/api/settings', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: '保存失败测试' }) }));
+ await expect(page.locator('input[name="converterMode"][value="default"]')).toBeChecked();
+ await first.locator('input[type="radio"]').check();
+ await expect(page.locator('#conversionMessage')).toContainText('尚未保存');
+ await expect(page.locator('#activeConverterMode')).toHaveText('默认 Subconverter');
+ // Adding to the list must not also save the pending selection.
+ await add('Worker 转换', 'https://worker.example.com');
+ await expect(first.locator('input[type="radio"]')).toBeChecked();
+ await expect(page.locator('#conversionMessage')).toContainText('转换选择尚未保存');
+ await page.reload();
+ await expect(page.locator('.converter-profile')).toHaveCount(2);
+ await expect(page.locator('input[name="converterMode"][value="default"]')).toBeChecked();
+ await expect(page.locator('input[name="activeCustomConverter"]:checked')).toHaveCount(0);
+ await first.locator('input[type="radio"]').check(); await saveSelection();
+ await page.reload();
+ await expect(first.locator('input[type="radio"]')).toBeChecked();
+ await expect(page.locator('#activeConverterValue')).toContainText('custom.example.com');
+ await second.locator('input[type="radio"]').check();
  await second.locator('[data-edit]').click();
- await page.locator('#converterName').fill('重试后保存');
+ await page.locator('#converterName').fill('Worker 已修改');
+ await page.locator('#converterType').selectOption('sublink');
+ await page.locator('#applyConverter').click();
+ await expect(page.locator('#converterDialog')).not.toBeVisible();
+ await expect(second.locator('input[type="radio"]')).toBeChecked();
+ await expect(page.locator('#activeConverterValue')).toContainText('custom.example.com');
+ await page.reload();
+ await expect(second).toContainText('Worker 已修改');
+ await expect(second).toContainText('Sublink Worker');
+ await expect(first.locator('input[type="radio"]')).toBeChecked();
+ await second.locator('input[type="radio"]').check();
+ await page.route('**/api/settings', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: '保存失败测试' }) }));
+ await page.locator('#saveConverterSelection').click();
+ await expect(page.locator('#conversionMessage')).toHaveText('保存失败测试');
+ await expect(second.locator('input[type="radio"]')).toBeChecked();
+ await expect(page.locator('#activeConverterValue')).toContainText('custom.example.com');
+ await expect(page.locator('#saveConverterSelection')).toBeEnabled();
+ await second.locator('[data-edit]').click();
+ await page.locator('#converterName').fill('失败后保留输入');
  await page.locator('#applyConverter').click();
  await expect(page.locator('#converterEditorMessage')).toHaveText('保存失败测试');
- await expect(page.locator('#converterDialog')).toBeVisible();
- await expect(page.locator('#converterName')).toHaveValue('重试后保存');
- await expect(second).toContainText('Worker 转换');
+ await expect(page.locator('#converterName')).toHaveValue('失败后保留输入');
+ await page.locator('#cancelConverter').click();
  await page.unroute('**/api/settings');
- await page.locator('#applyConverter').click(); await saved();
- await page.reload(); await expect(second).toContainText('重试后保存');
- await page.route('**/api/settings', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: '保存失败测试' }) }));
- await first.locator('input[type="radio"]').click();
- await expect(page.locator('#conversionMessage')).toHaveText('保存失败测试');
+ await saveSelection();
+ await page.reload();
  await expect(second.locator('input[type="radio"]')).toBeChecked();
- await first.locator('[data-remove]').click();
- await expect(page.locator('#conversionMessage')).toHaveText('保存失败测试');
- await expect(page.locator('.converter-profile')).toHaveCount(2);
- await page.unroute('**/api/settings');
- for (let i = 2; i < 10; i++) await add('备用转换服务 ' + i, 'subconverter', 'https://converter' + i + '.example.com');
- await expect(page.locator('#converterCount')).toHaveText('10 / 10');
+ await expect(second).toContainText('Worker 已修改');
+ await expect(page.locator('#activeConverterMode')).toHaveText('自建 Sublink Worker');
+ // Mode switches also wait for Save.
+ await page.locator('input[name="converterMode"][value="default"]').check();
+ await page.reload();
+ await expect(page.locator('input[name="converterMode"][value="custom"]')).toBeChecked();
+ await page.locator('input[name="converterMode"][value="default"]').check(); await saveSelection();
+ for (let i = 2; i < 10; i++) await add('备用转换服务 ' + i, 'https://converter' + i + '.example.com');
  await expect(page.locator('#addConverter')).toBeDisabled();
  const dimensions = await page.locator('#customConverterList').evaluate(el => ({ height: el.getBoundingClientRect().height, scroll: el.scrollHeight, client: el.clientHeight }));
  expect(dimensions.height).toBeLessThanOrEqual(282);
  expect(dimensions.scroll).toBeGreaterThan(dimensions.client);
  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
  await page.locator('#conversionForm').screenshot({ path: testInfo.outputPath('converter-list.png') });
- await first.locator('[data-edit]').click();
- await page.locator('#converterDialog').screenshot({ path: testInfo.outputPath('converter-editor.png') });
- await page.locator('#cancelConverter').click();
  while (await page.locator('[data-remove]').count()) { await page.locator('[data-remove]').first().click(); await saved(); }
- await page.reload();
- await expect(page.locator('.converter-profile')).toHaveCount(0);
- await expect(page.locator('input[name="converterMode"][value="default"]')).toBeChecked();
 });
