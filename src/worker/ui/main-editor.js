@@ -1,0 +1,57 @@
+export const mainEditorStyles = `
+ .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
+ .workspace-main .editor{height:220px;min-height:160px;border-bottom:1px solid var(--line)}
+ .main-section{padding:18px;border-top:1px solid var(--line)}
+ .main-section h3{margin:0;font-size:15px}.main-section p,.main-help{color:var(--muted);font-size:12px;line-height:1.65}
+ .main-section-head,.main-row-actions,.main-filter,.main-progress{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+ .main-section-head{justify-content:space-between;margin-bottom:10px}.main-filter{margin:10px 0}.main-progress{margin-top:10px;color:var(--muted);font-size:12px}
+ .main-filter input{flex:1;min-width:120px}.main-filter select{max-width:100%}
+ .main-section input,.main-section select,.main-edit-dialog input:not([type=checkbox]),.main-edit-dialog textarea{padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font:inherit;min-width:0}
+ .main-section input,.main-section select{font-size:12px}.main-node-row,.main-endpoint-row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
+ .main-node-row>div:first-child,.main-endpoint-row>div:first-child{flex:1;min-width:0}.main-node-row strong,.main-endpoint-row strong{font-size:12px;overflow-wrap:anywhere}
+ .main-node-row small,.main-endpoint-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/1.7 ui-monospace,monospace;color:var(--muted)}
+ .main-endpoint-row{align-items:flex-start;flex-wrap:wrap}.main-endpoint-row p{margin:4px 0 0;overflow-wrap:anywhere}.main-empty{padding:12px 0}
+ .main-badge{display:inline-block;padding:2px 6px;border-radius:4px;background:var(--green-soft);color:var(--green);font-size:10px;font-weight:500}
+ .main-edit-dialog{width:min(720px,calc(100% - 28px));max-height:90vh}.main-edit-dialog .dialog-body{text-align:left;max-height:calc(90vh - 65px);overflow:auto}
+ .main-edit-dialog label{font-size:13px}.main-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}.main-field textarea{width:100%;min-height:100px;resize:vertical;font:12px/1.6 ui-monospace,monospace}
+ .main-field-row{display:grid;grid-template-columns:120px 1fr;gap:12px}.main-targets{max-height:260px;overflow:auto;margin:10px 0;border:1px solid var(--line);border-radius:6px}
+ .main-target{display:flex;gap:10px;padding:10px;border-bottom:1px solid var(--line-soft);cursor:pointer}.main-target input{flex-shrink:0}.main-target span{min-width:0}.main-target small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
+ .main-error{color:var(--danger);font-size:12px;overflow-wrap:anywhere}.main-edit-dialog .dialog-actions{justify-content:flex-end;gap:8px}
+ @media(max-width:760px){.main-section{padding:14px}.main-endpoint-row>div:first-child{flex-basis:100%}.main-edit-dialog .dialog-body{padding:14px}.main-field-row{grid-template-columns:90px minmax(0,1fr)}.main-row-actions{width:100%}.main-node-row .tool-button{padding:0 8px}.workspace-main .editor{height:190px;min-height:150px}}
+`;
+
+export function renderMainEditorSections() {
+ return `<div class="main-section">
+  <div class="main-section-head"><h3>原始节点列表</h3><span class="main-help">逐条编辑会保留优选关联</span></div>
+  <p>上方可批量粘贴节点或订阅源。批量替换已关联的链接后，需要重新选择关联；修改已有节点请使用列表中的“编辑”。</p>
+  <div class="main-filter"><input id="originalSearch" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点"></div>
+  <div id="originalList"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
+ </div>
+ <div class="main-section">
+  <div class="main-section-head"><h3>优选域名 / IP 与端口</h3><button id="addEndpoint" class="primary-button" type="button">添加优选地址</button></div>
+  <p>填写优选地址，并勾选要扩展的原始节点。协议适用性由你确认；生成时仅替换连接地址、端口及名称，保留 Host、SNI、路径等其他参数。</p>
+  <div id="endpointList"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
+ </div>
+ <div class="main-section">
+  <div class="main-section-head"><h3>生成结果预览</h3><button id="exportMain" class="tool-button" type="button">导出节点 TXT</button></div>
+  <p id="mainPreviewNote" role="status"></p>
+  <div class="main-filter"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension">仅扩展</option></select></div>
+  <div id="mainPreview"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div><div class="main-section-head" style="margin-top:18px;margin-bottom:0"><span class="main-help">编辑完成后统一发布</span><button class="primary-button" type="button" onclick="saveContent()">保存并生效</button></div>
+ </div>`;
+}
+
+export function renderMainEditorDialogs() {
+ return `<dialog id="endpointDialog" class="main-edit-dialog" aria-labelledby="endpointTitle">
+  <div class="dialog-head"><strong id="endpointTitle">添加优选地址</strong><button id="closeEndpoint" class="icon-button" type="button" aria-label="关闭">×</button></div>
+  <form id="endpointForm" class="dialog-body">
+   <div class="main-field"><label for="endpointAddresses">优选域名或 IP</label><textarea id="endpointAddresses" required spellcheck="false" placeholder="每行一个地址，可携带端口，例如：&#10;cf.example.com&#10;203.0.113.10:8443&#10;[2001:db8::1]:443"></textarea><small class="main-help">添加时支持批量输入；行内端口优先于下面的默认端口。IPv6 携带端口时使用方括号。</small></div>
+   <div class="main-field-row"><div class="main-field"><label for="endpointPort">默认端口</label><input id="endpointPort" type="number" min="1" max="65535" step="1" value="443" list="endpointPorts" required><datalist id="endpointPorts"></datalist></div><div class="main-field"><label for="endpointLabel">备注（可选）</label><input id="endpointLabel" maxlength="160" placeholder="例如：电信优选；不填则使用地址和端口"></div></div>
+   <label><input id="endpointEnabled" type="checkbox" checked> 启用此优选地址</label>
+   <p class="main-help">选择要应用的原始节点。这里只生成链接，不进行协议适用性判断或测速。</p>
+   <div class="main-filter"><input id="targetSearch" type="search" aria-label="搜索关联节点" placeholder="搜索原始节点"><button id="selectTargets" type="button" class="tool-button">选择筛选结果</button><button id="clearTargets" type="button" class="tool-button">清空选择</button></div>
+   <div id="endpointTargets" class="main-targets"></div><div class="main-progress"><span id="targetCount"></span><button id="moreTargets" type="button" class="tool-button" hidden>显示更多</button></div>
+   <p id="endpointError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelEndpoint" class="tool-button" type="button">取消</button><button class="primary-button" type="submit">应用到编辑区</button></div><p class="main-help">应用后，点击主页面“保存并生效”发布全部更改。</p>
+  </form>
+ </dialog>
+ <dialog id="originalDialog" class="main-edit-dialog" aria-labelledby="originalTitle"><div class="dialog-head"><strong id="originalTitle">编辑原始节点</strong><button id="closeOriginal" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="originalForm" class="dialog-body"><div class="main-field"><label for="originalValue">完整链接</label><textarea id="originalValue" spellcheck="false" required></textarea><small class="main-help">修改连接信息、密码或名称后，原有优选地址关联仍然保留。</small></div><p id="originalError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelOriginal" type="button" class="tool-button">取消</button><button type="submit" class="primary-button">应用修改</button></div></form></dialog>`;
+}
