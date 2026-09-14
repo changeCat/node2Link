@@ -26,38 +26,74 @@ function syncModes() {
  byId('activeRuleValue').textContent = customRule ? (ruleURLInput.value.trim() || '尚未填写') : initial.defaultSubConfig;
  document.querySelectorAll('.converter-profile').forEach(card => card.classList.toggle('is-active', custom && card.dataset.id === activeId));
  byId('addConverter').disabled = profiles.length >= 10;
+ byId('converterCount').textContent = profiles.length + ' / 10';
+}
+function serviceHost(url) { try { return new URL(url).host; } catch { return '地址无效'; } }
+function changed(message = '转换配置已修改，请点击保存') {
+ byId('conversionMessage').textContent = message;
+ byId('conversionMessage').className = 'muted';
 }
 function renderProfiles() {
- byId('customConverterList').innerHTML = profiles.length ? profiles.map((item, index) => {
-  const id = esc(item.id);
-  return '<article class="converter-profile" data-id="' + id + '"><div class="converter-profile-head"><label><input type="radio" name="activeCustomConverter" value="' + id + '" ' + (item.id === activeId ? 'checked' : '') + '>启用此配置</label><button class="button" type="button" data-remove="' + id + '" aria-label="删除转换配置 ' + (index + 1) + '">删除</button></div><div class="profile-fields"><div class="field"><label for="name-' + id + '">名称</label><input id="name-' + id + '" data-field="name" maxlength="60" placeholder="例如 VPS 转换" value="' + esc(item.name) + '"></div><div class="field"><label for="type-' + id + '">类型</label><select id="type-' + id + '" data-field="type"><option value="subconverter" ' + (item.type === 'subconverter' ? 'selected' : '') + '>Subconverter</option><option value="sublink" ' + (item.type === 'sublink' ? 'selected' : '') + '>Sublink Worker</option></select></div></div><div class="field"><label for="url-' + id + '">服务地址</label><input id="url-' + id + '" data-field="url" type="url" maxlength="2048" required placeholder="https://sub.example.com" value="' + esc(item.url) + '"></div></article>';
- }).join('') : '<p class="muted">尚未添加自定义转换服务。</p>';
+ byId('customConverterList').innerHTML = profiles.length ? profiles.map(item => {
+  const id = esc(item.id), name = esc(item.name || '自建转换');
+  return '<div class="converter-profile" data-id="' + id + '" role="listitem"><input type="radio" name="activeCustomConverter" aria-label="启用 ' + name + '" value="' + id + '" ' + (item.id === activeId ? 'checked' : '') + '><div class="converter-summary"><strong title="' + name + '">' + name + '</strong><small>' + esc(typeLabel(item.type)) + ' · ' + esc(serviceHost(item.url)) + '</small></div><div class="converter-actions"><button class="button" type="button" data-edit="' + id + '" aria-label="编辑 ' + name + '">编辑</button><button class="button" type="button" data-remove="' + id + '" aria-label="删除 ' + name + '">删除</button></div></div>';
+ }).join('') : '<p class="converter-empty">尚未添加自定义转换服务，点击上方按钮添加。</p>';
  syncModes();
 }
-function addProfile() {
- if (profiles.length >= 10) return;
- const id = crypto.randomUUID();
- profiles.push({ id, name: '', type: 'subconverter', url: '' });
- if (!activeId) activeId = id;
+const converterDialog = byId('converterDialog'), editorForm = byId('converterEditorForm');
+const editorName = byId('converterName'), editorType = byId('converterType'), editorURL = byId('converterURL');
+let editingId = '';
+function openEditor(id = '') {
+ const item = profiles.find(value => value.id === id);
+ if (!item && profiles.length >= 10) return;
+ editingId = item?.id || '';
+ editorName.value = item?.name || '';
+ editorType.value = item?.type || 'subconverter';
+ editorURL.value = item?.url || '';
+ editorURL.setCustomValidity('');
+ byId('converterDialogTitle').textContent = item ? '编辑转换服务' : '添加转换服务';
+ byId('applyConverter').textContent = item ? '应用修改' : '添加到列表';
+ converterDialog.showModal();
+ editorName.focus();
+}
+byId('addConverter').addEventListener('click', () => openEditor());
+byId('cancelConverter').addEventListener('click', () => converterDialog.close());
+editorURL.addEventListener('input', () => editorURL.setCustomValidity(''));
+editorForm.addEventListener('submit', event => {
+ event.preventDefault();
+ let url;
+ try {
+  url = new URL(editorURL.value.trim());
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error();
+ } catch {
+  editorURL.setCustomValidity('请输入 HTTP 或 HTTPS 地址，访问密钥可放在路径中');
+  editorURL.reportValidity(); return;
+ }
+ url.search = ''; url.hash = '';
+ const item = { id: editingId || crypto.randomUUID(), name: editorName.value.trim() || '自建转换', type: editorType.value, url: url.toString().replace(/\/+$/, '') };
+ if (editingId) profiles = profiles.map(value => value.id === editingId ? item : value);
+ else {
+  if (profiles.length >= 10) return;
+  profiles.push(item);
+  if (!activeId) activeId = item.id;
+ }
  renderProfiles();
- byId('name-' + id).focus();
-}
-byId('addConverter').addEventListener('click', addProfile);
-byId('customConverterList').addEventListener('input', event => {
- const card = event.target.closest('[data-id]');
- const item = profiles.find(value => value.id === card?.dataset.id);
- if (item && event.target.dataset.field) item[event.target.dataset.field] = event.target.value;
- syncModes();
+ converterDialog.close();
+ changed(editingId ? '已修改列表，请点击保存' : '已添加到列表，请点击保存');
+ byId('addConverter').focus();
 });
 byId('customConverterList').addEventListener('change', event => {
- if (event.target.name === 'activeCustomConverter') { activeId = event.target.value; syncModes(); }
+ if (event.target.name === 'activeCustomConverter') { activeId = event.target.value; syncModes(); changed(); }
 });
 byId('customConverterList').addEventListener('click', event => {
+ const edit = event.target.closest('[data-edit]');
+ if (edit) { openEditor(edit.dataset.edit); return; }
  const button = event.target.closest('[data-remove]');
  if (!button) return;
  profiles = profiles.filter(item => item.id !== button.dataset.remove);
  if (activeId === button.dataset.remove) activeId = profiles[0]?.id || '';
- renderProfiles();
+ renderProfiles(); changed();
+ byId('addConverter').focus();
 });
 function saveSection(form, message, payload, onSaved) {
  const button = form.querySelector('button[type="submit"]');
@@ -72,8 +108,7 @@ iconPreview.addEventListener('error', () => { iconPreview.src = defaultIcon; });
 iconInput.addEventListener('input', refreshIcon);
 ruleURLInput.addEventListener('input', syncModes);
 document.querySelectorAll('input[name="converterMode"],input[name="ruleMode"]').forEach(el => el.addEventListener('change', () => {
- if (mode('converterMode') === 'custom' && !profiles.length) addProfile();
- syncModes();
+ syncModes(); changed();
 }));
 byId('generateToken').addEventListener('click', () => {
  const bytes = crypto.getRandomValues(new Uint8Array(24));
