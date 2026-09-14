@@ -16,7 +16,7 @@ let visibleLimit = 100;
 function esc(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function visibleNodes() {
  const query = searchInput.value.trim().toLowerCase();
- return availableNodes.filter(node => (sourceSelect.value === 'all' || node.source === sourceSelect.value) && (!query || node.searchText.includes(query)));
+ return availableNodes.filter(node => (sourceSelect.value === 'all' || node.source === sourceSelect.value || sourceSelect.value === 'main-original' && node.source === 'main' && node.kind !== 'extension' || sourceSelect.value === 'main-extension' && node.source === 'main' && node.kind === 'extension') && (!query || node.searchText.includes(query)));
 }
 function updateSelectedCount() {
  document.getElementById('selectedNodeCount').textContent = '已选择 ' + selected.size + ' 个';
@@ -25,9 +25,15 @@ function updateSelectedCount() {
 function renderPicker() {
  clearTimeout(searchTimer);
  const visible = visibleNodes();
- pickerList.innerHTML = visible.length ? visible.slice(0, visibleLimit).map(node =>
-  '<label class="picker-node"><input type="checkbox" data-node-id="' + esc(node.id) + '"' + (selected.has(node.selectionKey) ? ' checked' : '') + '><span><strong>' + esc(node.name) + '<span class="source-tag">' + esc(node.sourceName) + '</span></strong><small title="' + esc(node.content) + '">' + esc(node.content) + '</small></span></label>'
- ).join('') : '<div class="picker-empty">没有符合条件的节点</div>';
+ let previousGroup = '';
+ pickerList.innerHTML = visible.length ? visible.slice(0, visibleLimit).map(node => {
+  let heading = '';
+  if (node.source === 'main' && node.originalId && node.originalId !== previousGroup) {
+   previousGroup = node.originalId;
+   heading = '<div class="picker-main-group"><strong>' + esc(node.originalName || node.name) + '</strong><button type="button" class="button" data-main-group="' + esc(node.originalId) + '">选择本组</button></div>';
+  }
+  return heading + '<label class="picker-node"><input type="checkbox" data-node-id="' + esc(node.id) + '"' + (selected.has(node.selectionKey) ? ' checked' : '') + '><span><strong>' + esc(node.name) + '<span class="source-tag">' + esc(node.sourceName) + '</span></strong><small title="' + esc(node.content) + '">' + esc(node.content) + '</small></span></label>';
+ }).join('') : '<div class="picker-empty">没有符合条件的节点</div>';
  document.getElementById('nodePickerProgress').textContent = '显示 ' + Math.min(visibleLimit, visible.length) + ' / ' + visible.length + ' 个结果';
  moreButton.hidden = visible.length <= visibleLimit;
  updateSelectedCount();
@@ -76,6 +82,7 @@ function loadCandidates() {
 function closePicker() { dialog.close(); }
 document.getElementById('openNodePicker').addEventListener('click', () => {
  selected.clear();
+ candidatesLoaded = false;
  searchInput.value = '';
  sourceSelect.value = 'all';
  visibleLimit = 100;
@@ -92,6 +99,12 @@ searchInput.addEventListener('input', () => {
 sourceSelect.addEventListener('change', () => { visibleLimit = 100; renderPicker(); });
 moreButton.addEventListener('click', () => { visibleLimit += 100; renderPicker(); });
 retryButton.addEventListener('click', loadCandidates);
+pickerList.addEventListener('click', event => {
+ const button = event.target.closest('[data-main-group]');
+ if (!button) return;
+ visibleNodes().filter(node => node.source === 'main' && node.originalId === button.dataset.mainGroup).forEach(node => selected.add(node.selectionKey));
+ renderPicker();
+});
 pickerList.addEventListener('change', event => {
  const checkbox = event.target.closest('[data-node-id]');
  if (!checkbox) return;

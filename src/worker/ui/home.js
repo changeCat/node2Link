@@ -1,3 +1,5 @@
+import { originalText } from '../../shared/main-subscription.js';
+import { mainEditorStyles, renderMainEditorSections, renderMainEditorDialogs } from './main-editor.js';
 import { converterTypeLabel } from '../adapters/converters.js';
 import { DEFAULT_DISPLAY_FORMATS, SUBSCRIPTION_FORMAT_CATALOG, SUPPORTED_NODE_PROTOCOLS } from '../config.js';
 import { escapeHTML } from '../http.js';
@@ -5,7 +7,7 @@ import { assetURL, basePageStyles, pageScript } from './assets.js';
 import { renderTopbar, renderFavicon } from './pages.js';
 export function renderMainPage(request, runtime, record) {
 	const url = new URL(request.url);
-		const content = record.content;
+		const content = record.config ? originalText(record.config) : record.content;
 		let savedMetadata = record.metadata;
 		if (!savedMetadata) {
 			savedMetadata = {
@@ -262,6 +264,7 @@ export function renderMainPage(request, runtime, record) {
 						.editor { height: 56vh; min-height: 430px; padding: 14px; }
 					}
 					@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+				${mainEditorStyles}
 				</style>
 				<script src="${assetURL('qrcode-loader.js')}" defer></script>
 				<script src="${assetURL('lucide.js')}" defer></script>
@@ -282,7 +285,7 @@ export function renderMainPage(request, runtime, record) {
 						</aside>
 
 						<section class="section workspace-main" aria-labelledby="editor-title">
-							<div class="section-heading"><div><h2 id="editor-title">节点与订阅源</h2><p>每行填写一个节点链接或订阅地址</p></div></div>
+							<div class="section-heading"><div><h2 id="editor-title">主订阅配置</h2><p>原始节点 + 优选地址关联，统一保存后生效</p></div></div>
 
 							<div class="editor-shell">
 								<div class="editor-toolbar">
@@ -295,16 +298,16 @@ export function renderMainPage(request, runtime, record) {
 										<button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
 										<button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
 										<button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
-										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份</span></button>
+										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
 										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
-										<input id="restoreInput" type="file" accept=".txt,.conf,.list,text/plain" hidden>
-										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存更改</span></button>
+										<input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
+										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存并生效</span></button>
 									</div>
 								</div>
 								<div class="editor-insights" aria-label="内容统计">
-									<div class="metric"><span>节点</span><strong id="nodeCount">0</strong></div>
+									<div class="metric"><span>原始节点</span><strong id="nodeCount">0</strong></div>
 									<div class="metric"><span>订阅源</span><strong id="sourceCount">0</strong></div>
-									<div class="metric"><span>重复</span><strong id="duplicateCount">0</strong></div>
+									<div class="metric"><span>扩展节点</span><strong id="duplicateCount">0</strong></div>
 									<div class="metric"><span>格式问题</span><strong id="issueCount">0</strong></div>
 								</div>
 								<div class="validation-panel">
@@ -312,7 +315,8 @@ export function renderMainPage(request, runtime, record) {
 									<span class="protocol-breakdown" id="protocolBreakdown">暂无节点协议</span>
 									<span class="validation-issues" id="validationIssues"></span>
 								</div>
-								<textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
+								<label for="content" class="main-help" style="display:block;padding:12px 18px 0">原始节点 / 订阅源（每行一条）</label><textarea class="editor" id="content" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub">${escapeHTML(content)}</textarea>
+${renderMainEditorSections()}
 							</div>
 						</section>
 
@@ -328,6 +332,7 @@ export function renderMainPage(request, runtime, record) {
 					<footer class="page-footer"><span><a href="https://github.com/changeCat/node2Link" target="_blank" rel="noopener noreferrer">node2Link</a> · <a href="https://github.com/cmliu/CF-Workers-SUB" target="_blank" rel="noopener noreferrer">Forked from CF-Workers-SUB</a></span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
 				</main>
 
+				${renderMainEditorDialogs()}
 				<dialog id="qrDialog" aria-labelledby="qrTitle">
 					<div class="dialog-head"><strong id="qrTitle">扫描二维码导入</strong><button class="icon-button" type="button" onclick="closeQR()" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
 					<div class="dialog-body"><div id="qrcode"></div><p class="qr-url" id="qrUrl"></p></div>
@@ -346,7 +351,7 @@ export function renderMainPage(request, runtime, record) {
 				</dialog>
 				<div class="toast" id="toast" role="status" aria-live="polite"><i data-lucide="circle-check"></i><span id="toastText">已复制</span></div>
 
-				${pageScript('home', { savedMetadata, revision: record.revision, supportedProtocols: SUPPORTED_NODE_PROTOCOLS })}
+				${pageScript('home', { savedMetadata, revision: record.revision, mainConfig: record.config || null, supportedProtocols: SUPPORTED_NODE_PROTOCOLS })}
 			</body>
 			</html>`;
 
