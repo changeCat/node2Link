@@ -1,9 +1,10 @@
 export const mainEditorStyles = `
  .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
  #content[hidden]{display:none!important}
- .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;align-content:start}
+ .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable;align-content:start}
  .node-heading{display:flex;align-items:flex-start;gap:8px}.node-heading>div{min-width:0;flex:1}.node-heading input{flex:none;margin:3px 0;accent-color:var(--green)}
- #originalSection>.editor-actions{justify-content:flex-start;margin:10px 0}
+ #originalSection>.editor-actions{justify-content:flex-start;margin:10px 0;gap:7px}
+ #originalSection>.editor-actions .primary-button{margin-left:0}
  @media(max-width:760px){.main-scroll{max-height:360px}}
  .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
  .node-grid .main-node-row{display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px;min-width:0}
@@ -34,19 +35,21 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<div class="main-section" id="originalSection">
-  <div class="main-section-head"><h3>原始节点</h3><div class="main-row-actions"><button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button><button id="addOriginals" class="primary-button" type="button">批量添加</button></div></div>
+  <div class="main-section-head"><h3>原始节点</h3></div>
 <div class="editor-actions">
+  <button id="addOriginals" class="primary-button" type="button">批量添加</button>
 										<button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
 										<button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
 										<button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
 										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
 										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
 										<input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
+  <button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button>
 										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存并生效</span></button>
 									</div>
   <p>批量添加节点或订阅源；修改名称、参数或重置 UUID 请使用“编辑”，保留已有优选关联。</p>
   <div class="main-filter"><input id="originalSearch" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点"></div>
-  <div class="main-filter"><button id="selectOriginals" class="tool-button" type="button">全选筛选结果</button><button id="clearOriginalSelection" class="tool-button" type="button" disabled>取消选择</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
+  <div class="main-filter"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
   <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
  <div class="main-section">

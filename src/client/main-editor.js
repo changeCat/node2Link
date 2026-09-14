@@ -61,13 +61,18 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const nodes = filteredOriginals();
   el('originalList').innerHTML = nodes.slice(0, originalLimit).map(node => `<article class="main-node-row"><div class="node-heading"><input type="checkbox" data-select-original="${esc(node.id)}" aria-label="选择 ${esc(node.name)}" ${selectedOriginals.has(node.id) ? 'checked' : ''}><div>${summary(node.content, isMainSource(node.content) ? '订阅源' : node.name)}</div></div><div class="main-row-actions"><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-delete-original="${esc(node.id)}">删除</button></div></article>`).join('') || '<p class="main-empty">没有匹配的节点，可点击“批量添加”添加节点或订阅源。</p>';
   updateOriginalSelection();
-  el('selectOriginals').disabled = !nodes.length;
   el('originalProgress').textContent = `${Math.min(originalLimit, nodes.length)} / ${nodes.length} 项`;
   el('moreOriginals').hidden = nodes.length <= originalLimit;
  }
  function updateOriginalSelection() {
   el('originalSelectionCount').textContent = `已选 ${selectedOriginals.size} 项（含筛选外）`;
-  el('deleteOriginals').disabled = el('clearOriginalSelection').disabled = !selectedOriginals.size;
+  el('deleteOriginals').disabled = !selectedOriginals.size;
+  const nodes = filteredOriginals();
+  const allSelected = nodes.length > 0 && nodes.every(node => selectedOriginals.has(node.id));
+  el('selectOriginals').disabled = !nodes.length;
+  el('selectOriginals').textContent = allSelected ? '取消全选' : '全选筛选结果';
+  el('selectOriginals').setAttribute('aria-pressed', String(allSelected));
+  el('selectOriginals').title = allSelected ? '取消当前筛选结果的选择，保留筛选外的选择' : '选择全部筛选结果，包括尚未显示的节点';
  }
  function removeOriginals(ids) {
   remember(); config.originals = config.originals.filter(node => !ids.has(node.id));
@@ -228,8 +233,12 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   if (event.target.checked) selectedOriginals.add(id); else selectedOriginals.delete(id);
   updateOriginalSelection();
  });
- el('selectOriginals').addEventListener('click', () => { filteredOriginals().forEach(node => selectedOriginals.add(node.id)); renderOriginals(); });
- el('clearOriginalSelection').addEventListener('click', () => { selectedOriginals.clear(); renderOriginals(); });
+ el('selectOriginals').addEventListener('click', () => {
+  const nodes = filteredOriginals();
+  const allSelected = nodes.every(node => selectedOriginals.has(node.id));
+  nodes.forEach(node => { if (allSelected) selectedOriginals.delete(node.id); else selectedOriginals.add(node.id); });
+  renderOriginals();
+ });
  el('deleteOriginals').addEventListener('click', async () => {
   const ids = new Set(selectedOriginals);
   if (!ids.size) return;
