@@ -118,35 +118,38 @@ test('adaptive Loon keeps ordinary upstream URLs behind the normalized callback'
 	assert.doesNotMatch(converterSource, /upstream\.example\.com|token=secret/);
 });
 
-test('custom Sublink mode delegates unsupported Loon and QuanX targets to Subconverter', async () => {
-	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' }, {
-		converterMode: 'custom',
-		customConverterURL: 'https://custom.example.com'
-	});
-	const calls = [];
-	const fetchImpl = async input => {
-		const value = input instanceof Request ? input.url : String(input);
-		calls.push(value);
-		return new Response('[Proxy]\nnode = trojan,example.com,443,password');
-	};
-	for (const [requestURL, expectedFormat] of [
-		['https://app.example.com/s/abcdefghijklmnop', 'loon'],
-		['https://app.example.com/s/abcdefghijklmnop?quanx', 'quanx']
-	]) {
-		const headers = expectedFormat === 'loon' ? { 'User-Agent': 'Loon/3.2.4' } : {};
-		const response = await serveSubscription(new Request(requestURL, { headers }), {}, {}, runtime, 'trojan://id@example.com:443#node', 'share', false, 'abcdefghijklmnop', 'Share', { fetchImpl });
-		assert.equal(response.status, 200);
-		assert.equal(response.headers.get('X-Node2Link-Format'), expectedFormat);
-		assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'unsupported-default');
-	}
-	assert.equal(calls.length, 2);
-	for (const value of calls) {
-		assert.equal(new URL(value).hostname.toLowerCase(), 'subapi.cmliussss.net');
-		assert.doesNotMatch(value, /custom\.example\.com/);
-	}
+test('every converted format tries custom first and preserves callback-only node delivery', async () => {
+ const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' }, { converterMode: 'custom', customConverterURL: 'https://custom.example.com' });
+ const outputs = {
+  loon: '[Proxy]\nnode = trojan,example.com,443,password',
+  quanx: '[server_local]\ntrojan=example.com:443, password=password, tag=node',
+  clash: 'proxies: []', singbox: '{"outbounds":[]}', surge: '[Proxy]\nnode = trojan,example.com,443,password'
+ };
+ for (const [format, content] of Object.entries(outputs)) {
+  const calls = [];
+  const timings = [];
+  const response = await serveSubscription(new Request('https://app.example.com/s/abcdefghijklmnop?' + format, { headers: { 'User-Agent': 'Loon/3.2.4' } }), {}, {}, runtime,
+   'trojan://private-password@example.com:443#node', 'share', false, 'abcdefghijklmnop', 'Share', { timings, fetchImpl: async (input, init) => {
+    const url = new URL(input);
+    calls.push(url);
+    assert.equal(url.hostname, 'custom.example.com');
+    assert.equal(url.pathname, '/sub');
+    assert.equal(url.searchParams.get('target'), format);
+    assert.equal(url.searchParams.get('url'), 'https://app.example.com/s/abcdefghijklmnop?base64');
+    assert.doesNotMatch(url.href, /private-password|data%3A/);
+    assert.equal(new Headers(init.headers).get('Cache-Control'), 'no-store, no-cache, max-age=0');
+    return new Response(content);
+   } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'custom');
+  assert.equal(response.headers.get('X-Subconverter-Used'), 'https://custom.example.com');
+  assert.equal(calls.length, 1);
+  assert.ok(timings.some(value => value.startsWith('conversion_custom;')));
+  assert.ok(!timings.some(value => value.startsWith('conversion_fallback;')));
+ }
 });
 
-test('custom Sublink failure falls back to the default converter and reports it in the subscription notification', async t => {
+test('custom Subconverter failure stops conversion and reports the service and failure in the notification', async t => {
 	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret', TGTOKEN: 'bot-token', TGID: 'chat-id' }, {
 		converterMode: 'custom',
 		customConverterURL: 'https://custom.example.com'
@@ -173,15 +176,17 @@ test('custom Sublink failure falls back to the default converter and reports it 
 		}
 	);
 	await Promise.all(pending);
-	assert.equal(response.status, 200);
-	assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'fallback-default');
-	assert.equal(response.headers.get('X-Subconverter-Used'), 'https://SUBAPI.cmliussss.net');
-	assert.deepEqual(converterCalls.map(value => new URL(value).hostname), ['custom.example.com', 'subapi.cmliussss.net']);
+	assert.equal(response.status, 502);
+	assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'failed');
+	assert.equal(response.headers.get('X-Subconverter-Used'), null);
+	assert.deepEqual(converterCalls.map(value => new URL(value).hostname), ['custom.example.com']);
 	assert.equal(telegramMessages.length, 1);
-	assert.match(telegramMessages[0], /转换服务: 自建不可用，已回退到默认/);
+	assert.ok(telegramMessages[0].includes('转换服务: 自建 Subconverter（https://custom.example.com）'));
+	assert.match(telegramMessages[0], /订阅结果: 失败（HTTP 502）/);
+	assert.match(telegramMessages[0], /自建转换不可用.*未使用默认服务/);
 });
 
-test('an unreachable custom Sublink leaves time for the default fallback', async () => {
+test('an unreachable custom Subconverter returns failure without requesting a default service', async () => {
 	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' }, {
 		converterMode: 'custom',
 		customConverterURL: 'https://custom.example.com'
@@ -190,8 +195,7 @@ test('an unreachable custom Sublink leaves time for the default fallback', async
 	const response = await serveSubscription(
 		new Request('https://app.example.com/s/custom-timeout-id?surge'), {}, {}, runtime,
 		'trojan://id@example.com:443#node', 'share', false, 'custom-timeout-id', 'Custom timeout', {
-			conversionTimeoutMs: 100,
-			customAttemptTimeoutMs: 20,
+			conversionTimeoutMs: 20,
 			fetchImpl: async input => {
 				const value = input instanceof Request ? input.url : String(input);
 				calls.push(value);
@@ -201,9 +205,9 @@ test('an unreachable custom Sublink leaves time for the default fallback', async
 			}
 		}
 	);
-	assert.equal(response.status, 200);
-	assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'fallback-default');
-	assert.deepEqual(calls.map(value => new URL(value).hostname), ['custom.example.com', 'subapi.cmliussss.net']);
+	assert.equal(response.status, 502);
+	assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'failed');
+	assert.deepEqual(calls.map(value => new URL(value).hostname), ['custom.example.com']);
 });
 
 test('remote diagnostics exclude subscription paths, tokens and response content', t => {

@@ -10,7 +10,7 @@
 
 - 账号密码登录管理端，会话 Cookie 使用 `HttpOnly`、`Secure`、`SameSite=Strict`；
 - 汇聚多个节点或上游订阅，并输出 Base64、Clash、Sing-box、Surge、QuanX、Loon 等格式；
-- 独立设置页，可分别修改主订阅名称、浏览器标签页标题与图标、主订阅入口 Token，并在默认/自建转换服务和默认/自建规则之间切换；选择自建时，Base64、Clash、Sing-box、Surge 优先使用自建 Sublink Worker，不可用时自动回退默认 Subconverter，Loon 与 QuanX 因 Sublink 不支持而直接使用默认服务，实际选择及回退结果会写入订阅通知；还可增减及排序“我的订阅”所展示的客户端格式，各设置模块均可独立保存，标签页标题默认使用 `CF-Workers-SUB`；
+- 独立设置页，可分别修改主订阅名称、浏览器标签页标题与图标、主订阅入口 Token，并在默认/自建转换服务和默认/自建规则之间切换；选择自建时，所有需要外部转换的格式（包括 Loon、QuanX）都会先请求自建服务；失败或返回无效格式时自动回退默认 Subconverter，实际选择及回退结果会写入订阅通知。纯节点的 Base64 输出直接在本站生成，无需外部转换；还可增减及排序“我的订阅”所展示的客户端格式，各设置模块均可独立保存，标签页标题默认使用 `CF-Workers-SUB`；
 - “仪表盘”“主订阅”“分享管理”和“订阅请求”使用顶部 Tab 切换，访问根路径时默认展示主订阅；启用可选的 API 订阅功能后会增加“API 订阅”Tab；
 - 个人仪表盘展示本地节点及协议分布、上游来源数量、分享状态、未来 7 天到期提醒和最近修改；各模块支持折叠并在当前浏览器记住状态；
 - API 订阅默认关闭；设置 `API_SUBSCRIPTION_ENABLED=true` 后，可先配置节点及名称模板，再由外部系统通过带唯一 Token 的 URL 一次追加多个域名/IP 地址或完整节点链接；节点只在 API 订阅页维护，但会动态附加到主订阅结果末尾；
@@ -94,7 +94,9 @@ Root directory: 留空
 
 遇到主订阅编辑冲突时，当前文本和本地草稿会保留。先点击“备份”下载当前编辑，再刷新读取最新内容并合并修改。此检查基于 D1 head 的当前版本，适用于个人多标签页操作；正文仍通过不可变 KV 版本发布。
 
-分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前选择的转换后端处理；普通明文与 Base64 上游会先由项目拉取并规范化，再交给格式转换端，避免转换端因来源访问限制或响应缓慢而失败。默认 Subconverter 可转换为 v2rayN 使用的节点订阅，自建 Sublink Worker 的 `/xray` 仅聚合原始节点或通用 Base64 订阅，因此使用自建服务时应填写提供商的原始节点、通用 Base64 或 Servers-only 链接。v2rayN 获取 Base64 订阅时，项目会为只有 `peer` 的 AnyTLS 节点补充同值 `sni`，并过滤当前 v2rayN 无法解析的 `obfs-local;obfs=tls` Shadowsocks 节点；Clash/Mihomo、Sing-box 和其他客户端的结果保持原样。普通上游订阅使用 8 秒完整响应超时；Loon、Clash、Surge、QuanX、Sing-box 等规则格式转换使用独立的 30 秒完整响应超时。配置多个默认转换端时，单个转换端最多使用 20 秒。不可达或限制 Cloudflare 访问的提供商会被跳过，避免无限拖延客户端更新。
+转换服务仅提供默认服务与自建 Subconverter，统一使用 `/sub?target=...` 接口。选择自建后仅请求自建服务，HTTP 失败、超时、空内容或目标格式无效时停止转换并返回 502，不再回退默认；结构化上游的 Base64 转换失败也不会返回不完整的成功订阅。旧配置中的自建地址会保留，并按 Subconverter 调用，请确认地址已指向对应服务。主订阅的转换信息会重点标注当前未启用自建转换。订阅通知包含成功/失败结果、实际转换服务类型与域名；纯节点 Base64 标注为本地生成。通知和诊断响应头不包含转换地址的密钥路径。
+
+分享中的上游订阅支持明文节点、Base64 节点，以及 Clash/Mihomo YAML 和 Sing-box JSON。结构化的专属格式会交给当前选择的转换后端处理；普通明文与 Base64 上游会先由项目拉取并规范化，再交给格式转换端，避免转换端因来源访问限制或响应缓慢而失败。Subconverter 可将支持的来源转换为 v2rayN 使用的节点订阅。v2rayN 获取 Base64 订阅时，项目会为只有 `peer` 的 AnyTLS 节点补充同值 `sni`，并过滤当前 v2rayN 无法解析的 `obfs-local;obfs=tls` Shadowsocks 节点；Clash/Mihomo、Sing-box 和其他客户端的结果保持原样。普通上游订阅使用 8 秒完整响应超时；Loon、Clash、Surge、QuanX、Sing-box 等规则格式转换使用独立的 30 秒完整响应超时。自建转换使用完整的 30 秒转换预算，不再预留回退时间；收到 HTTP 失败状态后立即停止读取错误响应体并报告失败，不等待错误页面下载完毕。配置多个默认转换端时，单个转换端最多使用 20 秒。不可达或限制 Cloudflare 访问的提供商会被跳过，避免无限拖延客户端更新。
 
 ### API 订阅调用
 
@@ -172,7 +174,7 @@ https://sub.example.com/s/<id>?loon     # Loon
 
 编辑器输入后立即显示未保存状态，统计和本地草稿在停止输入 250 ms 后更新；保存、切换到后台或离开页面时补齐待写草稿。分享页只在打开“从已有节点选择”时加载候选，先显示本地节点，再补充上游节点。列表每批显示 100 条，搜索覆盖全部候选；“选择当前结果”会选中全部筛选结果，包括尚未显示的部分。上游读取失败时保留已加载节点，可点击重试。
 
-在浏览器开发者工具的 Network 中查看响应头 `Server-Timing`：`settings` 是站点设置读取，`main_read` / `nodes_read` 是节点读取，`upstream` 是上游获取，`conversion` 是格式转换，`app` 是 Worker 总耗时。阶段可能嵌套，不应简单相加；只显示本次执行的阶段。若总等待明显大于 Worker 耗时，需要继续检查客户端网络、连接与传输。
+在浏览器开发者工具的 Network 中查看响应头 `Server-Timing`：`settings` 是站点设置读取，`main_read` / `nodes_read` 是节点读取，`upstream` 是上游获取，`conversion` 是格式转换，`conversion_custom` 是自建转换耗时（包含在 `conversion` 内），`app` 是 Worker 总耗时。阶段可能嵌套，不应简单相加；只显示本次执行的阶段。若总等待明显大于 Worker 耗时，需要继续检查客户端网络、连接与传输。
 
 v2rayN 通过代理更新正常、直连超时，不一定是项目处理慢。可以在有问题的电脑上，关闭 TUN 后用以下命令分别测试 IPv4 / IPv6；只填写域名，登录页无需提供订阅凭证：
 
@@ -196,4 +198,4 @@ IPv4 成功而 IPv6 超时，说明需要检查 IPv6 路径和客户端回退行
 
 ## 致谢
 
-基于 CF-Workers-SUB 的订阅处理能力，并感谢 [ACL4SSR](https://github.com/ACL4SSR/ACL4SSR)、[Sublink Worker](https://github.com/7Sageer/sublink-worker) 等项目。
+基于 CF-Workers-SUB 的订阅处理能力，并感谢 [ACL4SSR](https://github.com/ACL4SSR/ACL4SSR)、[Subconverter](https://github.com/tindy2013/subconverter) 等项目。

@@ -31,7 +31,7 @@ async function readBody(response, signal, maxBytes) {
 
 // The deadline includes DNS/headers AND the entire response body. fetchImpl is
 // injectable so slow streams/failover can be tested without global mutations.
-export async function fetchWithTimeout(input, init = {}, timeoutMs = REMOTE_FETCH_TIMEOUT_MS, { fetchImpl = globalThis.fetch, maxBytes = MAX_REMOTE_BYTES } = {}) {
+export async function fetchWithTimeout(input, init = {}, timeoutMs = REMOTE_FETCH_TIMEOUT_MS, { fetchImpl = globalThis.fetch, maxBytes = MAX_REMOTE_BYTES, discardErrorBody = false } = {}) {
 	const controller = new AbortController();
 	const sourceSignal = init.signal || (input instanceof Request ? input.signal : null);
 	const forward = () => controller.abort(sourceSignal.reason);
@@ -49,6 +49,11 @@ export async function fetchWithTimeout(input, init = {}, timeoutMs = REMOTE_FETC
 			if (controller.signal.aborted) {
 				void response.body?.cancel().catch(() => {});
 				controller.signal.throwIfAborted();
+			}
+			// Fail over on the status; an error page can itself stall indefinitely.
+			if (discardErrorBody && !response.ok) {
+				void response.body?.cancel().catch(() => {});
+				return new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers });
 			}
 			const body = await readBody(response, controller.signal, maxBytes);
 			return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
