@@ -4,7 +4,9 @@ const byId = id => document.getElementById(id);
 const nameInput = byId('subscriptionName'), pageTitleInput = byId('pageTitle'), iconInput = byId('browserIconURL');
 const iconPreview = byId('iconPreview'), tokenInput = byId('subscriptionToken');
 let profiles = structuredClone(initial.customConverters || []), activeId = initial.activeCustomConverterId || '';
-let savedMode = initial.converterMode, savingConversion = false;
+let savedMode = initial.converterMode, savedActiveId = activeId, selectedMode = savedMode, savingConversion = false;
+const selectionChanged = () => selectedMode !== savedMode || activeId !== savedActiveId;
+function selectionMessage() { byId('conversionMessage').textContent = selectionChanged() ? '转换选择尚未保存，请点击保存生效' : '已保存'; byId('conversionMessage').className = 'muted'; }
 nameInput.value = initial.subscriptionName;
 pageTitleInput.value = initial.pageTitle;
 iconInput.value = initial.browserIconURL || '';
@@ -15,30 +17,34 @@ const typeLabel = type => type === 'sublink' ? 'Sublink Worker' : 'Subconverter'
 function refreshIcon() { iconPreview.src = iconInput.value.trim() || defaultIcon; }
 function syncModes() {
  const custom = savedMode === 'custom';
- document.querySelector('input[name="converterMode"][value="' + savedMode + '"]').checked = true;
- const active = profiles.find(item => item.id === activeId);
+ document.querySelector('input[name="converterMode"][value="' + selectedMode + '"]').checked = true;
+ const active = profiles.find(item => item.id === savedActiveId);
  byId('activeConverterMode').textContent = custom ? '自建 ' + typeLabel(active?.type) : '默认 Subconverter';
  byId('activeConverterValue').textContent = custom ? ((active?.url || '请选择并填写自定义服务') + ' → 失败回退默认') : initial.defaultConverterURLs.join(' → ');
- document.querySelectorAll('.converter-profile').forEach(card => card.classList.toggle('is-active', custom && card.dataset.id === activeId));
+ document.querySelectorAll('.converter-profile').forEach(card => card.classList.toggle('is-active', selectedMode === 'custom' && card.dataset.id === activeId));
  byId('addConverter').disabled = profiles.length >= 10;
  byId('converterCount').textContent = profiles.length + ' / 10';
+ byId('saveConverterSelection').disabled = savingConversion || !selectionChanged();
 }
 function serviceHost(url) { try { return new URL(url).host; } catch { return '地址无效'; } }
-async function saveConversion(next, message = byId('conversionMessage')) {
+async function saveConversion(next, message = byId('conversionMessage'), commitSelection = false) {
  if (savingConversion) return false;
+ const preserveSelection = selectionChanged();
  savingConversion = true;
  syncModes();
  document.querySelectorAll('#conversionForm input, #conversionForm button, #converterEditorForm input, #converterEditorForm select, #converterEditorForm button').forEach(el => { el.disabled = true; });
  message.textContent = '正在保存…'; message.className = 'muted';
  try {
-  const response = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: 'conversion', converterMode: savedMode, customConverters: profiles, activeCustomConverterId: activeId, ...next }) });
+  const response = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ section: 'conversion', converterMode: savedMode, customConverters: profiles, activeCustomConverterId: savedActiveId, ...next }) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || '保存失败');
   profiles = data.settings.customConverters;
-  activeId = data.settings.activeCustomConverterId;
+  savedActiveId = data.settings.activeCustomConverterId;
   savedMode = data.settings.converterMode;
+  if (commitSelection || !preserveSelection) { activeId = savedActiveId; selectedMode = savedMode; }
+  else if (!profiles.some(item => item.id === activeId)) activeId = savedActiveId || (selectedMode === 'custom' ? profiles[0]?.id || '' : '');
   message.textContent = '';
-  byId('conversionMessage').textContent = '已保存';
+  byId('conversionMessage').textContent = selectionChanged() ? '列表已保存；转换选择尚未保存，请点击保存生效' : '已保存';
   byId('conversionMessage').className = 'success';
   return true;
  } catch (error) {
@@ -59,10 +65,9 @@ function renderProfiles() {
 }
 const converterDialog = byId('converterDialog'), editorForm = byId('converterEditorForm');
 const editorName = byId('converterName'), editorType = byId('converterType'), editorURL = byId('converterURL');
-let editingId = '', editorMode = savedMode;
-function openEditor(id = '', nextMode = savedMode) {
+let editingId = '';
+function openEditor(id = '') {
  if (savingConversion) return;
- editorMode = nextMode;
  byId('converterEditorMessage').textContent = '';
  const item = profiles.find(value => value.id === id);
  if (!item && profiles.length >= 10) return;
@@ -94,13 +99,13 @@ editorForm.addEventListener('submit', async event => {
  const item = { id: editingId || crypto.randomUUID(), name: editorName.value.trim() || '自建转换', type: editorType.value, url: url.toString().replace(/\/+$/, '') };
  if (!editingId && profiles.length >= 10) return;
  const nextProfiles = editingId ? profiles.map(value => value.id === editingId ? item : value) : [...profiles, item];
- if (await saveConversion({ converterMode: editorMode, customConverters: nextProfiles, activeCustomConverterId: activeId || item.id }, byId('converterEditorMessage'))) {
+ if (await saveConversion({ customConverters: nextProfiles }, byId('converterEditorMessage'))) {
   converterDialog.close();
   byId('addConverter').focus();
  }
 });
 byId('customConverterList').addEventListener('change', event => {
- if (event.target.name === 'activeCustomConverter') void saveConversion({ activeCustomConverterId: event.target.value, converterMode: 'custom' });
+ if (event.target.name === 'activeCustomConverter') { activeId = event.target.value; selectedMode = 'custom'; syncModes(); selectionMessage(); }
 });
 byId('customConverterList').addEventListener('click', event => {
  if (savingConversion) return;
@@ -109,7 +114,7 @@ byId('customConverterList').addEventListener('click', event => {
  const button = event.target.closest('[data-remove]');
  if (!button) return;
  const nextProfiles = profiles.filter(item => item.id !== button.dataset.remove);
- void saveConversion({ customConverters: nextProfiles, activeCustomConverterId: activeId === button.dataset.remove ? nextProfiles[0]?.id || '' : activeId, converterMode: nextProfiles.length ? savedMode : 'default' });
+ void saveConversion({ customConverters: nextProfiles, activeCustomConverterId: savedActiveId === button.dataset.remove ? '' : savedActiveId, converterMode: savedActiveId === button.dataset.remove || !nextProfiles.length ? 'default' : savedMode });
 });
 function saveSection(form, message, payload, onSaved) {
  const button = form.querySelector('button[type="submit"]');
@@ -123,10 +128,13 @@ function saveSection(form, message, payload, onSaved) {
 iconPreview.addEventListener('error', () => { iconPreview.src = defaultIcon; });
 iconInput.addEventListener('input', refreshIcon);
 document.querySelectorAll('input[name="converterMode"]').forEach(el => el.addEventListener('change', () => {
- const nextMode = el.value;
- if (nextMode === 'custom' && !profiles.length) { syncModes(); openEditor('', 'custom'); return; }
- void saveConversion({ converterMode: nextMode, activeCustomConverterId: activeId || profiles[0]?.id || '' });
+ selectedMode = el.value;
+ if (selectedMode === 'custom' && !activeId) activeId = profiles[0]?.id || '';
+ renderProfiles(); selectionMessage();
 }));
+byId('saveConverterSelection').addEventListener('click', () => {
+ void saveConversion({ converterMode: selectedMode, activeCustomConverterId: activeId }, byId('conversionMessage'), true);
+});
 byId('generateToken').addEventListener('click', () => {
  const bytes = crypto.getRandomValues(new Uint8Array(24));
  tokenInput.value = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
