@@ -185,6 +185,8 @@ test('empty batches are rejected and bulk deletion preserves undo and associatio
  await expect(page.locator('.editor-toolbar button')).toHaveCount(0);
  await expect(page.locator('#originalSection #undoButton')).toHaveCount(1);
  await expect(page.locator('#originalSection #saveButton')).toHaveCount(1);
+ await expect(page.locator('#originalSection > .editor-actions #exportOriginals')).toHaveCount(1);
+ await expect(page.locator('#originalSection > .editor-actions #addOriginals')).toHaveCount(1);
  await page.locator('#addOriginals').click();
  for (const mode of ['append', 'replace']) {
   await page.locator('#batchValue').fill(' \n\t ');
@@ -198,6 +200,15 @@ test('empty batches are rejected and bulk deletion preserves undo and associatio
  await page.locator('#originalSearch').fill('Main-HY2');
  await page.locator('#selectOriginals').click();
  await expect(page.locator('#originalSelectionCount')).toContainText('已选 2 项');
+ await expect(page.locator('#selectOriginals')).toHaveText('取消全选');
+ await page.locator('#selectOriginals').click();
+ await expect(page.locator('#originalSelectionCount')).toContainText('已选 1 项');
+ await expect(page.locator('#selectOriginals')).toHaveText('全选筛选结果');
+ await page.locator('#originalSearch').fill('no matches');
+ await expect(page.locator('#selectOriginals')).toBeDisabled();
+ await expect(page.locator('#deleteOriginals')).toBeEnabled();
+ await page.locator('#originalSearch').fill('Main-HY2');
+ await page.locator('#selectOriginals').click();
  await page.locator('#deleteOriginals').click();
  await expect(page.locator('#mainConfirmText')).toContainText('2 个优选关联');
  await page.locator('#mainConfirmDialog').getByRole('button', { name: '取消', exact: true }).click();
@@ -225,7 +236,9 @@ test('lists scroll independently and selection includes unloaded matching nodes'
  await expect(page.locator('[data-select-original]')).toHaveCount(100);
  await page.locator('#selectOriginals').click();
  await expect(page.locator('#originalSelectionCount')).toContainText('已选 105 项');
- await page.locator('#clearOriginalSelection').click();
+ await expect(page.locator('#selectOriginals')).toHaveText('取消全选');
+ await page.locator('#selectOriginals').click();
+ await expect(page.locator('#selectOriginals')).toHaveText('全选筛选结果');
  await expect(page.locator('#deleteOriginals')).toBeDisabled();
  await page.locator('#selectOriginals').click();
  await page.locator('#deleteOriginals').click();
@@ -262,4 +275,27 @@ test('custom converter labels and long URLs wrap without overlap', async ({ page
  await page.locator('.converter-profile').filter({ hasText: '换行测试' }).locator('[data-remove]').click();
  await expect(page.locator('#conversionMessage')).toHaveText('已保存');
  await page.goto('/');
+});
+
+test('wheel scrolling passes from short lists and list boundaries to the page', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com');
+ async function wheelOnList(id) {
+  const list = page.locator('#' + id);
+  await list.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await list.hover();
+  const before = await page.evaluate(() => scrollY);
+  await page.mouse.wheel(0, -350);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(before);
+ }
+ for (const id of ['originalList', 'mainPreview']) {
+  expect(await page.locator('#' + id).evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+  await wheelOnList(id);
+ }
+ await setOriginals(page, Array.from({ length: 30 }, (_, i) => first.replace('#Main-HK', '#Scroll-' + i)).join('\n'));
+ await addEndpoints(page, 'scroll.example.com');
+ for (const id of ['originalList', 'mainPreview']) {
+  expect(await page.locator('#' + id).evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await page.locator('#' + id).evaluate(el => { el.scrollTop = 0; });
+  await wheelOnList(id);
+ }
 });
