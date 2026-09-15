@@ -81,7 +81,7 @@ function renderTemplates() {
   const id = esc(template.id);
   const actions = '<button class="button" type="button" data-edit-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>编辑</button><button class="button" type="button" data-preview-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>预览</button><button class="button danger-button" type="button" data-remove-template="' + id + '"' + (busy ? ' disabled' : '') + '>移除</button>';
   const detail = error ? '<p class="message">' + esc(error) + '</p>' : '';
-  return '<article class="api-template-card subscription-card" data-saved-template="' + id + '">' + subscriptionCard({ name: node?.name || '原始节点已删除', protocol: node?.protocol || '失效', address: node?.address || template.id, port: template.port === null ? '跟随 API' : template.port, portAttributes: ' data-template-port-status="' + id + '"', actions, detail }) + '</article>';
+  return '<article class="api-template-card subscription-card" data-saved-template="' + id + '">' + subscriptionCard({ name: node?.name || '原始节点已删除', protocol: node?.protocol || '失效', address: node?.address || template.id, port: template.port === null ? '跟随 API' : template.port, showPort: true, portAttributes: ' data-template-port-status="' + id + '"', actions, detail }) + '</article>';
  }).join('') || '<div class="empty-list">' + (templates.length ? '没有匹配的模板。' : '尚无模板，点击“添加模板”从原始节点中选择。') + '</div>';
 }
 function markChanged() { showMessage('模板已修改，尚未保存'); }
