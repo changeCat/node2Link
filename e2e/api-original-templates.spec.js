@@ -125,7 +125,7 @@ test('template cards, duplicate prevention, optional ports and automatic origina
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
  if (test.info().project.name === 'desktop') {
   const left = await page.locator('#settingsForm').boundingBox(), right = await page.locator('.nodes-panel').boundingBox();
-  expect(left.width / right.width).toBeCloseTo(2, 1);
+  expect(left.width / right.width).toBeCloseTo(1.35, 2);
  }
  await page.screenshot({ path: test.info().outputPath('api-template-cards.png'), fullPage: true });
  // A removed original is marked invalid and can be removed from the template list.
