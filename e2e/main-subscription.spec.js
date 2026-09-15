@@ -137,8 +137,10 @@ test('endpoint validation retains input, and failed saves keep the current subsc
  expect(await subscription(page)).toHaveLength(3);
 });
 
-test('both save actions share pending state and preserve edits made during publication', async ({ page }) => {
+test('single save action preserves edits made during publication', async ({ page }) => {
  await seed(page); await addEndpoints(page, 'cf.example.com');
+ await expect(page.locator('[data-save-main]')).toHaveCount(1);
+ await expect(page.locator('#previewSection #saveButton')).toHaveCount(1);
  let releaseSave, markStarted;
  const gate = new Promise(resolve => { releaseSave = resolve; });
  const started = new Promise(resolve => { markStarted = resolve; });
@@ -232,7 +234,7 @@ test('empty batches are rejected and bulk deletion preserves undo and associatio
  await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
  await expect(page.locator('.editor-toolbar button')).toHaveCount(0);
  await expect(page.locator('#originalSection #undoButton')).toHaveCount(1);
- await expect(page.locator('#originalSection #saveButton')).toHaveCount(1);
+ await expect(page.locator('#originalSection #saveButton')).toHaveCount(0);
  await expect(page.locator('#originalSection > .editor-actions #exportOriginals')).toHaveCount(1);
  await expect(page.locator('#originalSection > .editor-actions #addOriginals')).toHaveCount(1);
  await page.locator('#addOriginals').click();
@@ -297,7 +299,7 @@ test('lists scroll independently and selection includes unloaded matching nodes'
  await expect(page.locator('#duplicateCount')).toHaveText('840');
 });
 
-test('custom converter addresses stay compact and expand or copy the complete URL', async ({ page }) => {
+test('custom converter addresses display in full without copy controls or fallback notice', async ({ page }) => {
  const url = 'https://converter.example.com/' + 'long-path-'.repeat(20);
  await page.goto('/settings');
  await page.locator('#addConverter').click();
@@ -310,23 +312,15 @@ test('custom converter addresses stay compact and expand or copy the complete UR
  await expect(page.locator('#conversionMessage')).toHaveText('已保存');
  await page.goto('/');
  const entry = page.locator('.converter-entry').first();
- const summary = entry.locator('summary'), full = entry.locator('.converter-full-url');
- await expect(summary.locator('code')).toHaveText(url);
- await expect(full).not.toBeVisible();
- expect(await summary.locator('code').evaluate(el => getComputedStyle(el).whiteSpace)).toBe('nowrap');
- expect((await summary.boundingBox()).height).toBeLessThan(50);
- await page.screenshot({ path: test.info().outputPath('converter-compact.png'), fullPage: true });
- await entry.locator('[data-converter-url]').click();
- await expect(page.locator('#toastText')).toHaveText('转换后端完整地址已复制');
- expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(url);
- await summary.click();
+ const full = entry.locator('.converter-full-url');
  await expect(full).toBeVisible();
  await expect(full).toHaveText(url);
+ await expect(entry.locator('button, details, summary')).toHaveCount(0);
+ await expect(page.locator('.converter-warning')).toHaveCount(0);
  expect(await full.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+ expect((await full.boundingBox()).height).toBeGreaterThan(40);
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
- await page.screenshot({ path: test.info().outputPath('converter-expanded.png'), fullPage: true });
- await summary.click();
- await expect(full).not.toBeVisible();
+ await page.screenshot({ path: test.info().outputPath('converter-full.png'), fullPage: true });
  await page.goto('/settings');
  await page.locator('input[name="converterMode"][value="default"]').check();
  await page.locator('#saveConverterSelection').click();
