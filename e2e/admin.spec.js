@@ -199,9 +199,13 @@ test('API template save, token copy and reset, import and deletion', async ({ pa
 	expect(Math.abs(copyBox.y - resetBox.y)).toBeLessThan(1);
 	await page.locator('#copyToken').click();
 	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(oldToken);
-	if (await page.locator('#clearTemplateSelection').isEnabled()) await page.locator('#clearTemplateSelection').click();
+	while (await page.locator('[data-remove-template]').count()) await page.locator('[data-remove-template]').first().click();
+ await page.locator('#addTemplate').click();
  await page.locator('[data-template-id]').first().check();
- await expect(page.locator('#templatePreview')).toContainText('edge.example.com:443');
+ await page.locator('#confirmAddTemplates').click();
+ await page.locator('[data-preview-template]').first().click();
+ await expect(page.locator('#templatePreview')).toHaveValue(/edge\.example\.com:8443/);
+ await page.locator('#closeTemplatePreview').click();
 	await page.locator('#nameTemplate').fill('Browser-{{address}}');
 	await page.locator('#saveSettings').click();
 	await expect(page.locator('#settingsMessage')).toContainText('已保存');

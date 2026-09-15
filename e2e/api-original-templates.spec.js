@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
  await expect(page).toHaveURL(/\/$/);
  await saveConfig(page, config);
  await page.evaluate(async () => {
-  const response = await fetch('/api/generated-nodes', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'browser-original-template-token', nodeTemplate: '', nameTemplate: '{{name}}-{{address}}:{{port}}' }) });
+  const response = await fetch('/api/generated-nodes', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'browser-original-template-token', templates: [], nameTemplate: '{{name}}-{{address}}:{{port}}' }) });
   if (!response.ok) throw new Error('Unable to reset API settings');
  });
 });
@@ -54,48 +54,86 @@ test('originals are flat, extensions grouped and API nodes isolated in the share
  await page.screenshot({ path: test.info().outputPath('share-picker-groups.png'), fullPage: true });
 });
 
-test('select multiple original templates, preview, save, reload, import and retain input on failure', async ({ page }) => {
+test('template cards, duplicate prevention, optional ports and automatic original updates', async ({ page }) => {
  await page.goto('/api-subscriptions');
+ await expect(page.locator('#templatePickerDialog')).not.toBeVisible();
+ await expect(page.locator('.api-template-card')).toHaveCount(0);
+ await expect(page.locator('#nodeTemplate')).toHaveCount(0);
+ await expect(page.locator('#legacyTemplateSection')).toHaveCount(0);
+ await page.locator('#addTemplate').click();
  await expect(page.locator('[data-template-id]')).toHaveCount(2);
  await expect(page.locator('#templateOriginalList')).not.toContainText('Preferred');
  await page.locator('#templateSearch').fill('Original-B');
  await page.locator('#selectTemplateResults').click();
- await expect(page.locator('#templateCount')).toHaveText('已选 1 / 20');
+ await page.locator('[data-pending-port="two"]').fill('2053');
  await page.locator('#templateSearch').fill('');
  await page.locator('[data-template-id="one"]').check();
- await page.locator('#nameTemplate').fill('{{name}}-{{address}}:{{port}}');
- await expect(page.locator('#templatePreview .example-box')).toHaveCount(2);
- await expect(page.locator('#templatePreview')).toContainText('sni=origin.example.com');
- await expect(page.locator('#templatePreview')).toContainText('edge.example.com:443');
+ await page.screenshot({ path: test.info().outputPath('add-api-templates.png'), fullPage: true });
+ await page.locator('#confirmAddTemplates').click();
+ await expect(page.locator('#templatePickerDialog')).not.toBeVisible();
+ await expect(page.locator('.api-template-card')).toHaveCount(2);
+ await expect(page.locator('[data-template-port="two"]')).toHaveValue('2053');
+ await expect(page.locator('[data-template-port="one"]')).toHaveValue('');
+ await page.locator('#addTemplate').click();
+ await expect(page.locator('[data-template-id="one"]')).toBeDisabled();
+ await expect(page.locator('[data-template-id="two"]')).toBeDisabled();
+ await expect(page.locator('#confirmAddTemplates')).toBeDisabled();
+ await page.locator('#cancelTemplatePicker').click();
+ await page.locator('[data-preview-template="one"]').click();
+ await expect(page.locator('#templatePreview')).toHaveValue(/edge\.example\.com:8443.*sni=origin\.example\.com/);
+ await page.locator('#closeTemplatePreview').click();
+ await page.locator('[data-preview-template="two"]').click();
+ await expect(page.locator('#templatePreview')).toHaveValue(/edge\.example\.com:2053/);
+ await page.locator('#closeTemplatePreview').click();
  await page.route('**/api/generated-nodes', route => route.request().method() === 'PUT' ? route.fulfill({ status: 503, json: { message: '保存失败测试' } }) : route.continue());
  await page.locator('#saveSettings').click();
  await expect(page.locator('#settingsMessage')).toHaveText('保存失败测试');
- await expect(page.locator('[data-template-id]:checked')).toHaveCount(2);
+ await expect(page.locator('.api-template-card')).toHaveCount(2);
+ await expect(page.locator('[data-template-port="two"]')).toHaveValue('2053');
  await page.unroute('**/api/generated-nodes');
  await page.locator('#saveSettings').click();
  await expect(page.locator('#settingsMessage')).toHaveText('配置已保存');
  await page.reload();
- await expect(page.locator('[data-template-id]:checked')).toHaveCount(2);
- await expect(page.locator('#legacyTemplateSection')).toBeHidden();
+ await expect(page.locator('.api-template-card')).toHaveCount(2);
+ await expect(page.locator('[data-template-port="two"]')).toHaveValue('2053');
  const token = await page.locator('#apiToken').inputValue();
- const imported = await page.request.get('/api/import', { params: { token, address: 'auto-template.example.com', port: '8443' } });
- expect(imported.ok()).toBe(true);
- const result = await imported.json();
- page.importedNodeIds = result.nodes.map(node => node.id);
- expect(result.added + result.duplicates).toBe(2);
+ async function importAddress(address, port) {
+  const response = await page.request.get('/api/import', { params: { token, address, ...(port ? { port } : {}) } });
+  expect(response.ok()).toBe(true);
+  const result = await response.json();
+  page.importedNodeIds.push(...result.nodes.map(node => node.id));
+  return result;
+ }
+ const initial = await importAddress('auto-template.example.com');
+ expect(initial.nodes.map(node => node.port)).toEqual([2053, 8443]);
+ const supplied = await importAddress('port-template.example.com', '443');
+ expect(supplied.nodes.map(node => node.port)).toEqual([2053, 443]);
+ // Change the original without saving or refreshing any API configuration.
+ const edited = { ...config, originals: [{ id: 'one', content: first.replace('secret@', 'new-secret@').replace('#Original-A', '#Updated-A') }, config.originals[1]] };
+ await saveConfig(page, edited);
+ const updated = await importAddress('updated-template.example.com', '443');
+ expect(updated.nodes[1].name).toBe('Updated-A-updated-template.example.com:443');
  await page.reload();
- await expect(page.locator('.node-card').filter({ hasText: 'auto-template.example.com' })).toHaveCount(2);
+ await expect(page.locator('[data-saved-template="one"]')).toContainText('Updated-A');
+ await expect(page.locator('.node-card').filter({ hasText: 'updated-template.example.com' })).toHaveCount(2);
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
- await page.screenshot({ path: test.info().outputPath('api-original-templates.png'), fullPage: true });
- // Removing a saved original is visible, and cannot silently replace a saved API template.
+ if (test.info().project.name === 'desktop') {
+  const left = await page.locator('#settingsForm').boundingBox(), right = await page.locator('.nodes-panel').boundingBox();
+  expect(left.width / right.width).toBeCloseTo(2, 1);
+ }
+ await page.screenshot({ path: test.info().outputPath('api-template-cards.png'), fullPage: true });
+ // A removed original is marked invalid and can be removed from the template list.
  await saveConfig(page, { version: 2, originals: [{ id: 'one', content: first }], endpoints: [] });
- await page.locator('#reloadTemplateOriginals').click();
- await expect(page.locator('#templateOriginalList')).toContainText('原始节点已删除');
+ await page.reload();
+ await expect(page.locator('[data-saved-template="two"]')).toContainText('原始节点已删除');
  await page.locator('#saveSettings').click();
  await expect(page.locator('#settingsMessage')).toContainText('已不存在');
- await expect(page.locator('[data-template-id="two"]')).toBeChecked();
- await page.locator('[data-template-id="two"]').click();
- await expect(page.locator('[data-template-id="two"]')).toHaveCount(0);
+ await page.locator('[data-remove-template="two"]').click();
  await page.locator('#saveSettings').click();
  await expect(page.locator('#settingsMessage')).toHaveText('配置已保存');
+ await page.locator('[data-remove-template="one"]').click();
+ await page.locator('#saveSettings').click();
+ await expect(page.locator('#settingsMessage')).toHaveText('配置已保存');
+ await page.reload();
+ await expect(page.locator('.api-template-card')).toHaveCount(0);
 });
