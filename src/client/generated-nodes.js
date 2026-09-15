@@ -1,3 +1,4 @@
+import { subscriptionCard, subscriptionNodeDetails } from './subscription-card.js';
 import { DEFAULT_API_PORT, MAX_API_TEMPLATES, optionalTemplatePort, normalizeTemplateReferences } from '../shared/api-templates.js';
 import { extendMainNode, mainNodeName, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS } from '../shared/main-subscription.js';
 import { applyVariables } from '../shared/template-variables.js';
@@ -49,7 +50,12 @@ function syncExamples() {
 }
 function renderNodes() {
  document.getElementById('nodeCount').textContent = nodes.length + ' 个';
- list.innerHTML = nodes.length ? nodes.map(node => '<article class="node-card"><div class="node-main"><div class="node-head"><span class="node-kind">' + (node.kind === 'raw' ? '完整节点' : '模板生成') + '</span><strong title="' + esc(node.name) + '">' + esc(node.name) + '</strong></div><div class="node-meta">' + (node.address ? esc(node.address) + (node.port ? ':' + node.port : '') : '完整节点') + ' · ' + new Date(node.createdAt).toLocaleString() + '</div></div><div class="node-footer"><div class="node-content" title="' + esc(node.content) + '">' + esc(node.content) + '</div><div class="node-actions"><button class="button" type="button" data-copy-node="' + node.id + '">复制</button><button class="button danger-button" type="button" data-delete="' + node.id + '">删除</button></div></div></article>').join('') : '<div class="empty-list">尚无节点。请通过 GET 地址接口或 POST 完整节点接口从外部追加。</div>';
+ list.innerHTML = nodes.length ? nodes.map(node => {
+  const details = subscriptionNodeDetails(node.content);
+  const addressTitle = details.address + ' · ' + (node.kind === 'raw' ? '完整节点' : '模板生成') + ' · ' + new Date(node.createdAt).toLocaleString();
+  const actions = '<button class="button" type="button" data-copy-node="' + esc(node.id) + '">复制</button><button class="button danger-button" type="button" data-delete="' + esc(node.id) + '">删除</button>';
+  return '<article class="node-card subscription-card">' + subscriptionCard({ ...details, name: node.name, addressTitle, actions }) + '</article>';
+ }).join('') : '<div class="empty-list">尚无节点。请通过 GET 地址接口或 POST 完整节点接口从外部追加。</div>';
 }
 async function apiCall(method, body) {
  const response = await fetch('/api/generated-nodes', { method, cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -73,7 +79,9 @@ function renderTemplates() {
   const node = byId.get(template.id);
   const error = !node ? '原始节点已删除，请移除此模板。' : node.error;
   const id = esc(template.id);
-  return '<article class="api-template-card" data-saved-template="' + id + '"><div class="api-template-heading"><strong title="' + esc(node?.name || template.id) + '">' + esc(node?.name || '原始节点已删除') + '</strong><span class="node-kind">' + esc(node?.protocol || '失效') + '</span></div><small>' + esc(node?.address || template.id) + '</small>' + (error ? '<p class="message">' + esc(error) + '</p>' : '') + '<div class="api-template-footer"><div class="api-template-port-status">端口 <strong data-template-port-status="' + id + '">' + (template.port === null ? '跟随 API' : esc(template.port)) + '</strong></div><div class="api-actions"><button class="button" type="button" data-edit-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>编辑</button><button class="button" type="button" data-preview-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>预览</button><button class="button danger-button" type="button" data-remove-template="' + id + '"' + (busy ? ' disabled' : '') + '>移除</button></div></div></article>';
+  const actions = '<button class="button" type="button" data-edit-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>编辑</button><button class="button" type="button" data-preview-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>预览</button><button class="button danger-button" type="button" data-remove-template="' + id + '"' + (busy ? ' disabled' : '') + '>移除</button>';
+  const detail = error ? '<p class="message">' + esc(error) + '</p>' : '';
+  return '<article class="api-template-card subscription-card" data-saved-template="' + id + '">' + subscriptionCard({ name: node?.name || '原始节点已删除', protocol: node?.protocol || '失效', address: node?.address || template.id, port: template.port === null ? '跟随 API' : template.port, portAttributes: ' data-template-port-status="' + id + '"', actions, detail }) + '</article>';
  }).join('') || '<div class="empty-list">' + (templates.length ? '没有匹配的模板。' : '尚无模板，点击“添加模板”从原始节点中选择。') + '</div>';
 }
 function markChanged() { showMessage('模板已修改，尚未保存'); }
