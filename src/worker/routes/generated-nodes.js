@@ -1,4 +1,4 @@
-import { appendGeneratedNodes } from '../services/generated-nodes.js';
+import { appendGeneratedNodes, readAPITemplateOriginals, resolveAPITemplateSelection } from '../services/generated-nodes.js';
 import { normalizeGeneratedNodeSettings } from '../domain/generated-nodes.js';
 import { jsonResponse, requestHasSameOrigin } from '../http.js';
 import { safeEqual } from '../auth.js';
@@ -50,8 +50,8 @@ export async function handlePublicNodeImport(request, env, url = new URL(request
 
 export async function handleGeneratedNodesAPI(request, env) {
 	if (request.method === 'GET') {
-		const [settings, nodes] = await Promise.all([readGeneratedNodeSettings(env.KV), readGeneratedNodes(env.KV, { fresh: false })]);
-		return jsonResponse({ ok: true, settings, nodes });
+		const [settings, nodes, originals] = await Promise.all([readGeneratedNodeSettings(env.KV), readGeneratedNodes(env.KV, { fresh: false }), readAPITemplateOriginals(env.KV)]);
+		return jsonResponse({ ok: true, settings, nodes, originals });
 	}
 	if (!requestHasSameOrigin(request, { allowMissing: false })) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
 	try {
@@ -61,7 +61,13 @@ export async function handleGeneratedNodesAPI(request, env) {
 		}
 		if (request.method === 'PUT') {
 			const previous = await readGeneratedNodeSettings(env.KV);
-			const settings = normalizeGeneratedNodeSettings(payload, previous);
+			// Accept identities only; derive credential-bearing templates from saved main nodes.
+   const input = { token: payload.token, nameTemplate: payload.nameTemplate, nodeTemplate: payload.nodeTemplate };
+   if (payload.originalIds !== undefined) {
+    input.sourceTemplates = await resolveAPITemplateSelection(env.KV, payload.originalIds);
+    delete input.nodeTemplate;
+   }
+   const settings = normalizeGeneratedNodeSettings(input, previous);
 			settings.savedAt = new Date().toISOString();
 			await saveGeneratedNodeSettings(env.KV, settings);
 			return jsonResponse({ ok: true, settings });

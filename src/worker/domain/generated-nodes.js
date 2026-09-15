@@ -1,3 +1,6 @@
+import { applyVariables, hasVariable } from '../../shared/template-variables.js';
+export { applyFilter, applyVariables, hasVariable } from '../../shared/template-variables.js';
+import { extendMainNode, mainNodeName, mainNodeSummary } from '../../shared/main-subscription.js';
 const SUPPORTED_PROTOCOL = /^(vless|vmess|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard|socks|socks5):\/\//i;
 const CLOUDFLARE_HTTPS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
 const MAX_TEMPLATE_LINES = 20;
@@ -75,40 +78,38 @@ export function normalizeEndpoints(payload) {
 	});
 }
 
-export function applyFilter(value, filter) {
-	const [operation, ...args] = filter.split(':');
-	if (operation === 'slice') {
-		const start = args[0] === '' || args[0] === undefined ? 0 : Number(args[0]);
-		const end = args[1] === '' || args[1] === undefined ? undefined : Number(args[1]);
-		if (!Number.isInteger(start) || (end !== undefined && !Number.isInteger(end))) throw new Error(`无效的 slice 截取操作：${filter}`);
-		return String(value).slice(start, end);
-	}
-	if (operation === 'split') {
-		const separator = args[0] ?? '';
-		const index = Number(args[1] ?? 0);
-		if (!separator || !Number.isInteger(index)) throw new Error(`无效的 split 分段操作：${filter}`);
-		const parts = String(value).split(separator);
-		return parts[index < 0 ? parts.length + index : index] || '';
-	}
-	throw new Error(`不支持的模板操作：${operation}`);
+// Persist selected originals as snapshots: API generation does not depend on later main edits.
+export function apiTemplateOriginal(node) {
+ const content = String(node?.content || '');
+ const name = mainNodeName(content);
+ const base = { id: String(node?.id || ''), name, ...mainNodeSummary(content) };
+ try {
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(base.id)) throw new Error('原始节点 ID 无效');
+  if (!SUPPORTED_PROTOCOL.test(content) || /[\r\n\0]/.test(content)) throw new Error('不是支持的节点链接');
+  if (new TextEncoder().encode(content).length > MAX_TEMPLATE_LINE_BYTES) throw new Error('节点不能超过 16 KB');
+  extendMainNode(content, { address: 'template.example.com', port: 443 }, '模板预览');
+  return { ...base, content, error: '' };
+ } catch (error) { return { ...base, error: error.message }; }
 }
 
-export function applyVariables(template, variables) {
-	return String(template).replace(/\{\{(address|port|name|type)((?:\|[^{}|]+)*)\}\}/g, (_match, key, filters) => {
-		let value = variables[key];
-		for (const filter of String(filters || '').split('|').filter(Boolean)) value = applyFilter(value, filter);
-		return value;
-	});
-}
-
-export function hasVariable(template, names) {
-	return new RegExp(`\\{\\{(?:${names.join('|')})(?:\\|[^{}|]+)*\\}\\}`).test(template);
+function normalizeSourceTemplates(value) {
+ if (!Array.isArray(value) || value.length > MAX_TEMPLATE_LINES) throw new Error('最多选择 20 个原始节点');
+ const ids = new Set();
+ return value.map(node => {
+  const original = apiTemplateOriginal(node);
+  if (original.error) throw new Error(original.name + '：' + original.error);
+  if (ids.has(original.id)) throw new Error('不能重复选择同一原始节点');
+  ids.add(original.id);
+  return { id: original.id, content: original.content };
+ });
 }
 
 export function normalizeGeneratedNodeSettings(payload = {}, previous = {}, { generateToken = true } = {}) {
 	const tokenInput = String(payload.token ?? previous.token ?? '').trim();
 	if (tokenInput && !/^[A-Za-z0-9_-]{16,128}$/.test(tokenInput)) throw new Error('API Token 只能包含字母、数字、下划线或短横线，长度为 16–128 位');
-	const nodeTemplates = cleanLines(payload.nodeTemplate ?? previous.nodeTemplate ?? '');
+	const sourceInput = payload.sourceTemplates ?? (payload.nodeTemplate !== undefined ? undefined : previous.sourceTemplates);
+	const sourceTemplates = sourceInput === undefined ? undefined : normalizeSourceTemplates(sourceInput);
+	const nodeTemplates = sourceTemplates === undefined ? cleanLines(payload.nodeTemplate ?? previous.nodeTemplate ?? '') : [];
 	if (nodeTemplates.length > MAX_TEMPLATE_LINES) throw new Error(`节点模板不能超过 ${MAX_TEMPLATE_LINES} 行`);
 	for (const [index, template] of nodeTemplates.entries()) {
 		if (new TextEncoder().encode(template).length > MAX_TEMPLATE_LINE_BYTES) throw new Error(`节点模板第 ${index + 1} 行不能超过 16 KB`);
@@ -122,7 +123,7 @@ export function normalizeGeneratedNodeSettings(payload = {}, previous = {}, { ge
 	if (!nameTemplate) throw new Error('请输入节点名称格式');
 	if (!hasVariable(nameTemplate, ['address'])) throw new Error('节点名称格式必须包含 {{address}}');
 	applyVariables(nameTemplate, { address: '', port: '', name: '', type: '' });
-	return { token: tokenInput || (generateToken ? createId() : ''), nodeTemplate: nodeTemplates.join('\n'), nameTemplate, savedAt: String(previous.savedAt || '') };
+	return { token: tokenInput || (generateToken ? createId() : ''), nodeTemplate: nodeTemplates.join('\n'), ...(sourceTemplates === undefined ? {} : { sourceTemplates }), nameTemplate, savedAt: String(previous.savedAt || '') };
 }
 
 export function normalizeStoredNode(node) {
@@ -140,6 +141,15 @@ export function normalizeStoredNode(node) {
 }
 
 export function generateNodesForEndpoint(settings, endpoint, createdAt) {
+ if (Array.isArray(settings.sourceTemplates)) {
+  if (!settings.sourceTemplates.length) throw new Error('管理员尚未选择原始节点模板');
+  return settings.sourceTemplates.map(original => {
+   const variables = { address: endpoint.address, port: String(endpoint.port), type: endpoint.addressType === 'domain' ? '域名' : 'IP', name: mainNodeName(original.content) };
+   const name = applyVariables(settings.nameTemplate, variables).trim().slice(0, 240);
+   if (!name) throw new Error('节点名称格式生成了空名称');
+   return { id: createId(), ...endpoint, name, content: extendMainNode(original.content, endpoint, name), createdAt };
+  });
+ }
 	const templates = cleanLines(settings.nodeTemplate);
 	if (!templates.length) throw new Error('管理员尚未配置节点模板');
 	const uriAddress = endpoint.addressType === 'ip' && endpoint.address.includes(':') ? `[${endpoint.address}]` : endpoint.address;
