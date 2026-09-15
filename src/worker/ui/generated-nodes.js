@@ -1,7 +1,7 @@
 import { subscriptionCardStyles } from './subscription-cards.js';
 
 export const generatedNodesStyles = `
-.api-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:18px;align-items:start}
+.api-layout{display:grid;grid-template-columns:minmax(520px,1.35fr) minmax(320px,1fr);gap:18px;align-items:start}
 .api-config{display:grid;gap:18px;min-width:0}.api-layout .panel{min-width:0;padding:20px}.api-layout h2{margin:0;font-size:18px}
 .api-section-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}.api-section-head p{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.65}
 .api-title{display:flex;align-items:center;gap:9px}.count-badge,.node-kind{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface-soft);font-size:11px;color:var(--muted);white-space:nowrap}
@@ -17,7 +17,7 @@ export const generatedNodesStyles = `
 .template-tools{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.template-tools input{flex:1;min-width:140px}.template-tools .button{min-height:36px;padding:0 10px;font-size:12px}.template-original-list{display:grid;gap:8px;max-height:45vh;overflow:auto;align-content:start}.template-choice{border:1px solid var(--line);border-radius:7px;padding:10px}.template-choice:has(input:checked){border-color:var(--green);background:var(--green-soft)}.template-original{display:flex;align-items:flex-start;gap:9px;margin:0;cursor:pointer}.template-original input{margin:3px 0;flex:none}.template-original>span{min-width:0}.template-original strong{display:block;font-size:12px;overflow-wrap:anywhere}.template-original small{display:block;font-size:11px;overflow-wrap:anywhere;color:var(--muted);margin-top:3px}.template-choice.unavailable{opacity:.65}.api-dialog [hidden]{display:none!important}
 .api-preview-code{width:100%;min-height:150px;resize:vertical;font:12px/1.65 ui-monospace,monospace}.api-preview-name{overflow-wrap:anywhere;font-size:13px}
 .confirm-dialog{width:min(420px,calc(100% - 32px))}.confirm-body{padding:24px}.confirm-body h3{margin:0 0 8px}.confirm-body p{margin:0;color:var(--muted);line-height:1.65}.confirm-actions{display:flex;justify-content:flex-end;gap:9px;padding:0 24px 20px}
-@media(max-width:980px){.api-layout{grid-template-columns:1fr}.node-list{max-height:480px}}@media(max-width:700px){.credential-grid{grid-template-columns:1fr}.api-layout .panel{padding:14px}.api-template-grid{max-height:360px}.template-tools input{flex-basis:100%}.api-toolbar{flex-wrap:wrap}.api-toolbar input{max-width:none;flex:1 1 160px}}@media(max-width:420px){.token-row{grid-template-columns:1fr}.token-actions{justify-content:flex-start}}
+@media(max-width:960px){.api-layout{grid-template-columns:1fr}.node-list{max-height:480px}}@media(max-width:700px){.credential-grid{grid-template-columns:1fr}.api-layout .panel{padding:14px}.api-template-grid{max-height:360px}.template-tools input{flex-basis:100%}.api-toolbar{flex-wrap:wrap}.api-toolbar input{max-width:none;flex:1 1 160px}}@media(max-width:420px){.token-row{grid-template-columns:1fr}.token-actions{justify-content:flex-start}}
 @media(max-width:550px){.api-call-row{grid-template-columns:auto minmax(0,1fr)}.api-call-row .button{grid-column:1/-1;justify-self:end}}
 ${subscriptionCardStyles}
 `;
