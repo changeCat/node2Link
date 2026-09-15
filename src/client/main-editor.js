@@ -7,16 +7,29 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  const saveButton = el('saveButton');
  let config = structuredClone(pageData.mainConfig || legacyMainConfig(textarea.defaultValue));
  let revision = pageData.revision;
- let saved = JSON.stringify({ config, text: textarea.defaultValue });
+ let saved = snapshot(config);
  let timer, pending = false, compiled = null;
  let originalLimit = 100, previewLimit = 100, endpointLimit = 50, targetLimit = 100;
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
- let endpointDirty = false, originalInitialValue = '', saving = false;
+ let endpointInitialValue = '', originalInitialValue = '', saving = false;
  const selectedOriginals = new Set();
  const undo = [];
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
  const state = (message, kind = '') => { el('saveStatus').textContent = message; el('saveStatus').className = 'save-state ' + kind; };
- const snapshot = () => JSON.stringify({ config, text: textarea.value });
+ // Compare configuration values, never the textarea's browser-normalized whitespace
+ // or the property insertion order of stored/server-returned objects.
+ function snapshot(value = config) {
+  const normalized = {
+   version: value.version,
+   originals: value.originals.map(({ id, content }) => ({ id, content })),
+   endpoints: value.endpoints.map(({ id, address, port, label, enabled, originalIds }) => ({ id, address, port, label, enabled, originalIds }))
+  };
+  return JSON.stringify({ config: normalized, text: originalText(normalized) });
+ }
+ function parseDraft(draft) {
+  let value; try { value = JSON.parse(draft); } catch { value = legacyMainConfig(draft); }
+  return normalizeMainConfig(value.config || value, { allowIncomplete: true });
+ }
  function syncText() { textarea.value = originalText(config); }
  function persistDraft() {
   try { const current = snapshot(); if (current === saved) localStorage.removeItem(draftKey); else localStorage.setItem(draftKey, current); }
@@ -124,7 +137,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': 'save-endpoints', 'X-Node2Link-Revision': revision }, body: JSON.stringify({ endpoints: config.endpoints }), cache: 'no-store' });
    const data = await response.json();
    if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
-   saved = JSON.stringify({ config: data.config, text: originalText(data.config) }); revision = data.metadata.revision; updateMetadata(data.metadata);
+   saved = snapshot(data.config); revision = data.metadata.revision; updateMetadata(data.metadata);
    flush(); syncText(); persistDraft();
    state(snapshot() === saved ? '刚刚已保存' : '保存期间有新修改，请再次保存', snapshot() === saved ? '' : 'dirty');
    showToast('优选配置已保存，扩展节点已生效');
@@ -140,7 +153,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    const data = await response.json(); if (!response.ok) throw new Error(data.message || '保存失败');
    if (remember && JSON.stringify(previous) !== JSON.stringify(data.config.originals)) { undo.push(previous); if (undo.length > 10) undo.shift(); }
    config = { ...data.config, endpoints: reconcileMainEndpoints(config.endpoints, data.config.originals, previous) };
-   saved = JSON.stringify({ config: data.config, text: originalText(data.config) });
+   saved = snapshot(data.config);
    revision = data.metadata.revision; syncText(); render(); persistDraft(); updateMetadata(data.metadata);
    state(snapshot() === saved ? '已同步' : '优选配置有未保存更改', snapshot() === saved ? '' : 'dirty');
    el('originalSaveStatus').textContent = '原始节点已保存'; showToast('原始节点已生效，已发布的扩展节点同步更新');
@@ -167,7 +180,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('addEndpointRow').hidden = Boolean(endpoint);
   el('endpointEnabled').checked = endpoint?.enabled ?? true;
   el('endpointError').textContent = ''; el('targetSearch').value = ''; targetLimit = 100;
-  renderTargets(); endpointDirty = false; el('endpointDialog').showModal();
+  renderTargets(); endpointInitialValue = endpointSnapshot(); el('endpointDialog').showModal();
  }
  function addEndpointRow(endpoint = {}) {
   const row = document.createElement('div'); row.className = 'endpoint-input-row';
@@ -184,20 +197,27 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const custom = event.target.value === 'custom';
   input.hidden = !custom; input.required = custom;
   if (custom) input.focus(); else input.value = event.target.value;
-  endpointDirty = true;
+
  });
- el('addEndpointRow').addEventListener('click', () => { addEndpointRow(); endpointDirty = true; });
+ el('addEndpointRow').addEventListener('click', () => { addEndpointRow(); });
  el('endpointRows').addEventListener('click', event => {
   if (!event.target.closest('[data-remove-endpoint-row]')) return;
-  event.target.closest('.endpoint-input-row').remove(); endpointDirty = true;
+  event.target.closest('.endpoint-input-row').remove();
   if (el('endpointRows').children.length === 1) el('endpointRows').querySelector('[data-remove-endpoint-row]').hidden = true;
  });
+ function endpointSnapshot() {
+  return JSON.stringify({
+   rows: [...el('endpointRows').children].map(row => ['address', 'port', 'label'].map(field => row.querySelector('[data-' + field + ']').value)),
+   enabled: el('endpointEnabled').checked,
+   originalIds: [...selectedTargets].sort()
+  });
+ }
+ const endpointHasChanges = () => el('endpointDialog').open && endpointSnapshot() !== endpointInitialValue;
  async function closeEndpoint() {
-  if (endpointDirty && !await askMainConfirm('放弃本次优选地址编辑？已加入主页面的配置不受影响。', '放弃编辑')) return;
+  if (endpointHasChanges() && !await askMainConfirm('放弃本次优选地址编辑？已加入主页面的配置不受影响。', '放弃编辑')) return;
   el('endpointDialog').close();
  }
  el('addEndpoint').addEventListener('click', () => openEndpoint());
- el('endpointForm').addEventListener('input', () => { endpointDirty = true; });
  el('endpointForm').addEventListener('submit', event => {
   event.preventDefault(); el('endpointError').textContent = '';
   try {
@@ -212,12 +232,12 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  el('endpointDialog').addEventListener('cancel', event => { event.preventDefault(); closeEndpoint(); });
  el('targetSearch').addEventListener('input', () => { targetLimit = 100; renderTargets(); });
  el('moreTargets').addEventListener('click', () => { targetLimit += 100; renderTargets(); });
- el('selectTargets').addEventListener('click', () => { renderTargets().forEach(node => selectedTargets.add(node.id)); endpointDirty = true; renderTargets(); });
- el('clearTargets').addEventListener('click', () => { selectedTargets.clear(); endpointDirty = true; renderTargets(); });
+ el('selectTargets').addEventListener('click', () => { renderTargets().forEach(node => selectedTargets.add(node.id)); renderTargets(); });
+ el('clearTargets').addEventListener('click', () => { selectedTargets.clear(); renderTargets(); });
  el('endpointTargets').addEventListener('change', event => {
   if (!event.target.matches('input[type="checkbox"]')) return;
   if (event.target.checked) selectedTargets.add(event.target.value); else selectedTargets.delete(event.target.value);
-  endpointDirty = true; renderTargets();
+   renderTargets();
  });
  el('endpointList').addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
@@ -388,21 +408,22 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!document.querySelector('dialog[open]')) saveContent(); } });
  window.addEventListener('pagehide', flush);
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
- window.addEventListener('beforeunload', event => { flush(); if (saving || snapshot() !== saved || originalHasChanges() || endpointDirty && el('endpointDialog').open || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
+ window.addEventListener('beforeunload', event => { flush(); if (saving || snapshot() !== saved || originalHasChanges() || endpointHasChanges() || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
  updateMetadata(pageData.savedMetadata); render(); updateSaveButton();
  syncText();
  {
   try {
    const draft = localStorage.getItem(draftKey);
-   if (draft && draft !== saved && draft !== textarea.value) {
+   const draftConfig = draft ? parseDraft(draft) : null;
+   if (draftConfig && snapshot(draftConfig) !== saved) {
     askMainConfirm('恢复本地优选草稿？原始节点以已生效列表为准；如旧草稿包含不同的原始节点，将下载为 TXT 供导入。', '恢复本地草稿').then(accepted => {
      if (!accepted) { localStorage.removeItem(draftKey); return; }
-     try { let value; try { value = JSON.parse(draft); } catch { value = { config: legacyMainConfig(draft), text: draft }; } const draftConfig = normalizeMainConfig(value.config || value, { allowIncomplete: true });
+     try {
       if (JSON.stringify(draftConfig.originals) !== JSON.stringify(config.originals)) download(originalText(draftConfig), 'txt', 'recovered-originals');
       config.endpoints = reconcileMainEndpoints(draftConfig.endpoints, config.originals, draftConfig.originals); changed('已恢复优选草稿，尚未保存'); }
      catch (error) { showToast('草稿载入失败：' + error.message); }
     });
-   }
+   } else if (draft) localStorage.removeItem(draftKey);
   } catch { /* No local draft support. */ }
  }
 }

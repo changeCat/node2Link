@@ -1,4 +1,5 @@
-import { ADD, base64Decode, isValidBase64, isStructuredSubscription } from '../domain/nodes.js';
+import { BASE64_SUBSCRIPTION_USER_AGENT } from '../config.js';
+import { splitSubscriptionLinks, base64Decode, isValidBase64, isStructuredSubscription } from '../domain/nodes.js';
 import { mapConcurrent } from '../storage/kv.js';
 import { fetchWithTimeout, logRemote, REMOTE_FETCH_TIMEOUT_MS } from './http.js';
 
@@ -26,14 +27,14 @@ export async function getSUB(sources, request, appendUA, userAgentHeader, option
    return { failed: true };
   }
  });
- const result = [await ADD(results.map(item => item.content || '').join('\n')), results.map(item => item.structured).filter(Boolean).join('|')];
+ const result = [splitSubscriptionLinks(results.map(item => item.content || '').join('\n')), results.map(item => item.structured).filter(Boolean).join('|')];
  result.failures = results.filter(item => item.failed).length;
  return result;
 }
 
 export async function getUrl(request, targetUrl, appendUA, userAgentHeader, signal, options = {}) {
  const headers = new Headers();
- headers.set('User-Agent', 'v2rayN/6.45 cmliu/CF-Workers-SUB ' + appendUA + '(' + userAgentHeader + ')');
+ headers.set('User-Agent', BASE64_SUBSCRIPTION_USER_AGENT + ' ' + appendUA + ' (' + (userAgentHeader || 'unknown') + ')');
  headers.set('Accept', request.headers.get('Accept') || '*/*');
  const outgoing = new Request(targetUrl, { method: 'GET', headers, signal, redirect: 'follow' });
  return fetchWithTimeout(outgoing, {}, options.timeoutMs || REMOTE_FETCH_TIMEOUT_MS, options);

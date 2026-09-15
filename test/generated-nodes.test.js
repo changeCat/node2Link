@@ -460,7 +460,7 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		assert.ok(upstreamRequest instanceof Request);
 		assert.equal(upstreamRequest.method, 'GET');
 		assert.equal(upstreamRequest.signal.aborted, false);
-		assert.match(upstreamRequest.headers.get('User-Agent'), /^v2rayN\/6\.45 cmliu\/CF-Workers-SUB/);
+		assert.match(upstreamRequest.headers.get('User-Agent'), /^v2rayN\/6\.45 node2Link/);
 		assert.equal(upstreamRequest.headers.has('Cookie'), false);
 		assert.equal(upstreamRequest.headers.has('Authorization'), false);
 		assert.equal(upstreamRequest.headers.has('CF-Connecting-IP'), false);

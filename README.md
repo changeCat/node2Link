@@ -219,4 +219,4 @@ IPv4 成功而 IPv6 超时，说明需要检查 IPv6 路径和客户端回退行
 
 ## 致谢
 
-基于 CF-Workers-SUB 的订阅处理能力，并感谢 [ACL4SSR](https://github.com/ACL4SSR/ACL4SSR)、[Subconverter](https://github.com/tindy2013/subconverter) 等项目。
+node2Link 起源于 [CF-Workers-SUB](https://github.com/cmliu/CF-Workers-SUB)，现作为独立维护的项目持续重构与开发。项目使用 [Apache-2.0 许可证](LICENSE)。感谢 [ACL4SSR](https://github.com/ACL4SSR/ACL4SSR)、[Subconverter](https://github.com/tindy2013/subconverter) 等项目及默认转换服务提供者。
