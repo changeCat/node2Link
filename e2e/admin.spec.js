@@ -202,6 +202,7 @@ test('API template save, token copy and reset, import and deletion', async ({ pa
 	while (await page.locator('[data-remove-template]').count()) await page.locator('[data-remove-template]').first().click();
  await page.locator('#addTemplate').click();
  await page.locator('[data-template-id]').first().check();
+ await page.locator('#nextTemplateStep').click();
  await page.locator('#confirmAddTemplates').click();
  await page.locator('[data-preview-template]').first().click();
  await expect(page.locator('#templatePreview')).toHaveValue(/edge\.example\.com:8443/);
