@@ -448,3 +448,66 @@ test('history retention settings apply independently and survive reload', async 
  await expect(page.locator('#historyMessage')).toHaveText('已保存');
  await page.goto('/');
 });
+
+
+test('navigation only warns for unsaved configuration or changed open dialogs', async ({ page }) => {
+ const shouldWarn = () => page.evaluate(() => {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event); return event.defaultPrevented;
+ });
+ const prompts = [];
+ page.on('dialog', async dialog => { prompts.push(dialog.type()); await dialog.accept(); });
+ // Legacy plain-text records may contain blank lines and CRLF; rendering trims them.
+ await page.evaluate(async text => {
+  await fetch('/', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text });
+ }, '  ' + first + '\r\n\r\n' + second + '\r\n');
+ await page.reload();
+ expect(await shouldWarn()).toBe(false);
+ await page.locator('#originalSearch').fill('Main');
+ await page.getByRole('link', { name: '分享管理', exact: true }).click();
+ await expect(page).toHaveURL(/\/shares$/);
+ expect(prompts).toEqual([]);
+ await page.goto('/');
+ await page.locator('[data-edit-original]').first().click();
+ expect(await shouldWarn()).toBe(false);
+ await page.locator('#originalValue').fill(first.replace('uuid@', 'unsaved@'));
+ expect(await shouldWarn()).toBe(true);
+ await page.locator('#originalValue').fill(first);
+ expect(await shouldWarn()).toBe(false);
+ await page.locator('#cancelOriginal').click();
+ await addEndpoints(page, 'saved.example.com');
+ expect(await shouldWarn()).toBe(true);
+ await save(page);
+ expect(await shouldWarn()).toBe(false);
+ await page.reload();
+ expect(await shouldWarn()).toBe(false);
+ // Old drafts with different JSON field order and redundant raw text are equivalent.
+ await page.evaluate(() => {
+  const config = JSON.parse(document.getElementById('page-data-home').textContent).mainConfig;
+  const reorder = value => Object.fromEntries(Object.entries(value).reverse());
+  const draftConfig = { endpoints: config.endpoints.map(reorder), originals: config.originals.map(reorder), version: 2 };
+  localStorage.setItem('node2link:draft:' + location.host + location.pathname, JSON.stringify({ text: '\r\n', config: draftConfig }));
+ });
+ await page.reload();
+ await expect(page.locator('#mainConfirmDialog')).not.toBeVisible();
+ expect(await shouldWarn()).toBe(false);
+ expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
+ await page.locator('#addEndpoint').click();
+ expect(await shouldWarn()).toBe(false);
+ await page.locator('#targetSearch').fill('Main-HK');
+ expect(await shouldWarn()).toBe(false);
+ await page.locator('[data-address]').fill('temporary.example.com');
+ expect(await shouldWarn()).toBe(true);
+ await page.locator('[data-address]').fill('');
+ expect(await shouldWarn()).toBe(false);
+ await page.locator('#cancelEndpoint').click();
+ await expect(page.locator('#mainConfirmDialog')).not.toBeVisible();
+ await page.getByRole('link', { name: '分享管理', exact: true }).click();
+ await expect(page).toHaveURL(/\/shares$/);
+ expect(prompts).toEqual([]);
+ await page.goto('/');
+ await addEndpoints(page, 'unsaved.example.com');
+ await page.getByRole('link', { name: '分享管理', exact: true }).click();
+ await expect(page).toHaveURL(/\/shares$/);
+ expect(prompts).toEqual(['beforeunload']);
+});

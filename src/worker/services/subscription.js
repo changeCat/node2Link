@@ -1,8 +1,8 @@
 import { timed } from '../timing.js';
 import { inspectLoonConversion } from '../domain/conversion-audit.js';
 import { selectSubscriptionFormat } from '../domain/formats.js';
-import { CONVERTER_FETCH_TIMEOUT_MS, sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
-import { ADD, encodeBase64, isV2rayNUserAgent, normalizeV2rayNSubscription, clashFix } from '../domain/nodes.js';
+import { DEFAULT_FILE_NAME, BASE64_SUBSCRIPTION_USER_AGENT, CONVERTER_FETCH_TIMEOUT_MS, sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
+import { splitSubscriptionLinks, encodeBase64, isV2rayNUserAgent, normalizeV2rayNSubscription, clashFix } from '../domain/nodes.js';
 import { getSUB } from '../adapters/upstream.js';
 import { fetchCustomSubscription, fetchConvertedSubscription, converterOrigin, converterTypeLabel } from '../adapters/converters.js';
 import { queueTelegram, sendMessage, shouldSendSubscriptionNotification } from '../adapters/telegram.js';
@@ -50,9 +50,9 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 
 		let mainData = sourceData || '';
 		let urls = [];
-		if (access === 'main' && env.LINKSUB) urls = await ADD(env.LINKSUB);
+		if (access === 'main' && env.LINKSUB) urls = splitSubscriptionLinks(env.LINKSUB);
 
-		const allLinks = await ADD(mainData + '\n' + urls.join('\n'));
+		const allLinks = splitSubscriptionLinks(mainData + '\n' + urls.join('\n'));
 		let selfBuiltNodes = '';
 		let subscriptionLinks = '';
 		for (const link of allLinks) {
@@ -60,7 +60,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			else selfBuiltNodes += link + '\n';
 		}
 		mainData = selfBuiltNodes;
-		urls = await ADD(subscriptionLinks);
+		urls = splitSubscriptionLinks(subscriptionLinks);
 
 		const directSource = url.searchParams.get('source') === 'direct';
 		const isSubConverterRequest = directSource || url.searchParams.get('source') === 'normalized' || request.headers.get('subconverter-request')
@@ -123,7 +123,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			requestData += subscriptionResponses[0].join('\n');
 			if (subscriptionResponses[1]) { converterSourceURL += '|' + subscriptionResponses[1]; sourceCountComplete = false; }
 			if (subscriptionFormat === 'base64' && !isSubConverterRequest && !upstreamFailures && subscriptionResponses[1].includes('://')) {
-				const mixedInit = { signal: request.signal, headers: { 'User-Agent': 'v2rayN/CF-Workers-SUB (https://github.com/cmliu/CF-Workers-SUB)' } };
+				const mixedInit = { signal: request.signal, headers: { 'User-Agent': BASE64_SUBSCRIPTION_USER_AGENT } };
 				const mixedConversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
 					runtime, 'base64', subscriptionResponses[1], mixedInit, options
 				));
@@ -150,16 +150,14 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			if (generatedNodes.length) requestData += '\n' + generatedNodes.map(node => node.content).join('\n');
 		}
 
-		if (includeWarp && env.WARP) { converterSourceURL += '|' + (await ADD(env.WARP)).join('|'); sourceCountComplete = false; }
+		if (includeWarp && env.WARP) { converterSourceURL += '|' + (splitSubscriptionLinks(env.WARP)).join('|'); sourceCountComplete = false; }
 		let result = [...new Set(requestData.split('\n'))].join('\n');
 		let compatibility = null;
 		if (subscriptionFormat === 'base64' && isV2rayNUserAgent(userAgentHeader)) {
 			compatibility = normalizeV2rayNSubscription(result);
 			result = compatibility.content;
 		}
-		let base64Data;
-		try { base64Data = btoa(result); }
-		catch (error) { base64Data = encodeBase64(result); }
+		const base64Data = encodeBase64(result);
 
 		const responseHeaders = {
 			'content-type': 'text/plain; charset=utf-8',
@@ -181,7 +179,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (conversionFailed) return finish('订阅转换失败，请在管理页检查转换服务配置', responseHeaders, 502);
 		if (subscriptionFormat === 'base64') return finish(base64Data, responseHeaders);
 
-		const conversionInit = { signal: request.signal, headers: { 'User-Agent': userAgentHeader || 'CF-Workers-SUB' } };
+		const conversionInit = { signal: request.signal, headers: { 'User-Agent': userAgentHeader || DEFAULT_FILE_NAME } };
 		const conversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
 			runtime, subscriptionFormat, converterSourceURL, conversionInit, { ...options,
     validateContent: subscriptionFormat === 'loon' ? content => inspectLoonConversion(requestData, content, { completeSource: sourceCountComplete && !upstreamFailures }) : undefined

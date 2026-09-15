@@ -1,19 +1,15 @@
 import { SUPPORTED_NODE_PROTOCOLS } from '../config.js';
-export function encodeBase64(data) {
-	const binary = new TextEncoder().encode(data);
-	let base64 = '';
-	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-	for (let i = 0; i < binary.length; i += 3) {
-		const byte1 = binary[i];
-		const byte2 = binary[i + 1] || 0;
-		const byte3 = binary[i + 2] || 0;
-		base64 += chars[byte1 >> 2];
-		base64 += chars[((byte1 & 3) << 4) | (byte2 >> 4)];
-		base64 += chars[((byte2 & 15) << 2) | (byte3 >> 6)];
-		base64 += chars[byte3 & 63];
-	}
-	const padding = 3 - (binary.length % 3 || 3);
-	return base64.slice(0, base64.length - padding) + '=='.slice(0, padding);
+export function encodeBase64(text) {
+ const bytes = new TextEncoder().encode(text);
+ // A multiple of three prevents padding between chunks. Limit arguments passed
+ // to fromCharCode so multi-megabyte subscriptions cannot exhaust the stack.
+ const chunkSize = 3 * 8192;
+ const encoded = [];
+ for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+  const chunk = bytes.subarray(offset, offset + chunkSize);
+  encoded.push(btoa(String.fromCharCode(...chunk)));
+ }
+ return encoded.join('');
 }
 
 export function isV2rayNUserAgent(value) {
@@ -67,14 +63,11 @@ export function normalizeV2rayNSubscription(content) {
 	};
 }
 
-export async function ADD(envadd) {
-	var addtext = envadd.replace(/[	"'|\r\n]+/g, '\n').replace(/\n+/g, '\n');	// 替换为换行
-	//console.log(addtext);
-	if (addtext.charAt(0) == '\n') addtext = addtext.slice(1);
-	if (addtext.charAt(addtext.length - 1) == '\n') addtext = addtext.slice(0, addtext.length - 1);
-	const add = addtext.split('\n');
-	//console.log(add);
-	return add;
+// Accept the legacy list separators; encoded delimiters remain part of a URL.
+// Keep ordering and duplicates here: callers decide when to deduplicate.
+export function splitSubscriptionLinks(input) {
+ return String(input ?? '').split(/[\r\n\t|'"]+/u)
+  .map(link => link.trim()).filter(link => link.length > 0);
 }
 
 export function summarizeMainSubscriptionContent(content) {

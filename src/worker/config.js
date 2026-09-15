@@ -2,7 +2,8 @@ import { isValidShareId } from './storage/shares.js';
 import { sha256Base64Url, adminPassword } from './auth.js';
 import { parseSubConverters, readCustomConverterProfiles } from './adapters/converters.js';
 
-export const DEFAULT_FILE_NAME = 'CF-Workers-SUB';
+export const DEFAULT_FILE_NAME = 'node2Link';
+export const BASE64_SUBSCRIPTION_USER_AGENT = 'v2rayN/6.45 node2Link';
 export const DEFAULT_PAGE_TITLE = DEFAULT_FILE_NAME;
 export const DEFAULT_SUB_UPDATE_TIME = 6;
 export const DEFAULT_MAIN_DATA = `

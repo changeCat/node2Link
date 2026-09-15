@@ -2,7 +2,7 @@ import { timed } from '../timing.js';
 import { jsonResponse } from '../http.js';
 import { readMainRecord } from '../storage/main.js';
 import { readGeneratedNodes } from '../storage/generated-nodes.js';
-import { ADD } from '../domain/nodes.js';
+import { splitSubscriptionLinks } from '../domain/nodes.js';
 import { getSUB } from '../adapters/upstream.js';
 export function nodeCandidateName(content, fallback) {
 	const hashIndex = String(content).lastIndexOf('#');
@@ -21,7 +21,7 @@ export async function handleNodeCandidates(request, env, apiSubscriptionEnabled,
 			readMainRecord(env.KV),
 			apiSubscriptionEnabled ? readGeneratedNodes(env.KV) : Promise.resolve([])
 		]));
-		const input = await ADD(mainRecord.content || '');
+		const input = splitSubscriptionLinks(mainRecord.content || '');
 		const sourceURLs = input.filter(line => /^https?:\/\//i.test(line));
 		const mainNodes = input.filter(line => !/^https?:\/\//i.test(line));
 		let upstreamFailures = 0;

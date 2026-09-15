@@ -283,7 +283,7 @@ export function renderMainPage(request, runtime, record) {
 						<section class="section workspace-main" aria-labelledby="editor-title">
 							<div class="section-heading"><div><h2 id="editor-title">主订阅配置</h2><p>原始节点即时保存，优选地址配置单独发布</p></div></div>
 
-							<div class="editor-shell">
+							<div class="editor-overview">
 								<div class="editor-toolbar">
 									<div class="editor-meta">
 										<span><i data-lucide="list"></i><b id="lineCount">0</b> 行</span>
@@ -303,8 +303,8 @@ export function renderMainPage(request, runtime, record) {
 									<span class="validation-issues" id="validationIssues"></span>
 								</div>
 								<textarea id="content" hidden>${escapeHTML(content)}</textarea>
+</div>
 ${renderMainEditorSections()}
-							</div>
 						</section>
 
 						<aside class="workspace-sidebar" aria-label="主订阅入口">
@@ -326,7 +326,7 @@ ${renderMainEditorSections()}
 						</aside>
 					</div>
 
-					<footer class="page-footer"><span><a href="https://github.com/changeCat/node2Link" target="_blank" rel="noopener noreferrer">node2Link</a> · <a href="https://github.com/cmliu/CF-Workers-SUB" target="_blank" rel="noopener noreferrer">Forked from CF-Workers-SUB</a></span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
+					<footer class="page-footer"><span><a href="https://github.com/changeCat/node2Link" target="_blank" rel="noopener noreferrer">node2Link</a></span><span>当前设备：${escapeHTML(request.headers.get("User-Agent") || "Unknown")}</span></footer>
 				</main>
 
 				${renderMainEditorDialogs()}

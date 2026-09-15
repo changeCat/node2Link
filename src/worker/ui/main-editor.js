@@ -1,5 +1,19 @@
 export const mainEditorStyles = `
- .preferred-workspace{border-top:6px solid var(--bg,#f3f6f3)}.preferred-toolbar{background:var(--green-soft);padding:16px 18px!important}.preferred-toolbar strong{font-size:14px}.preferred-toolbar p{margin:5px 0}.preferred-toolbar .save-state{font-size:12px}
+ .editor-overview{border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden;margin-bottom:18px}
+ .main-workspace{border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 6px 24px rgba(26,46,35,.035);overflow:hidden}
+ .main-workspace+.main-workspace{margin-top:20px}
+ #originalSection.main-workspace{border:1px solid var(--line);padding:20px}
+ .main-workspace-title{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+ .main-workspace-title h3,#originalSection h3{font-size:18px}
+ .main-scope-badge{font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:3px 7px;background:var(--surface-soft)}
+ .preferred-toolbar{background:var(--surface);padding:20px;border-bottom:1px solid var(--line);align-items:center}
+ .preferred-toolbar h3{margin:0;font-size:18px}.preferred-toolbar p{margin:7px 0 0;max-width:70ch}
+ .preferred-save-actions{margin-left:auto;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px}
+ .preferred-save-actions .save-state{font-size:12px}
+ .preferred-sections{display:grid;gap:14px;padding:18px;background:var(--surface-soft)}
+ .preferred-sections>.main-section{border:1px solid var(--line-soft);border-radius:8px;background:var(--surface);padding:18px}
+ .preferred-sections h4{margin:0;font-size:14px}
+ @media(max-width:760px){#originalSection.main-workspace,.preferred-toolbar{padding:14px}.preferred-sections{padding:10px;gap:10px}.preferred-sections>.main-section{padding:14px}.preferred-save-actions{width:100%}}
  .main-section .main-filter>.main-selection{margin-left:auto}
  .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
  #content[hidden]{display:none!important}
@@ -52,8 +66,8 @@ export const mainEditorStyles = `
 `;
 
 export function renderMainEditorSections() {
- return `<div class="main-section" id="originalSection">
-  <div class="main-section-head"><h3>原始节点</h3><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。</p></div>
+ return `<section class="main-section main-workspace" id="originalSection" aria-labelledby="originalSectionTitle">
+  <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。</p></div>
   <div class="editor-actions">
    <input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
    <div class="main-action-group" role="group" aria-label="整理与恢复">
@@ -72,22 +86,23 @@ export function renderMainEditorSections() {
   </div>
   <div class="main-filter"><div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div></div>
   <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
- </div>
- <div class="preferred-workspace" aria-label="优选配置与生成结果">
-  <div class="editor-toolbar preferred-toolbar"><div><strong>优选配置与生成结果</strong><p class="main-help">保存本区域的优选地址与关联，更新扩展节点。</p><span id="saveStatus" class="save-state" role="status">已同步</span></div><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="保存全部优选地址与关联并更新扩展节点" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div>
- <div class="main-section" id="endpointSection">
-  <div class="main-section-head"><h3>优选域名 / IP 与端口</h3><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div>
+ </section>
+ <section class="main-workspace preferred-workspace" aria-labelledby="preferredSectionTitle">
+  <div class="editor-toolbar preferred-toolbar"><div><div class="main-workspace-title"><h3 id="preferredSectionTitle">优选配置与生成结果</h3><span class="main-scope-badge">统一保存</span></div><p class="main-help">配置优选地址与原始节点的关联，预览后统一发布扩展节点。</p></div><div class="preferred-save-actions"><span id="saveStatus" class="save-state" role="status">已同步</span><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="保存全部优选地址与关联并更新扩展节点" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div></div>
+ <div class="preferred-sections">
+ <section class="main-section" id="endpointSection" aria-labelledby="endpointSectionTitle">
+  <div class="main-section-head"><h4 id="endpointSectionTitle">优选域名 / IP 与端口</h4><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div>
   <div class="editor-actions"><button id="addEndpoint" class="tool-button" type="button"><i data-lucide="plus"></i><span>添加优选地址</span></button></div>
   <div id="endpointList" class="main-scroll" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
- </div>
- <div class="main-section" id="previewSection">
-  <div class="main-section-head"><h3>生成结果预览</h3><p id="mainPreviewNote" role="status"></p></div>
+ </section>
+ <section class="main-section" id="previewSection" aria-labelledby="previewSectionTitle">
+  <div class="main-section-head"><h4 id="previewSectionTitle">生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div>
   <div class="editor-actions">
    <div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
    <div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div>
   </div>
   <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
- </div></div>`;
+ </section></div></section>`;
 }
 
 export function renderMainEditorDialogs() {
