@@ -13,6 +13,7 @@ export const mainEditorStyles = `
  .preferred-sections{display:grid;gap:20px;padding:20px;background:#eef2ee}
  .preferred-sections>.main-section{border:1px solid #cbd8d0;border-radius:8px;background:var(--surface);padding:18px;overflow:hidden}
  .preferred-sections .main-section-head{flex-direction:row;align-items:center;gap:12px 20px;margin:-18px -18px 16px;padding:15px 18px;border-bottom:1px solid #d7e2da;background:#f0f6f2;border-left:3px solid var(--green)}
+ .preview-heading-tools{display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;flex-basis:100%;min-width:0}
  .main-section-heading{flex:1 1 360px;min-width:0;display:grid;gap:6px}
  .preferred-sections .main-section-head>.main-action-group{flex:0 1 auto;margin-left:auto;max-width:100%}
  .preferred-sections h4{display:flex;align-items:center;gap:8px;margin:0;font-size:15px}
@@ -80,7 +81,6 @@ export function renderMainEditorSections() {
    </div>
    <div class="original-management-actions">
    <div class="main-action-group" role="group" aria-label="整理与恢复">
-    <button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
     <button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
     <button class="tool-button" type="button" onclick="openOriginalHistory()"><i data-lucide="history"></i><span>历史版本</span></button>
    </div>
@@ -104,10 +104,8 @@ export function renderMainEditorSections() {
   <div id="endpointList" class="main-scroll" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </section>
  <section class="main-section" id="previewSection" aria-labelledby="previewSectionTitle">
-  <div class="main-section-head"><div class="main-section-heading"><h4 id="previewSectionTitle"><i data-lucide="layers-3" aria-hidden="true"></i>生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div><div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div></div>
-  <div class="editor-actions">
-   <div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
-  </div>
+  <div class="main-section-head"><div class="main-section-heading"><h4 id="previewSectionTitle"><i data-lucide="layers-3" aria-hidden="true"></i>生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div><div class="preview-heading-tools"><div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div><div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div></div></div>
+
   <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
  </section></div></section>`;
 }

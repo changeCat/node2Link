@@ -13,7 +13,6 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
  let endpointInitialValue = '', originalInitialValue = '', saving = false;
  const selectedOriginals = new Set();
- const undo = [];
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
  const state = (message, kind = '') => { el('saveStatus').textContent = message; el('saveStatus').className = 'save-state ' + kind; };
  // Compare configuration values, never the textarea's browser-normalized whitespace
@@ -123,7 +122,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   saveButton.disabled = saving;
   el('originalSection').querySelectorAll('button').forEach(button => { if (saving) { button.dataset.wasDisabled = String(button.disabled); button.disabled = true; } else if (button.dataset.wasDisabled !== undefined) { button.disabled = button.dataset.wasDisabled === 'true'; delete button.dataset.wasDisabled; } });
   for (const id of ['originalForm', 'batchForm']) el(id).querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = saving; });
-  if (!saving) { el('undoButton').disabled = !undo.length; updateOriginalSelection(); }
+  if (!saving) updateOriginalSelection();
   saveButton.querySelector('span').textContent = saving ? '保存中' : '保存全部并生效';
   saveButton.setAttribute('aria-busy', String(saving));
  }
@@ -144,14 +143,13 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   } catch (error) { state('保存失败：' + error.message, 'error'); showToast(error.message); }
   finally { saving = false; updateSaveButton(); }
  }
- async function publishOriginals(originals, { historyRevision, remember = true } = {}) {
+ async function publishOriginals(originals, { historyRevision } = {}) {
   if (saving) { showToast('正在保存，请稍后重试'); return false; }
   const previous = structuredClone(config.originals);
   saving = true; updateSaveButton(); el('originalSaveStatus').textContent = '正在保存原始节点…';
   try {
    const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': historyRevision ? 'restore-originals' : 'save-originals', 'X-Node2Link-Revision': revision }, body: JSON.stringify(historyRevision ? { revision: historyRevision } : { originals }), cache: 'no-store' });
    const data = await response.json(); if (!response.ok) throw new Error(data.message || '保存失败');
-   if (remember && JSON.stringify(previous) !== JSON.stringify(data.config.originals)) { undo.push(previous); if (undo.length > 10) undo.shift(); }
    config = { ...data.config, endpoints: reconcileMainEndpoints(config.endpoints, data.config.originals, previous) };
    saved = snapshot(data.config);
    revision = data.metadata.revision; syncText(); render(); persistDraft(); updateMetadata(data.metadata);
@@ -387,11 +385,6 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
     el('originalHistorySelect').innerHTML = data.versions.map((version, index) => '<option value="' + esc(version.revision) + '">' + (index === 0 ? '最新 · ' : '') + esc(new Date(version.savedAt).toLocaleString()) + ' · ' + version.count + ' 项</option>').join('');
     if (data.versions.length) await loadHistoryVersion(); else el('originalHistoryMessage').textContent = '暂无保存版本';
    } catch (error) { el('originalHistoryMessage').textContent = error.message; }
-  },
-  async undoLastChange() {
-   if (!undo.length || saving) return;
-   if (!await askMainConfirm('撤销上次原始节点修改并立即保存？当前优选配置保留，已删除的关联不会恢复。', '撤销原始节点修改')) return;
-   if (await publishOriginals(undo.at(-1), { remember: false })) { undo.pop(); el('undoButton').disabled = !undo.length; }
   },
   openDedupePreview() {
    flush(); const lines = mainLines(textarea.value);
