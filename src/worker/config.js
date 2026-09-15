@@ -69,6 +69,7 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 			: sanitizeSubscriptionToken(env.TOKEN || ''),
 		browserIconURL: normalizeBrowserIconURL(persistedSettings.browserIconURL),
 		displayFormats: normalizeDisplayFormats(persistedSettings.displayFormats),
+		originalHistoryLimit: Number.isInteger(persistedSettings.originalHistoryLimit) && persistedSettings.originalHistoryLimit >= 1 && persistedSettings.originalHistoryLimit <= 20 ? persistedSettings.originalHistoryLimit : 3,
 		apiSubscriptionEnabled: isAPISubscriptionEnabled(env)
 	};
 }

@@ -26,9 +26,9 @@ test.afterEach(async ({ page }, testInfo) => {
 });
 async function save(page) {
  await page.locator('#saveButton').click();
- await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
+ await expect(page.locator('#saveStatus')).toHaveText(/^(刚刚已保存|已同步)$/);
 }
-async function seed(page) { await setOriginals(page, first + '\n' + second); await save(page); }
+async function seed(page) { await setOriginals(page, first + '\n' + second); }
 async function addEndpoints(page, addresses = 'cf.example.com\n203.0.113.10:8443') {
  await page.locator('#addEndpoint').click();
  for (const [i, value] of addresses.split('\n').entries()) {
@@ -66,6 +66,7 @@ test('main associations generate on save, retain identity on edit and feed share
  await page.locator('[data-edit-original]').first().click();
  await page.locator('#originalValue').fill(first.replace('uuid@', 'updated-secret@'));
  await page.locator('#originalForm button[type="submit"]').click();
+ await expect(page.locator('#originalDialog')).not.toBeVisible();
  await expect(page.locator('#duplicateCount')).toHaveText('4');
  await save(page); await page.reload();
  const after = await page.evaluate(() => JSON.parse(document.getElementById('page-data-home').textContent).mainConfig);
@@ -91,33 +92,62 @@ test('main associations generate on save, retain identity on edit and feed share
  await save(page);
  expect(await subscription(page)).toHaveLength(4);
 });
-test('complete JSON backup, undo, deletion and invalid drafts preserve main associations', async ({ page }) => {
+test('original history can inspect, download and restore without publishing endpoint drafts', async ({ page }) => {
  await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
- const downloadPromise = page.waitForEvent('download');
- await page.locator('[onclick="downloadBackup()"]').click();
- const backup = await downloadPromise;
- expect(backup.suggestedFilename()).toMatch(/\.json$/);
- const path = await backup.path();
- await page.locator('[data-delete-original]').first().click();
+ await addEndpoints(page, 'pending.example.com');
+ const updated = first.replace('uuid@', 'updated@');
+ await page.locator('[data-edit-original]').first().click();
+ await page.locator('#originalValue').fill(updated);
+ await page.locator('#originalForm button[type="submit"]').click();
+ await expect(page.locator('#originalDialog')).not.toBeVisible();
+ const output = await subscription(page);
+ expect(output).toHaveLength(4);
+ expect(output.filter(line => line.includes('updated@'))).toHaveLength(2);
+ expect(output.some(line => line.includes('pending.example.com'))).toBe(false);
+ await expect(page.locator('#endpointList .main-endpoint-row')).toHaveCount(2);
+ await page.locator('[onclick="openOriginalHistory()"]').click();
+ await expect(page.locator('#originalHistoryContent')).toHaveValue(updated + '\n' + second);
+ await page.locator('#originalHistorySelect').selectOption({ index: 1 });
+ await expect(page.locator('#originalHistoryContent')).toHaveValue(first + '\n' + second);
+ const pending = page.waitForEvent('download');
+ await page.locator('#downloadOriginalVersion').click();
+ const download = await pending;
+ expect(download.suggestedFilename()).toMatch(/\.txt$/);
+ expect(await readFile(await download.path(), 'utf8')).toBe(first + '\n' + second);
+ await page.screenshot({ path: test.info().outputPath('original-history.png'), fullPage: true });
+ await page.locator('#restoreOriginalVersion').click();
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#originalHistoryDialog')).not.toBeVisible();
+ expect((await subscription(page)).filter(line => line.includes('uuid@'))).toHaveLength(2);
+ await expect(page.locator('#endpointList .main-endpoint-row')).toHaveCount(2);
+ await expect(page.locator('#saveStatus')).toContainText('未保存');
+ await save(page);
+ expect(await subscription(page)).toHaveLength(6);
+});
+
+test('TXT import preserves matching associations and original failures retain input', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ await expect(page.getByText('备份 JSON', { exact: true })).toHaveCount(0);
+ await expect(page.getByRole('button', { name: '导入 TXT', exact: true }).locator('svg.lucide-arrow-down-to-line')).toHaveCount(1);
+ await page.locator('#restoreInput').setInputFiles({ name: 'originals.txt', mimeType: 'text/plain', buffer: Buffer.from(first) });
  await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
  await expect(page.locator('#nodeCount')).toHaveText('1');
- await expect(page.locator('#duplicateCount')).toHaveText('1');
- await page.locator('#undoButton').click();
- await expect(page.locator('#duplicateCount')).toHaveText('2');
- await setOriginals(page, first.replace('uuid@', 'bulk-new@') + '\n' + second);
- await expect(page.locator('#validationIssues')).toHaveText('');
- await expect(page.locator('#duplicateCount')).toHaveText('1');
+ expect(await subscription(page)).toHaveLength(2);
+ await page.locator('[data-edit-original]').first().click();
+ await page.locator('#originalValue').fill(first.replace('uuid@', 'retry@'));
+ await page.route('http://127.0.0.1:8790/', route => route.request().headers()['x-node2link-action'] === 'save-originals' ? route.fulfill({ status: 503, json: { message: '模拟保存失败' } }) : route.continue());
+ await page.locator('#originalForm button[type="submit"]').click();
+ await expect(page.locator('#originalError')).toContainText('输入已保留');
+ await expect(page.locator('#originalValue')).toHaveValue(/retry@/);
+ expect((await subscription(page))[0]).toBe(first);
+ await page.unroute('http://127.0.0.1:8790/');
+ await page.locator('#originalForm button[type="submit"]').click();
+ await expect(page.locator('#originalDialog')).not.toBeVisible();
+ expect((await subscription(page)).filter(line => line.includes('retry@'))).toHaveLength(2);
  await page.reload();
- await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
- await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
- await expect(page.locator('#validationIssues')).toHaveText('');
- await expect(page.locator('#duplicateCount')).toHaveText('1');
- await expect(page.locator('#content')).toHaveValue(/bulk-new@/);
- await page.locator('#restoreInput').setInputFiles({ name: backup.suggestedFilename(), mimeType: 'application/json', buffer: await readFile(path) });
- await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
- await expect(page.locator('#content')).toHaveValue(first + '\n' + second);
- await expect(page.locator('#duplicateCount')).toHaveText('2');
+ await expect(page.locator('#content')).toHaveValue(/retry@/);
 });
+
 test('Cloudflare port groups include every official port and retain custom ports', async ({ page }) => {
  await seed(page);
  await page.locator('#addEndpoint').click();
@@ -175,7 +205,7 @@ test('single save action preserves edits made during publication', async ({ page
  const gate = new Promise(resolve => { releaseSave = resolve; });
  const started = new Promise(resolve => { markStarted = resolve; });
  await page.route('http://127.0.0.1:8790/', async route => {
-  if (route.request().headers()['x-node2link-action'] !== 'save-config') return route.continue();
+  if (route.request().headers()['x-node2link-action'] !== 'save-endpoints') return route.continue();
   markStarted(); await gate; await route.continue();
  });
  try {
@@ -185,7 +215,8 @@ test('single save action preserves edits made during publication', async ({ page
    await expect(button).toBeDisabled();
    await expect(button).toHaveText('保存中');
   }
-  await setOriginals(page, first.replace('#Main-HK', '#During-save'), 'append');
+  await expect(page.locator('#addOriginals')).toBeDisabled();
+  await addEndpoints(page, 'during-save.example.com');
  } finally { releaseSave(); }
  await expect(page.locator('#saveStatus')).toHaveText('保存期间有新修改，请再次保存');
  expect(await subscription(page)).toHaveLength(4);
@@ -195,7 +226,7 @@ test('single save action preserves edits made during publication', async ({ page
  }
  await page.unroute('http://127.0.0.1:8790/');
  await save(page);
- expect(await subscription(page)).toHaveLength(5);
+ expect(await subscription(page)).toHaveLength(6);
 });
 
 test('closing a changed original requires a choice and keeps its associations', async ({ page }) => {
@@ -231,6 +262,7 @@ test('compact cards, append, independent endpoints, exports and replacement clea
  const updated = first.replace('uuid@', 'reset-uuid@').replace('#Main-HK', '#Renamed').replace('security=tls', 'security=none');
  await page.locator('#originalValue').fill(updated);
  await page.locator('#originalForm button[type="submit"]').click();
+ await expect(page.locator('#originalDialog')).not.toBeVisible();
  await expect(page.locator('#duplicateCount')).toHaveText('4');
  await expect(page.locator('#mainPreview')).toContainText('Renamed-优选 1');
  await save(page);
@@ -253,7 +285,10 @@ test('compact cards, append, independent endpoints, exports and replacement clea
  await expect(page.locator('#duplicateCount')).toHaveText('0');
  await expect(page.locator('#endpointList .main-badge')).toHaveText(['停用', '停用']);
  await page.locator('#undoButton').click();
- await expect(page.locator('#duplicateCount')).toHaveText('4');
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#saveButton')).toBeEnabled();
+ await expect(page.locator('#duplicateCount')).toHaveText('0');
+ await expect(page.locator('#nodeCount')).toHaveText('2');
  const converter = await page.locator('.workspace-config').boundingBox();
  const subscriptions = await page.locator('#owner-title').boundingBox();
  expect(converter.y + converter.height).toBeLessThan(subscriptions.y);
@@ -299,8 +334,11 @@ test('empty batches are rejected and bulk deletion preserves undo and associatio
  await expect(page.locator('#endpointList')).toContainText('停用');
  await expect(page.locator('#deleteOriginals')).toBeDisabled();
  await page.locator('#undoButton').click();
- await expect(page.locator('#duplicateCount')).toHaveText('2');
- expect(await subscription(page)).toHaveLength(4);
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#saveButton')).toBeEnabled();
+ await expect(page.locator('#duplicateCount')).toHaveText('0');
+ await expect(page.locator('#nodeCount')).toHaveText('2');
+ expect(await subscription(page)).toHaveLength(2);
 });
 
 test('lists scroll independently and selection includes unloaded matching nodes', async ({ page }) => {
@@ -325,8 +363,10 @@ test('lists scroll independently and selection includes unloaded matching nodes'
  await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
  await expect(page.locator('#nodeCount')).toHaveText('0');
  await page.locator('#undoButton').click();
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#saveButton')).toBeEnabled();
  await expect(page.locator('#nodeCount')).toHaveText('105');
- await expect(page.locator('#duplicateCount')).toHaveText('840');
+ await expect(page.locator('#duplicateCount')).toHaveText('0');
 });
 
 test('custom converter addresses display in full without copy controls or fallback notice', async ({ page }) => {
@@ -381,4 +421,30 @@ test('wheel scrolling passes from short lists and list boundaries to the page', 
   await page.locator('#' + id).evaluate(el => { el.scrollTop = 0; });
   await wheelOnList(id);
  }
+});
+
+
+test('history retention settings apply independently and survive reload', async ({ page }) => {
+ await page.goto('/settings');
+ await expect(page.locator('#originalHistoryLimit')).toHaveValue('3');
+ await page.locator('#pageTitle').fill('Unsaved display change');
+ await page.locator('#originalHistoryLimit').fill('2');
+ await page.locator('#historyForm button[type="submit"]').click();
+ await expect(page.locator('#historyMessage')).toHaveText('已保存');
+ await page.reload();
+ await expect(page.locator('#originalHistoryLimit')).toHaveValue('2');
+ await expect(page.locator('#pageTitle')).not.toHaveValue('Unsaved display change');
+ await page.goto('/');
+ await setOriginals(page, first);
+ await setOriginals(page, second);
+ await setOriginals(page, first + '\n' + second);
+ await page.locator('[onclick="openOriginalHistory()"]').click();
+ await expect(page.locator('#originalHistorySelect option')).toHaveCount(2);
+ await expect(page.locator('#originalHistoryHelp')).toContainText('最近 2 个');
+ await page.locator('#closeOriginalHistory').click();
+ await page.goto('/settings');
+ await page.locator('#originalHistoryLimit').fill('3');
+ await page.locator('#historyForm button[type="submit"]').click();
+ await expect(page.locator('#historyMessage')).toHaveText('已保存');
+ await page.goto('/');
 });

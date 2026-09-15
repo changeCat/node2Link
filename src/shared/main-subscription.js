@@ -1,5 +1,16 @@
 // Shared by the main editor and Worker. This module deliberately has no API-subscription dependencies.
 export const MAIN_VERSION = 2;
+
+// Keep explicit identities; transfer exact duplicates and prune missing targets.
+export function reconcileMainEndpoints(endpoints, originals, previousOriginals = []) {
+ const ids = new Set(originals.filter(node => isMainNode(node.content)).map(node => node.id));
+ const byContent = new Map(originals.filter(node => ids.has(node.id)).map(node => [node.content, node.id]));
+ const replacements = new Map(previousOriginals.filter(node => !ids.has(node.id) && byContent.has(node.content)).map(node => [node.id, byContent.get(node.content)]));
+ return endpoints.map(endpoint => {
+  const originalIds = [...new Set(endpoint.originalIds.map(id => replacements.get(id) || id).filter(id => ids.has(id)))];
+  return { ...endpoint, originalIds, enabled: endpoint.enabled && originalIds.length > 0 };
+ });
+}
 export const MAIN_HTTPS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
 export const MAIN_HTTP_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095];
 const MAX_BYTES = 20 * 1024 * 1024;

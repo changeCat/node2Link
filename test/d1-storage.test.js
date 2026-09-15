@@ -110,7 +110,7 @@ test('a 100-node import stays within one D1 batch and four parameter-safe statem
 	assert.equal((await readGeneratedNodes(storage, { fresh: true })).length, 100);
 });
 
-test('large main bodies remain in KV and cleanup keeps current plus one backup', async () => {
+test('large main bodies remain in KV and cleanup keeps the default three original versions', async () => {
 	const { kv, db, storage } = fixture({ initialized: true });
 	const body = 'a'.repeat(2 * 1024 * 1024 + 1);
 	await saveMainRecord(storage, body + '1');
@@ -119,7 +119,7 @@ test('large main bodies remain in KV and cleanup keeps current plus one backup',
 	assert.equal((await readMainRecord(storage)).content.at(-1), '3');
 	assert.equal((await readMainBackup(storage)).content.at(-1), '2');
 	assert.ok(db.records.has('main.head'));
-	assert.equal([...kv.values.keys()].filter(key => key.startsWith('blob.main.')).length, 2);
+	assert.equal([...kv.values.keys()].filter(key => key.startsWith('blob.main.')).length, 3);
 	assert.ok([...db.records.values()].every(record => new TextEncoder().encode(record.value).length < 2 * 1024 * 1024));
 });
 

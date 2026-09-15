@@ -9,7 +9,8 @@ export const SETTING_SECTIONS = {
 	display: ['subscriptionName', 'pageTitle', 'browserIconURL'],
 	entry: ['subscriptionToken'],
 	conversion: ['converterMode', 'customConverterURL', 'customConverterType', 'customConverters', 'activeCustomConverterId'],
-	clients: ['displayFormats']
+	clients: ['displayFormats'],
+	history: ['originalHistoryLimit']
 };
 
 async function readSections(kv, sections, entry) {

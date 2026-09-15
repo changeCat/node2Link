@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileMainConfig, legacyMainConfig, extendMainNode, mainNodeName, mainNodeSummary, parseMainEndpointLine } from '../src/shared/main-subscription.js';
-import { readMainRecord, readMainBackup, saveMainRecord, MAIN_HEAD_KEY } from '../src/worker/storage/main.js';
+import { readMainRecord, readMainBackup, readOriginalHistory, readOriginalVersion, saveMainRecord, MAIN_HEAD_KEY } from '../src/worker/storage/main.js';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
 import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
 import { withStorageBindings } from '../src/worker/storage/d1.js';
@@ -185,4 +185,74 @@ test('corrupt structured main versions fail closed rather than losing configurat
   await kv.put(metadata.revision, JSON.stringify(corrupt));
   await assert.rejects(readMainRecord(kv), /存储数据格式异常/);
  }
+});
+
+
+test('original history retains N versions, ignores endpoint saves and survives failed publication', async () => {
+ const kv = new MemoryKV(), config = fixtureConfig(), revisions = [];
+ for (let i = 0; i < 5; i++) {
+  config.originals[0].content = raw.replace('uuid@', 'uuid' + i + '@');
+  revisions.push((await saveMainRecord(kv, config)).revision);
+ }
+ assert.deepEqual((await readOriginalHistory(kv)).map(item => item.revision), revisions.slice(-3).reverse());
+ assert.equal(await kv.get(revisions[0]), null);
+ const before = await readOriginalHistory(kv);
+ for (let i = 0; i < 4; i++) { config.endpoints[0].port = 2096 + i; await saveMainRecord(kv, config); }
+ assert.deepEqual(await readOriginalHistory(kv), before);
+ for (const version of before) assert.equal((await readOriginalVersion(kv, version.revision)).originals.length, 2);
+ await assert.rejects(readOriginalVersion(kv, revisions[0]), /保留范围/);
+ const current = await readMainRecord(kv);
+ kv.before = (op, key) => { if (op === 'put' && key === MAIN_HEAD_KEY) throw new Error('failed head'); };
+ config.originals[0].content = raw;
+ await assert.rejects(saveMainRecord(kv, config, { historyLimit: 1 }));
+ assert.deepEqual(await readOriginalHistory(kv), before);
+ assert.deepEqual(await readMainRecord(kv), current);
+ kv.before = null;
+ await saveMainRecord(kv, config, { historyLimit: 1 });
+ assert.equal((await readOriginalHistory(kv)).length, 1);
+ await assert.rejects(readOriginalVersion(kv, before[1].revision), /保留范围/);
+});
+
+test('original history migrates existing current and previous without duplicate endpoint versions', async () => {
+ const kv = new MemoryKV();
+ const first = await saveMainRecord(kv, raw), second = await saveMainRecord(kv, other);
+ await kv.put(MAIN_HEAD_KEY, JSON.stringify({ current: second.revision, previous: first.revision }));
+ assert.deepEqual((await readOriginalHistory(kv)).map(item => item.revision), [second.revision, first.revision]);
+ await saveMainRecord(kv, other);
+ assert.deepEqual((await readOriginalHistory(kv)).map(item => item.revision), [second.revision, first.revision]);
+});
+
+test('separate save routes isolate endpoints, propagate UUID edits, dedupe associations and restore originals only', async () => {
+ const origin = 'https://main.example.com';
+ const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'test-password', SESSION_SECRET: 'test-secret' };
+ const headers = { Cookie: (await createSessionCookie(env)).split(';')[0], Origin: origin, 'Content-Type': 'application/json' };
+ const request = (action, body, revision, path = '/') => worker.fetch(new Request(origin + path, { method: 'POST', headers: { ...headers, 'X-Node2Link-Action': action, ...(revision ? { 'X-Node2Link-Revision': revision } : {}) }, body: JSON.stringify(body) }), env, { waitUntil() {} });
+ const config = fixtureConfig();
+ const first = await (await request('save-config', config, 'uninitialized')).json();
+ const originals = config.originals.map(node => ({ ...node, content: node.content.replace('uuid@', 'new@') }));
+ const updated = await (await request('save-originals', { originals, endpoints: [] }, first.metadata.revision)).json();
+ assert.equal(updated.ok, true);
+ assert.deepEqual(updated.config.endpoints, config.endpoints);
+ assert.equal(compileMainConfig(updated.config).nodes.filter(node => node.content.includes('new@')).length, 2);
+ const endpoints = [{ ...endpoint, port: 2096 }];
+ const endpointSave = await (await request('save-endpoints', { endpoints, originals: [] }, updated.metadata.revision)).json();
+ assert.deepEqual(endpointSave.config.originals, originals);
+ assert.equal((await (await request('list-original-history', {})).json()).versions.length, 2);
+ const restored = await (await request('restore-originals', { revision: first.metadata.revision }, endpointSave.metadata.revision)).json();
+ assert.deepEqual(restored.config.originals, config.originals);
+ assert.equal(restored.config.endpoints[0].port, 2096);
+ assert.equal((await request('save-originals', { originals: [] }, first.metadata.revision)).status, 409);
+ assert.equal((await request('save-endpoints', { endpoints: [] })).status, 409);
+ assert.equal((await request('get-original-version', { revision: 'blob.main.not-retained' })).status, 400);
+ const dupes = [{ ...config.originals[0], id: 'replacement' }, ...config.originals];
+ const duplicated = await (await request('save-originals', { originals: dupes }, restored.metadata.revision)).json();
+ const deduped = await (await request('save-originals', { originals: [dupes[0], config.originals[1]] }, duplicated.metadata.revision)).json();
+ assert.deepEqual(deduped.config.endpoints[0].originalIds, ['replacement']);
+ const deleted = await (await request('save-originals', { originals: [] }, deduped.metadata.revision)).json();
+ assert.deepEqual(deleted.config.endpoints[0].originalIds, []);
+ assert.equal(deleted.config.endpoints[0].enabled, false);
+ for (const limit of [0, 21, 1.5, '3']) assert.equal((await request('', { section: 'history', originalHistoryLimit: limit }, null, '/api/settings')).status, 400);
+ assert.equal((await request('', { section: 'history', originalHistoryLimit: 2 }, null, '/api/settings')).status, 200);
+ const history = await (await request('list-original-history', {})).json();
+ assert.equal(history.limit, 2); assert.equal(history.versions.length, 2);
 });

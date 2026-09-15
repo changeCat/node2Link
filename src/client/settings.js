@@ -149,3 +149,8 @@ byId('displayForm').addEventListener('submit', function(event) {
 byId('entryForm').addEventListener('submit', function(event) {
  event.preventDefault(); saveSection(this, byId('entryMessage'), { section: 'entry', subscriptionToken: tokenInput.value });
 });
+
+byId('originalHistoryLimit').value = initial.originalHistoryLimit ?? 3;
+byId('historyForm').addEventListener('submit', function(event) {
+ event.preventDefault(); saveSection(this, byId('historyMessage'), { section: 'history', originalHistoryLimit: Number(byId('originalHistoryLimit').value) });
+});

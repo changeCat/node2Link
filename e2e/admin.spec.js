@@ -36,21 +36,22 @@ async function saveMain(page, content) {
 	expect(stored).toBe(content);
 }
 
-test('manual save, reload, version restore, local draft, copy and QR', async ({ page }) => {
+test('original autosave, reload, history restore, copy and QR', async ({ page }) => {
 	await saveMain(page, first);
 	await saveMain(page, second);
 	await page.reload();
 	await expect(page.locator('#content')).toHaveValue(second);
-	await page.locator('[onclick="loadLastSavedVersion()"], [onclick="loadLastSavedVersion();"]').click();
-	await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
-	await expect(page.locator('#content')).toHaveValue(first);
-	await setOriginals(page, first + '\n' + second);
-	await page.reload();
-	await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
-	await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
-	await expect(page.locator('#content')).toHaveValue(first + '\n' + second);
-	await page.locator('#saveButton').click();
-	await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
+ await page.locator('[onclick="openOriginalHistory()"]').click();
+ await expect(page.locator('#originalHistoryContent')).toHaveValue(second);
+ await page.locator('#originalHistorySelect').selectOption({ index: 1 });
+ await expect(page.locator('#originalHistoryContent')).toHaveValue(first);
+ await page.locator('#restoreOriginalVersion').click();
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#originalHistoryDialog')).not.toBeVisible();
+ await setOriginals(page, first + '\n' + second);
+ await page.reload();
+ await expect(page.locator('#mainConfirmDialog')).not.toBeVisible();
+ await expect(page.locator('#content')).toHaveValue(first + '\n' + second);
 	const copy = page.locator('[onclick^="copySubscription"]').first();
 	const link = await copy.getAttribute('data-url');
 	await copy.click();
@@ -124,11 +125,12 @@ test('stale tabs keep their edits on conflict and clearing the editor stays empt
 	try {
 		await stale.goto('/');
 		await saveMain(page, second);
-		await setOriginals(stale, first + '\n' + second);
-		await stale.locator('#saveButton').click();
-		await expect(stale.locator('#saveStatus')).toContainText('已在其他页面更新');
-		await expect(stale.locator('#content')).toHaveValue(first + '\n' + second);
-		await expect(stale.locator('#saveButton')).toBeEnabled();
+  await stale.locator('#addOriginals').click();
+  await stale.locator('#batchValue').fill(first + '\n' + second);
+  await stale.locator('#batchForm button[value="append"]').click();
+  await expect(stale.locator('#originalSaveStatus')).toContainText('已在其他页面更新');
+  await expect(stale.locator('#batchValue')).toHaveValue(first + '\n' + second);
+  await expect(stale.locator('#batchForm button[value="append"]')).toBeEnabled();
 		// The older edit was rejected; the current tab can still publish its version.
 		await saveMain(page, '');
 		const link = await page.locator('[onclick^="copySubscription"]').first().getAttribute('data-url');
@@ -211,35 +213,21 @@ test('API template save, token copy and reset, import and deletion', async ({ pa
 	await expect(card).toHaveCount(0);
 });
 
-test('editor coalesces draft writes and flushes the latest edit before reload or save', async ({ page }) => {
-	await saveMain(page, first);
-	const latest = first + '\n' + second;
-	const immediate = await page.evaluate(content => {
-		window.draftWrites = 0;
-		const original = Storage.prototype.setItem;
-		Storage.prototype.setItem = function(key, value) {
-			if (key.startsWith('node2link:draft:')) window.draftWrites++;
-			return original.call(this, key, value);
-		};
-		const editor = document.getElementById('content');
-		for (let i = 0; i < 20; i++) {
-			editor.value = content + i;
-			editor.dispatchEvent(new Event('input', { bubbles: true }));
-		}
-		return { writes: window.draftWrites, status: document.getElementById('saveStatus').textContent };
-	}, latest);
-	expect(immediate).toEqual({ writes: 0, status: '有未保存更改' });
-	await expect.poll(() => page.evaluate(() => window.draftWrites)).toBe(1);
-	await expect(page.locator('#nodeCount')).toHaveText('2');
-	await setOriginals(page, latest);
-	await page.reload();
-	await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
-	await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
-	await expect(page.locator('#content')).toHaveValue(latest);
-	await saveMain(page, second);
-	// Advancing beyond the debounce must not resurrect a draft after successful save.
-	await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
-	expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
+test('endpoint drafts survive reload while originals remain immediately saved', async ({ page }) => {
+ await saveMain(page, first);
+ await page.locator('#addEndpoint').click();
+ await page.locator('[data-address]').fill('draft.example.com');
+ await page.locator('#selectTargets').click();
+ await page.locator('#endpointForm button[type="submit"]').click();
+ await page.reload();
+ await expect(page.locator('#mainConfirmTitle')).toHaveText('恢复本地草稿');
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#endpointList')).toContainText('draft.example.com');
+ await expect(page.locator('#content')).toHaveValue(first);
+ await page.locator('#saveButton').click();
+ await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
+ await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
+ expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
 });
 
 test('picker loads on demand and pages large results without limiting selection', async ({ page }) => {
