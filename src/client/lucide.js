@@ -1,11 +1,11 @@
 import {
-	ArrowDownToLine, Atom, Binary, Box, CircleCheck, Clock3, Copy, createIcons, DatabaseZap,
+	ArrowDownToLine, ArrowUpFromLine, Atom, Binary, Box, CircleCheck, Clock3, Copy, createIcons, DatabaseZap,
 	Download, FileCog, History, Layers3, List, ListChecks, Orbit, Plus, QrCode,
 	Save, ServerCog, Settings, Sparkles, Upload, Waves, X
 } from 'lucide';
 
 const icons = {
-	ArrowDownToLine, Atom, Binary, Box, CircleCheck, Clock3, Copy, DatabaseZap, Download,
+	ArrowDownToLine, ArrowUpFromLine, Atom, Binary, Box, CircleCheck, Clock3, Copy, DatabaseZap, Download,
 	FileCog, History, Layers3, List, ListChecks, Orbit, Plus, QrCode, Save,
 	ServerCog, Settings, Sparkles, Upload, Waves, X
 };

@@ -87,7 +87,7 @@ export function renderMainEditorSections() {
    </div>
    <div class="main-action-group" role="group" aria-label="导入与导出">
     <button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="arrow-down-to-line"></i><span>导入 TXT</span></button>
-    <button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button>
+    <button id="exportOriginals" class="tool-button" type="button"><i data-lucide="arrow-up-from-line" aria-hidden="true"></i><span>导出原始 TXT</span></button>
    </div>
    <div class="main-action-group" role="group" aria-label="添加节点">
     <button id="addOriginals" class="tool-button" type="button"><i data-lucide="plus"></i><span>批量添加</span></button>
@@ -105,7 +105,7 @@ export function renderMainEditorSections() {
   <div id="endpointList" class="main-scroll" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </section>
  <section class="main-section" id="previewSection" aria-labelledby="previewSectionTitle">
-  <div class="main-section-head"><div class="main-section-heading"><h4 id="previewSectionTitle"><i data-lucide="layers-3" aria-hidden="true"></i>生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div><div class="preview-heading-tools"><div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div><div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div></div></div>
+  <div class="main-section-head"><div class="main-section-heading"><h4 id="previewSectionTitle"><i data-lucide="layers-3" aria-hidden="true"></i>生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div><div class="preview-heading-tools"><div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div><div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button"><i data-lucide="arrow-up-from-line" aria-hidden="true"></i><span>导出扩展 TXT</span></button><button id="exportMain" class="tool-button" type="button"><i data-lucide="arrow-up-from-line" aria-hidden="true"></i><span>导出全部 TXT</span></button></div></div></div>
 
   <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
  </section></div></section>`;
