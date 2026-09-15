@@ -94,7 +94,7 @@ test('template cards, duplicate prevention, optional ports and automatic origina
  await expect(page.locator('[data-template-port-status="two"]')).toHaveText('2053');
  await page.unroute('**/api/generated-nodes');
  await page.locator('#saveSettings').click();
- await expect(page.locator('#settingsMessage')).toHaveText('配置已保存');
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已保存');
  await page.reload();
  await expect(page.locator('.api-template-card')).toHaveCount(2);
  await expect(page.locator('[data-template-port-status="two"]')).toHaveText('2053');
@@ -132,10 +132,10 @@ test('template cards, duplicate prevention, optional ports and automatic origina
  await expect(page.locator('#settingsMessage')).toContainText('已不存在');
  await page.locator('[data-remove-template="two"]').click();
  await page.locator('#saveSettings').click();
- await expect(page.locator('#settingsMessage')).toHaveText('配置已保存');
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已保存');
  await page.locator('[data-remove-template="one"]').click();
  await page.locator('#saveSettings').click();
- await expect(page.locator('#settingsMessage')).toHaveText('配置已保存');
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已保存');
  await page.reload();
  await expect(page.locator('.api-template-card')).toHaveCount(0);
 });
@@ -194,7 +194,7 @@ test('port wizard shares main presets, supports bulk and custom ports, and cance
  await page.locator('#confirmAddTemplates').click();
  await expect(page.locator('[data-template-port-status="one"]')).toHaveText('跟随 API');
  await page.locator('#saveSettings').click();
- await expect(page.locator('#settingsMessage')).toHaveText('配置已保存');
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已保存');
  await page.reload();
  await expect(page.locator('[data-template-port-status="one"]')).toHaveText('跟随 API');
  await expect(page.locator('[data-template-port-status="two"]')).toHaveText('80');
@@ -202,4 +202,55 @@ test('port wizard shares main presets, supports bulk and custom ports, and cance
  await expect(page.locator('#templateSelectStep')).toBeVisible();
  await expect(page.locator('#nextTemplateStep')).toBeDisabled();
  await page.locator('#cancelTemplatePicker').click();
+});
+
+test('API configuration and template saves preserve each other’s pending edits', async ({ page }) => {
+ await page.goto('/api-subscriptions');
+ const readSettings = () => page.evaluate(async () => (await (await fetch('/api/generated-nodes')).json()).settings);
+ const before = await readSettings();
+ await page.locator('#addTemplate').click();
+ await page.locator('[data-template-id="one"]').check();
+ await page.locator('#nextTemplateStep').click();
+ await page.locator('#confirmAddTemplates').click();
+ await page.locator('#nameTemplate').fill('Draft-{{name}}-{{address}}');
+ await page.locator('#resetToken').click(); await page.locator('#confirmAccept').click();
+ const pendingToken = await page.locator('#apiToken').inputValue();
+ // Template save must not save or overwrite pending API fields and their status.
+ await page.locator('#saveSettings').click();
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已保存');
+ const afterTemplates = await readSettings();
+ expect(afterTemplates.token).toBe(before.token);
+ expect(afterTemplates.nameTemplate).toBe(before.nameTemplate);
+ expect(afterTemplates.sourceTemplates).toEqual([{ id: 'one', port: null }]);
+ await expect(page.locator('#apiToken')).toHaveValue(pendingToken);
+ await expect(page.locator('#nameTemplate')).toHaveValue('Draft-{{name}}-{{address}}');
+ await expect(page.locator('#apiSettingsMessage')).toHaveText('Token 已重置，尚未保存');
+ await page.locator('[data-remove-template="one"]').click();
+ // Saving API configuration keeps the unsaved removal in the template editor.
+ await page.locator('#saveAPISettings').click();
+ await expect(page.locator('#apiSettingsMessage')).toHaveText('API 配置已保存');
+ const afterAPI = await readSettings();
+ expect(afterAPI.token).toBe(pendingToken);
+ expect(afterAPI.nameTemplate).toBe('Draft-{{name}}-{{address}}');
+ expect(afterAPI.sourceTemplates).toEqual(afterTemplates.sourceTemplates);
+ await expect(page.locator('.api-template-card')).toHaveCount(0);
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已修改，尚未保存');
+ // An invalid API name must not block saving valid template edits.
+ await page.locator('#nameTemplate').fill('missing-address');
+ await page.locator('#saveSettings').click();
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已保存');
+ expect((await readSettings()).sourceTemplates).toEqual([]);
+ await page.locator('#saveAPISettings').click();
+ await expect(page.locator('#apiSettingsMessage')).toContainText('必须包含');
+ await expect(page.locator('#nameTemplate')).toHaveValue('missing-address');
+ expect((await readSettings()).nameTemplate).toBe(afterAPI.nameTemplate);
+ await page.locator('#nameTemplate').fill('Saved-{{address}}');
+ await page.locator('#saveAPISettings').click();
+ await expect(page.locator('#apiSettingsMessage')).toHaveText('API 配置已保存');
+ await expect(page.locator('#settingsMessage')).toHaveText('模板已保存');
+ await page.screenshot({ path: test.info().outputPath('independent-api-save.png'), fullPage: true });
+ await page.reload();
+ await expect(page.locator('#nameTemplate')).toHaveValue('Saved-{{address}}');
+ await expect(page.locator('#apiToken')).toHaveValue(pendingToken);
+ await expect(page.locator('.api-template-card')).toHaveCount(0);
 });

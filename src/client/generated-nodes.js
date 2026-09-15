@@ -4,6 +4,8 @@ import { applyVariables } from '../shared/template-variables.js';
 const pageData = JSON.parse(document.getElementById('page-data-generated-nodes').textContent);
 let { settings, nodes, originals } = pageData;
 const form = document.getElementById('settingsForm');
+const apiSettingsForm = document.getElementById('apiSettingsForm');
+const apiSettingsMessage = document.getElementById('apiSettingsMessage');
 const tokenInput = document.getElementById('apiToken');
 const nameInput = document.getElementById('nameTemplate');
 const templateList = document.getElementById('templateList');
@@ -23,6 +25,7 @@ let busy = false;
 function esc(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function copyText(value) { return navigator.clipboard.writeText(value); }
 function showMessage(text, error = false) { message.textContent = text; message.className = 'api-save-state ' + (error ? 'message' : 'muted'); }
+function showAPIMessage(text, error = false) { apiSettingsMessage.textContent = text; apiSettingsMessage.className = 'api-save-state ' + (error ? 'message' : 'muted'); }
 function askConfirm(text, title) {
  return new Promise(resolve => {
   const dialog = document.getElementById('confirmDialog');
@@ -46,7 +49,7 @@ function syncExamples() {
 }
 function renderNodes() {
  document.getElementById('nodeCount').textContent = nodes.length + ' 个';
- list.innerHTML = nodes.length ? nodes.map(node => '<article class="node-card"><div class="node-main"><div class="node-head"><span class="node-kind">' + (node.kind === 'raw' ? '完整节点' : '模板生成') + '</span><strong title="' + esc(node.name) + '">' + esc(node.name) + '</strong></div><div class="node-meta">' + (node.address ? esc(node.address) + (node.port ? ':' + node.port : '') : '完整节点') + ' · ' + new Date(node.createdAt).toLocaleString() + '</div><div class="node-content" title="' + esc(node.content) + '">' + esc(node.content) + '</div></div><div class="node-actions"><button class="button" type="button" data-copy-node="' + node.id + '">复制</button><button class="button danger-button" type="button" data-delete="' + node.id + '">删除</button></div></article>').join('') : '<div class="empty-list">尚无节点。请通过 GET 地址接口或 POST 完整节点接口从外部追加。</div>';
+ list.innerHTML = nodes.length ? nodes.map(node => '<article class="node-card"><div class="node-main"><div class="node-head"><span class="node-kind">' + (node.kind === 'raw' ? '完整节点' : '模板生成') + '</span><strong title="' + esc(node.name) + '">' + esc(node.name) + '</strong></div><div class="node-meta">' + (node.address ? esc(node.address) + (node.port ? ':' + node.port : '') : '完整节点') + ' · ' + new Date(node.createdAt).toLocaleString() + '</div></div><div class="node-footer"><div class="node-content" title="' + esc(node.content) + '">' + esc(node.content) + '</div><div class="node-actions"><button class="button" type="button" data-copy-node="' + node.id + '">复制</button><button class="button danger-button" type="button" data-delete="' + node.id + '">删除</button></div></div></article>').join('') : '<div class="empty-list">尚无节点。请通过 GET 地址接口或 POST 完整节点接口从外部追加。</div>';
 }
 async function apiCall(method, body) {
  const response = await fetch('/api/generated-nodes', { method, cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -70,10 +73,10 @@ function renderTemplates() {
   const node = byId.get(template.id);
   const error = !node ? '原始节点已删除，请移除此模板。' : node.error;
   const id = esc(template.id);
-  return '<article class="api-template-card" data-saved-template="' + id + '"><div class="api-template-heading"><strong title="' + esc(node?.name || template.id) + '">' + esc(node?.name || '原始节点已删除') + '</strong><span class="node-kind">' + esc(node?.protocol || '失效') + '</span></div><small>' + esc(node?.address || template.id) + '</small>' + (error ? '<p class="message">' + esc(error) + '</p>' : '') + '<div class="api-template-port-status">端口 <strong data-template-port-status="' + id + '">' + (template.port === null ? '跟随 API' : esc(template.port)) + '</strong></div><div class="api-actions"><button class="button" type="button" data-edit-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>编辑</button><button class="button" type="button" data-preview-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>预览</button><button class="button danger-button" type="button" data-remove-template="' + id + '"' + (busy ? ' disabled' : '') + '>移除</button></div></article>';
+  return '<article class="api-template-card" data-saved-template="' + id + '"><div class="api-template-heading"><strong title="' + esc(node?.name || template.id) + '">' + esc(node?.name || '原始节点已删除') + '</strong><span class="node-kind">' + esc(node?.protocol || '失效') + '</span></div><small>' + esc(node?.address || template.id) + '</small>' + (error ? '<p class="message">' + esc(error) + '</p>' : '') + '<div class="api-template-footer"><div class="api-template-port-status">端口 <strong data-template-port-status="' + id + '">' + (template.port === null ? '跟随 API' : esc(template.port)) + '</strong></div><div class="api-actions"><button class="button" type="button" data-edit-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>编辑</button><button class="button" type="button" data-preview-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>预览</button><button class="button danger-button" type="button" data-remove-template="' + id + '"' + (busy ? ' disabled' : '') + '>移除</button></div></div></article>';
  }).join('') || '<div class="empty-list">' + (templates.length ? '没有匹配的模板。' : '尚无模板，点击“添加模板”从原始节点中选择。') + '</div>';
 }
-function markChanged() { showMessage('配置已修改，尚未保存'); }
+function markChanged() { showMessage('模板已修改，尚未保存'); }
 function renderOriginals() {
  const existing = new Set(templates.map(node => node.id));
  const visible = filteredOriginals();
@@ -175,7 +178,7 @@ function setPickerStep(step) {
  document.getElementById('nextTemplateStep').hidden = !selecting;
  document.getElementById('confirmAddTemplates').hidden = selecting;
  document.getElementById('templateSelectionMessage').textContent = '';
- document.getElementById('pendingTemplateCount').textContent = editingTemplateId === null ? '已选择 ' + pending.size + ' 个' : '修改后需保存配置';
+ document.getElementById('pendingTemplateCount').textContent = editingTemplateId === null ? '已选择 ' + pending.size + ' 个' : '修改后需保存模板';
  if (!selecting) renderPortReview();
 }
 function nextPickerStep() {
@@ -250,22 +253,22 @@ templateList.addEventListener('click', event => {
  } catch (error) { showMessage(error.message, true); }
 });
 document.getElementById('closeTemplatePreview').addEventListener('click', () => document.getElementById('templatePreviewDialog').close());
-nameInput.addEventListener('input', markChanged);
+nameInput.addEventListener('input', () => showAPIMessage('API 配置已修改，尚未保存'));
 // Refresh displayed original names/content when returning from the main editor; keep unsaved template edits.
 window.addEventListener('focus', () => { if (!busy && !pickerDialog.open) refreshOriginals().catch(error => showMessage(error.message, true)); });
-async function copyFeedback(button, text) {
+async function copyFeedback(button, text, reportError = showMessage) {
  try { await copyText(text); const previous = button.textContent; button.textContent = '已复制'; setTimeout(() => { button.textContent = previous; }, 1200); }
- catch { showMessage('复制失败，请手动复制', true); }
+ catch { reportError('复制失败，请手动复制', true); }
 }
-document.getElementById('copyToken').addEventListener('click', function() { copyFeedback(this, tokenInput.value); });
+document.getElementById('copyToken').addEventListener('click', function() { copyFeedback(this, tokenInput.value, showAPIMessage); });
 document.getElementById('resetToken').addEventListener('click', async () => {
  if (!await askConfirm('保存重置后的 Token 后，旧 Token 和旧调用 URL 会立即失效。', '重置 API Token')) return;
- tokenInput.value = randomToken(); syncExamples(); showMessage('Token 已重置，尚未保存');
+ tokenInput.value = randomToken(); syncExamples(); showAPIMessage('Token 已重置，尚未保存');
 });
-document.querySelectorAll('[data-copy-example]').forEach(button => button.addEventListener('click', () => copyFeedback(button, document.getElementById(button.dataset.copyExample).textContent)));
+document.querySelectorAll('[data-copy-example]').forEach(button => button.addEventListener('click', () => copyFeedback(button, document.getElementById(button.dataset.copyExample).textContent, showAPIMessage)));
 function setBusy(value) {
  busy = value;
- form.querySelectorAll('input, button').forEach(control => { control.disabled = value; });
+ for (const section of [form, apiSettingsForm]) section.querySelectorAll('input, button').forEach(control => { control.disabled = value; });
  renderTemplates();
 }
 form.addEventListener('submit', async event => {
@@ -276,11 +279,23 @@ form.addEventListener('submit', async event => {
  catch (error) { showMessage(error.message, true); return; }
  setBusy(true); showMessage('正在保存…');
  try {
-  const data = await apiCall('PUT', { token: tokenInput.value, nameTemplate: nameInput.value, templates: selection });
+  const data = await apiCall('PUT', { templates: selection });
   settings = data.settings; templates = normalizeTemplateReferences(settings.sourceTemplates || []);
-  tokenInput.value = settings.token; nameInput.value = settings.nameTemplate;
-  syncExamples(); showMessage('配置已保存'); message.className = 'success api-save-state';
+  showMessage('模板已保存'); message.className = 'success api-save-state';
  } catch (error) { showMessage(error.message, true); }
+ finally { setBusy(false); }
+});
+apiSettingsForm.addEventListener('submit', async event => {
+ event.preventDefault();
+ if (busy) return;
+ const payload = { token: tokenInput.value, nameTemplate: nameInput.value };
+ setBusy(true); showAPIMessage('正在保存…');
+ try {
+  const data = await apiCall('PUT', payload);
+  settings = data.settings;
+  tokenInput.value = settings.token; nameInput.value = settings.nameTemplate;
+  syncExamples(); showAPIMessage('API 配置已保存'); apiSettingsMessage.className = 'success api-save-state';
+ } catch (error) { showAPIMessage(error.message, true); }
  finally { setBusy(false); }
 });
 list.addEventListener('click', async event => {
@@ -293,11 +308,11 @@ list.addEventListener('click', async event => {
  catch (error) { button.disabled = false; showMessage(error.message, true); }
 });
 tokenInput.value = settings.token;
-nameInput.value = !settings.nodeTemplate && !settings.sourceTemplates ? '{{name}}-{{type}}-{{address}}:{{port}}' : settings.nameTemplate;
+nameInput.value = settings.nameTemplate;
 syncExamples(); renderNodes(); renderTemplates();
 if (!settings.token) {
  setBusy(true);
  apiCall('POST', { action: 'initialize' }).then(data => {
   settings = data.settings; tokenInput.value = settings.token; syncExamples(); setBusy(false);
- }).catch(error => showMessage(error.message + '，请刷新页面重试', true));
+ }).catch(error => showAPIMessage(error.message + '，请刷新页面重试', true));
 }
