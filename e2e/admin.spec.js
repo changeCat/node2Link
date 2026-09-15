@@ -14,6 +14,14 @@ test.beforeEach(async ({ page }) => {
 	await page.locator('[name="password"]').fill('browser-test-password');
 	await page.locator('button[type="submit"]').click();
 	await expect(page).toHaveURL(/\/$/);
+	// Original-only saves intentionally retain preferred associations. Reset both
+	// areas so a previous test's published extensions cannot leak into this case.
+	await page.evaluate(async () => {
+		localStorage.clear();
+		const response = await fetch('/', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '' });
+		if (!response.ok) throw new Error('Unable to reset main fixture');
+	});
+	await page.reload();
 });
 
 test.afterEach(async ({ page }, testInfo) => {
@@ -228,6 +236,9 @@ test('endpoint drafts survive reload while originals remain immediately saved', 
  await expect(page.locator('#saveStatus')).toHaveText('刚刚已保存');
  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
  expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
+ await page.goto('/dashboard');
+ // The saved extension is a real node in the dashboard, alongside its original.
+ await expect(page.locator('[data-stat="nodes"]')).toHaveText('2');
 });
 
 test('picker loads on demand and pages large results without limiting selection', async ({ page }) => {
