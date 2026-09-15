@@ -41,8 +41,8 @@ function renderPicker() {
   const shown = group.nodes.slice(0, remaining);
   remaining -= shown.length;
   if (!shown.length) return '';
-  const heading = group.originalId || ordered.length > 1
-   ? '<div class="picker-main-group"><strong>' + esc(group.title) + '</strong>' + (group.originalId ? '<button type="button" class="button" data-main-group="' + esc(group.originalId) + '">选择本组</button>' : '') + '</div>' : '';
+  const heading = group.originalId || group.key === 'api' || ordered.length > 1
+   ? '<div class="picker-main-group"><strong>' + esc(group.title) + '</strong>' + (group.originalId ? '<button type="button" class="button" data-main-group="' + esc(group.originalId) + '">选择本组</button>' : group.key === 'api' ? '<button type="button" class="button" data-api-group>选择本组</button>' : '') + '</div>' : '';
   return '<section class="picker-section" data-picker-section="' + esc(group.key) + '">' + heading + shown.map(node => '<label class="picker-node"><input type="checkbox" data-node-id="' + esc(node.id) + '"' + (selected.has(node.selectionKey) ? ' checked' : '') + '><span><strong>' + esc(node.name) + '<span class="source-tag">' + esc(node.sourceName) + '</span></strong><small title="' + esc(node.content) + '">' + esc(node.content) + '</small></span></label>').join('') + '</section>';
  }).join('') : '<div class="picker-empty">没有符合条件的节点</div>';
  document.getElementById('nodePickerProgress').textContent = '显示 ' + Math.min(visibleLimit, visible.length) + ' / ' + visible.length + ' 个结果';
@@ -111,9 +111,9 @@ sourceSelect.addEventListener('change', () => { visibleLimit = 100; renderPicker
 moreButton.addEventListener('click', () => { visibleLimit += 100; renderPicker(); });
 retryButton.addEventListener('click', loadCandidates);
 pickerList.addEventListener('click', event => {
- const button = event.target.closest('[data-main-group]');
+ const button = event.target.closest('[data-main-group], [data-api-group]');
  if (!button) return;
- visibleNodes().filter(node => node.source === 'main' && node.kind === 'extension' && node.originalId === button.dataset.mainGroup).forEach(node => selected.add(node.selectionKey));
+ visibleNodes().filter(node => button.hasAttribute('data-api-group') ? node.source === 'api' : node.source === 'main' && node.kind === 'extension' && node.originalId === button.dataset.mainGroup).forEach(node => selected.add(node.selectionKey));
  renderPicker();
 });
 pickerList.addEventListener('change', event => {

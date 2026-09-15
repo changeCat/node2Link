@@ -518,3 +518,68 @@ test('navigation only warns for unsaved configuration or changed open dialogs', 
  await expect(page).toHaveURL(/\/shares$/);
  expect(prompts).toEqual(['beforeunload']);
 });
+
+async function dragCardBefore(page, source, target, touch) {
+ await source.scrollIntoViewIfNeeded();
+ const from = await source.locator('[data-sort-handle]').boundingBox();
+ const to = await target.boundingBox();
+ const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+ const end = { x: to.x + 6, y: to.y + 6 };
+ if (touch) {
+  const session = await page.context().newCDPSession(page);
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
+  for (let step = 1; step <= 8; step++) await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start.x + (end.x - start.x) * step / 8, y: start.y + (end.y - start.y) * step / 8 }] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await session.detach();
+ } else {
+  await page.mouse.move(start.x, start.y); await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 }); await page.mouse.up();
+ }
+}
+
+test('display dragging groups previews without changing published configuration', async ({ page, isMobile }) => {
+ await seed(page); await addEndpoints(page); await save(page); await page.reload();
+ const published = await subscription(page);
+ const writes = [];
+ page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/') writes.push(request.url()); });
+ const initialConfig = await page.evaluate(() => JSON.parse(document.getElementById('page-data-home').textContent).mainConfig);
+ const names = id => page.locator('#' + id + ' .subscription-card-heading strong');
+ await expect(names('originalList')).toHaveText(['Main-HK', 'Main-HY2']);
+ await expect(names('endpointList')).toHaveText(['优选 1', '优选 2']);
+ await page.locator('#originalList [data-select-original]').first().check();
+ await dragCardBefore(page, page.locator('#originalList [data-display-id]').nth(1), page.locator('#originalList [data-display-id]').first(), isMobile);
+ await expect(names('originalList')).toHaveText(['Main-HY2', 'Main-HK']);
+ await expect(page.locator('#originalList [data-select-original]').nth(1)).toBeChecked();
+ await dragCardBefore(page, page.locator('#endpointList [data-display-id]').nth(1), page.locator('#endpointList [data-display-id]').first(), isMobile);
+ await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
+ await expect(page.locator('#saveStatus')).toHaveText('已同步');
+ expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
+ await expect(page.locator('.subscription-card-port')).toHaveCount(0);
+ const expected = ['Main-HY2', 'Main-HY2-优选 2', 'Main-HY2-优选 1', 'Main-HK', 'Main-HK-优选 2', 'Main-HK-优选 1'];
+ await page.locator('#previewKind').selectOption('all');
+ await expect(names('mainPreview')).toHaveText(expected);
+ expect(await subscription(page)).toEqual(published);
+ await page.locator('#saveButton').click();
+ await expect(page.locator('#saveStatus')).toHaveText('已同步');
+ expect(writes).toEqual([]);
+ const downloadEvent = page.waitForEvent('download');
+ await page.locator('#exportMain').click();
+ const download = await downloadEvent;
+ expect((await readFile(await download.path(), 'utf8')).trim().split('\n')).toEqual(published);
+ await page.reload();
+ expect(await page.evaluate(() => JSON.parse(document.getElementById('page-data-home').textContent).mainConfig)).toEqual(initialConfig);
+ await expect(names('originalList')).toHaveText(['Main-HY2', 'Main-HK']);
+ await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
+ await page.locator('#previewKind').selectOption('all');
+ await expect(names('mainPreview')).toHaveText(expected);
+ await page.screenshot({ path: test.info().outputPath('sorted-main.png'), fullPage: true });
+ // Keyboard movement and newly appended originals use the same presentation order.
+ await page.locator('#originalList [data-sort-handle]').first().focus();
+ await page.keyboard.press('ArrowDown');
+ await expect(names('originalList')).toHaveText(['Main-HK', 'Main-HY2']);
+ await expect(page.locator('#saveStatus')).toHaveText('已同步');
+ expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
+ await setOriginals(page, 'vless://third@third.example.com:443#Main-New', 'append');
+ await expect(names('originalList')).toHaveText(['Main-HK', 'Main-HY2', 'Main-New']);
+ await expect(names('mainPreview')).toHaveText(['Main-HK', 'Main-HK-优选 2', 'Main-HK-优选 1', 'Main-HY2', 'Main-HY2-优选 2', 'Main-HY2-优选 1', 'Main-New']);
+});

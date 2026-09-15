@@ -50,6 +50,10 @@ test('originals are flat, extensions grouped and API nodes isolated in the share
  await expect(page.locator('.picker-node')).toHaveCount(2);
  await expect(page.locator('.picker-main-group')).toHaveCount(0);
  await expect(page.locator('[data-main-group]')).toHaveCount(0);
+ await page.locator('#nodeSource').selectOption('api');
+ await page.locator('[data-api-group]').click();
+ await expect(page.locator('#selectedNodeCount')).toHaveText('已选择 2 个');
+ await expect(page.locator('[data-picker-section="api"] input:checked')).toHaveCount(1);
  await page.locator('#nodeSource').selectOption('all');
  await page.screenshot({ path: test.info().outputPath('share-picker-groups.png'), fullPage: true });
 });

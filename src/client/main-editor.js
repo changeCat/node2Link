@@ -1,3 +1,4 @@
+import { createDisplayOrder, attachCardSorting } from './main-display-order.js';
 import { subscriptionCard, subscriptionNodeDetails } from './subscription-card.js';
 import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS, reconcileMainEndpoints } from '../shared/main-subscription.js';
 
@@ -14,6 +15,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
  let endpointInitialValue = '', originalInitialValue = '', saving = false;
  const selectedOriginals = new Set();
+ const displayOrder = createDisplayOrder('node2link:display-order:' + location.host + location.pathname);
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
  const state = (message, kind = '') => { el('saveStatus').textContent = message; el('saveStatus').className = 'save-state ' + kind; };
  // Compare configuration values, never the textarea's browser-normalized whitespace
@@ -48,7 +50,10 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  }
  function filteredOriginals() {
   const query = el('originalSearch').value.trim().toLowerCase();
-  return config.originals.map((node, index) => ({ ...node, name: mainNodeName(node.content, `主订阅节点 ${index + 1}`) })).filter(node => (node.name + '\n' + node.content).toLowerCase().includes(query));
+  return displayOrder.ordered(config.originals.map((node, index) => ({ ...node, name: mainNodeName(node.content, `主订阅节点 ${index + 1}`) })), 'originals').filter(node => (node.name + '\n' + node.content).toLowerCase().includes(query));
+ }
+ function sortHandle(name) {
+  return '<button type="button" class="card-sort-handle" data-sort-handle aria-label="拖动排序 ' + esc(name) + '" title="拖动调整展示顺序，也可用方向键移动"><svg viewBox="0 0 16 20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="4" r="1.5"/><circle cx="11" cy="4" r="1.5"/><circle cx="5" cy="10" r="1.5"/><circle cx="11" cy="10" r="1.5"/><circle cx="5" cy="16" r="1.5"/><circle cx="11" cy="16" r="1.5"/></svg></button>';
  }
  function renderOriginals() {
   const ids = new Set(config.originals.map(node => node.id));
@@ -58,7 +63,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    const details = subscriptionNodeDetails(node.content);
    const checkbox = `<input type="checkbox" data-select-original="${esc(node.id)}" aria-label="选择 ${esc(node.name)}" ${selectedOriginals.has(node.id) ? 'checked' : ''}>`;
    const actions = `<button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button danger-button" data-delete-original="${esc(node.id)}">删除</button>`;
-   return '<article class="main-node-row subscription-card">' + subscriptionCard({ ...details, name: isMainSource(node.content) ? '订阅源' : node.name, checkbox, actions }) + '</article>';
+   return '<article class="main-node-row subscription-card" data-display-id="' + esc(node.id) + '">' + subscriptionCard({ ...details, dragHandle: sortHandle(node.name), name: isMainSource(node.content) ? '订阅源' : node.name, checkbox, actions }) + '</article>';
   }).join('') || '<p class="main-empty">没有匹配的节点，可点击“批量添加”添加节点或订阅源。</p>';
   updateOriginalSelection();
   el('originalProgress').textContent = `${Math.min(originalLimit, nodes.length)} / ${nodes.length} 项`;
@@ -80,13 +85,13 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function viewNode(content) { el('nodeViewValue').value = content; el('nodeViewDialog').showModal(); }
  function renderEndpoints() {
   const names = new Map(config.originals.map((node, index) => [node.id, mainNodeName(node.content, `主订阅节点 ${index + 1}`)]));
-  el('endpointList').innerHTML = config.endpoints.slice(0, endpointLimit).map(endpoint => {
+  el('endpointList').innerHTML = displayOrder.ordered(config.endpoints, 'endpoints').slice(0, endpointLimit).map(endpoint => {
    const label = endpoint.label || endpoint.address;
    const address = (endpoint.address.includes(':') ? '[' + endpoint.address + ']' : endpoint.address) + ':' + endpoint.port;
    const association = '应用到 ' + endpoint.originalIds.length + ' 个节点：' + endpoint.originalIds.map(id => names.get(id) || '【原始节点已移除，请重新选择】').join('、');
    const actions = `<button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button" data-toggle-endpoint="${esc(endpoint.id)}">${endpoint.enabled ? '停用' : '启用'}</button><button type="button" class="tool-button danger-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button>`;
    const detail = `<p class="subscription-card-detail" title="${esc(association)}">${esc(association)}</p>`;
-   return '<article class="main-node-row main-endpoint-row subscription-card">' + subscriptionCard({ name: label, protocol: endpoint.enabled ? '启用' : '停用', address, port: endpoint.port, detail, actions }) + '</article>';
+   return '<article class="main-node-row main-endpoint-row subscription-card" data-display-id="' + esc(endpoint.id) + '">' + subscriptionCard({ name: label, dragHandle: sortHandle(label), protocol: endpoint.enabled ? '启用' : '停用', address, port: endpoint.port, detail, actions }) + '</article>';
   }).join('') || '<p class="main-empty">添加优选域名或 IP，并勾选要应用的原始节点。</p>';
   el('endpointProgress').textContent = `${Math.min(endpointLimit, config.endpoints.length)} / ${config.endpoints.length} 条`;
   el('moreEndpoints').hidden = config.endpoints.length <= endpointLimit;
@@ -94,7 +99,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function renderPreview() {
   const query = el('previewSearch').value.trim().toLowerCase();
   const kind = el('previewKind').value;
-  const nodes = (compiled?.nodes || []).filter(node => (kind === 'all' || node.kind === kind) && (node.name + '\n' + node.content).toLowerCase().includes(query));
+  const nodes = displayOrder.preview(compiled?.nodes || [], config).filter(node => (kind === 'all' || node.kind === kind) && (node.name + '\n' + node.content).toLowerCase().includes(query));
   el('mainPreview').innerHTML = nodes.slice(0, previewLimit).map(node => {
    const actions = `<button type="button" class="tool-button" data-view-main="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-copy-main="${esc(node.id)}">复制</button>`;
    const footerNote = `<span class="main-badge">${node.kind === 'original' ? '原始' : '扩展'}</span>`;
@@ -254,6 +259,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.editEndpoint) return openEndpoint(button.dataset.editEndpoint);
   const id = button.dataset.deleteEndpoint || button.dataset.toggleEndpoint;
+  if (!id) return;
   if (button.dataset.deleteEndpoint && !await askMainConfirm('删除此优选地址？保存后会移除它生成的全部扩展节点。', '删除优选地址')) return;
   if (button.dataset.deleteEndpoint) config.endpoints = config.endpoints.filter(item => item.id !== id);
   else { const endpoint = config.endpoints.find(item => item.id === id); if (endpoint) endpoint.enabled = !endpoint.enabled; }
@@ -415,6 +421,11 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  window.addEventListener('pagehide', flush);
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
  window.addEventListener('beforeunload', event => { flush(); if (saving || snapshot() !== saved || originalHasChanges() || endpointHasChanges() || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
+ for (const [listId, key] of [['originalList', 'originals'], ['endpointList', 'endpoints']]) {
+  attachCardSorting(el(listId), (id, targetId, after) => displayOrder.move(config[key], key, id, targetId, after), () => {
+   renderOriginals(); renderEndpoints(); renderPreview(); showToast('展示顺序已更新');
+  });
+ }
  updateMetadata(pageData.savedMetadata); render(); updateSaveButton();
  syncText();
  {

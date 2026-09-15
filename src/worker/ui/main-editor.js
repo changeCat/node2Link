@@ -66,12 +66,15 @@ export const mainEditorStyles = `
  .main-target{display:flex;gap:10px;padding:10px;border-bottom:1px solid var(--line-soft);cursor:pointer}.main-target input{flex-shrink:0}.main-target span{min-width:0}.main-target small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
  .main-error{color:var(--danger);font-size:12px;overflow-wrap:anywhere}.main-edit-dialog .dialog-actions{justify-content:flex-end;gap:8px}
  @media(max-width:760px){.main-section{padding:14px}.main-edit-dialog .dialog-body{padding:14px}.main-field-row{grid-template-columns:90px minmax(0,1fr)}.main-row-actions{width:100%}.main-node-row .tool-button{padding:0 8px}.workspace-main .editor{height:190px;min-height:150px}}
-${subscriptionCardStyles}
+ .card-sort-handle{display:inline-flex;align-items:center;justify-content:center;flex:none;width:18px;height:24px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--muted);cursor:grab;touch-action:none}
+ .card-sort-handle svg{width:14px;height:18px;pointer-events:none}.card-sort-handle:hover,.card-sort-handle:focus-visible{background:var(--green-soft);color:var(--green)}
+ .is-sorting{opacity:.5}.is-sorting .card-sort-handle{cursor:grabbing}.subscription-card.sort-before{box-shadow:inset 3px 0 var(--green)}.subscription-card.sort-after{box-shadow:inset -3px 0 var(--green)}
+ ${subscriptionCardStyles}
 `;
 
 export function renderMainEditorSections() {
  return `<section class="main-section main-workspace" id="originalSection" aria-labelledby="originalSectionTitle">
-  <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。</p></div>
+  <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。拖动左侧手柄调整展示顺序，仅在当前浏览器保留。</p></div>
   <div class="editor-actions">
    <div class="original-filter-controls"><input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
     <div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
