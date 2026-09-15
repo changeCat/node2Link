@@ -77,6 +77,11 @@ Object.assign(window, { showQRCode, copySubscription, closeQR, resolveMainConfir
 document.addEventListener('DOMContentLoaded', () => {
  initializeIcons(); localizeRequestTimes();
  initializeMainEditor(pageData, { showToast, askMainConfirm, copyText });
+ for (const button of document.querySelectorAll('[data-converter-url]')) {
+  button.addEventListener('click', () => {
+   copyText(button.dataset.converterUrl).then(() => showToast('转换后端完整地址已复制')).catch(() => showToast('复制失败，请展开地址后手动复制'));
+  });
+ }
  const qrDialog = document.getElementById('qrDialog');
  qrDialog.addEventListener('click', event => { if (event.target === qrDialog) closeQR(); });
  const confirm = document.getElementById('mainConfirmDialog');
