@@ -5,6 +5,7 @@ const first = 'vless://uuid@origin.example.com:443?security=tls&type=ws&host=ori
 const second = 'hysteria2://secret@origin2.example.com:443?sni=origin2.example.com#Main-HY2';
 test.beforeEach(async ({ page }) => {
  page.runtimeErrors = [];
+ page.importedNodeIds = [];
  page.on('pageerror', error => page.runtimeErrors.push(error.message));
  await page.route(/^https?:\/\/(?!127\.0\.0\.1:8790)/, route => route.abort());
  await page.goto('/login');
@@ -21,6 +22,7 @@ test.beforeEach(async ({ page }) => {
 });
 test.afterEach(async ({ page }, testInfo) => {
  expect(page.runtimeErrors).toEqual([]);
+ await page.evaluate(async ids => { for (const id of ids) await fetch('/api/generated-nodes', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }); }, page.importedNodeIds);
  await page.screenshot({ path: testInfo.outputPath('main-page.png'), fullPage: true });
  await page.evaluate(async () => { await fetch('/', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '' }); localStorage.clear(); });
 });
@@ -520,6 +522,7 @@ test('navigation only warns for unsaved configuration or changed open dialogs', 
 });
 
 async function dragCardBefore(page, source, target, touch) {
+ await source.locator('..').scrollIntoViewIfNeeded();
  await source.scrollIntoViewIfNeeded();
  const from = await source.locator('[data-sort-handle]').boundingBox();
  const to = await target.boundingBox();
@@ -537,49 +540,86 @@ async function dragCardBefore(page, source, target, touch) {
  }
 }
 
-test('display dragging groups previews without changing published configuration', async ({ page, isMobile }) => {
+test('card sorting publishes grouped subscription order and keeps API nodes at the end', async ({ page, isMobile }) => {
  await seed(page); await addEndpoints(page); await save(page); await page.reload();
+ const initialized = await page.evaluate(async () => { const response = await fetch('/api/generated-nodes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'initialize' }) }); if (!response.ok) throw new Error(await response.text()); return response.json(); });
+ const apiNodes = ['vless://api@api-first.example.com:443#API-First', 'vless://api@api-second.example.com:443#API-Second'];
+ const imported = await page.request.post('/api/import', { headers: { 'X-API-Token': initialized.settings.token, 'Content-Type': 'text/plain' }, data: apiNodes.join('\n') });
+ expect(imported.ok()).toBe(true);
+ page.importedNodeIds = (await imported.json()).nodes.map(node => node.id);
+ const apiTail = await page.evaluate(async () => (await (await fetch('/api/generated-nodes')).json()).nodes.map(node => node.content));
  const published = await subscription(page);
- const writes = [];
- page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/') writes.push(request.url()); });
- const initialConfig = await page.evaluate(() => JSON.parse(document.getElementById('page-data-home').textContent).mainConfig);
  const names = id => page.locator('#' + id + ' .subscription-card-heading strong');
+ const outputNames = lines => lines.map(line => decodeURIComponent(line.slice(line.indexOf('#') + 1)));
  await expect(names('originalList')).toHaveText(['Main-HK', 'Main-HY2']);
  await expect(names('endpointList')).toHaveText(['优选 1', '优选 2']);
+ await dragCardBefore(page, page.locator('#endpointList [data-display-id]').nth(1), page.locator('#endpointList [data-display-id]').first(), isMobile);
+ await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
+ await expect(page.locator('#saveStatus')).toHaveText('优选顺序已修改，保存后生效');
+ expect(await subscription(page)).toEqual(published);
+ // Publishing original order must preserve the preferred-address draft without publishing it.
  await page.locator('#originalList [data-select-original]').first().check();
  await dragCardBefore(page, page.locator('#originalList [data-display-id]').nth(1), page.locator('#originalList [data-display-id]').first(), isMobile);
  await expect(names('originalList')).toHaveText(['Main-HY2', 'Main-HK']);
  await expect(page.locator('#originalList [data-select-original]').nth(1)).toBeChecked();
- await dragCardBefore(page, page.locator('#endpointList [data-display-id]').nth(1), page.locator('#endpointList [data-display-id]').first(), isMobile);
  await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
- await expect(page.locator('#saveStatus')).toHaveText('已同步');
- expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
- await expect(page.locator('.subscription-card-port')).toHaveCount(0);
+ await expect(page.locator('#saveStatus')).toHaveText('优选配置有未保存更改');
+ const originalOnly = await subscription(page);
+ expect(outputNames(originalOnly.slice(0, 6))).toEqual(['Main-HY2', 'Main-HY2-优选 1', 'Main-HY2-优选 2', 'Main-HK', 'Main-HK-优选 1', 'Main-HK-优选 2']);
+ expect(originalOnly.slice(6)).toEqual(apiTail);
  const expected = ['Main-HY2', 'Main-HY2-优选 2', 'Main-HY2-优选 1', 'Main-HK', 'Main-HK-优选 2', 'Main-HK-优选 1'];
  await page.locator('#previewKind').selectOption('all');
  await expect(names('mainPreview')).toHaveText(expected);
- expect(await subscription(page)).toEqual(published);
- await page.locator('#saveButton').click();
- await expect(page.locator('#saveStatus')).toHaveText('已同步');
- expect(writes).toEqual([]);
- const downloadEvent = page.waitForEvent('download');
- await page.locator('#exportMain').click();
+ await save(page);
+ const reordered = await subscription(page);
+ expect(outputNames(reordered.slice(0, 6))).toEqual(expected);
+ expect(reordered.slice(6)).toEqual(apiTail);
+ expect(reordered.slice(-2)).toEqual(apiNodes);
+ await expect(page.locator('.subscription-card-port')).toHaveCount(0);
+ const downloadEvent = page.waitForEvent('download'); await page.locator('#exportMain').click();
  const download = await downloadEvent;
- expect((await readFile(await download.path(), 'utf8')).trim().split('\n')).toEqual(published);
- await page.reload();
- expect(await page.evaluate(() => JSON.parse(document.getElementById('page-data-home').textContent).mainConfig)).toEqual(initialConfig);
+ expect((await readFile(await download.path(), 'utf8')).trim().split('\n')).toEqual(reordered.slice(0, 6));
+ // Ordering is in the server configuration, independent of browser preferences.
+ await page.evaluate(() => localStorage.clear()); await page.reload();
  await expect(names('originalList')).toHaveText(['Main-HY2', 'Main-HK']);
  await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
  await page.locator('#previewKind').selectOption('all');
  await expect(names('mainPreview')).toHaveText(expected);
- await page.screenshot({ path: test.info().outputPath('sorted-main.png'), fullPage: true });
- // Keyboard movement and newly appended originals use the same presentation order.
- await page.locator('#originalList [data-sort-handle]').first().focus();
- await page.keyboard.press('ArrowDown');
+ await page.screenshot({ path: test.info().outputPath('published-sort.png'), fullPage: true });
+ await page.locator('#originalList [data-sort-handle]').first().focus(); await page.keyboard.press('ArrowDown');
  await expect(names('originalList')).toHaveText(['Main-HK', 'Main-HY2']);
- await expect(page.locator('#saveStatus')).toHaveText('已同步');
- expect(await page.evaluate(() => localStorage.getItem('node2link:draft:' + location.host + location.pathname))).toBeNull();
+ await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
  await setOriginals(page, 'vless://third@third.example.com:443#Main-New', 'append');
- await expect(names('originalList')).toHaveText(['Main-HK', 'Main-HY2', 'Main-New']);
- await expect(names('mainPreview')).toHaveText(['Main-HK', 'Main-HK-优选 2', 'Main-HK-优选 1', 'Main-HY2', 'Main-HY2-优选 2', 'Main-HY2-优选 1', 'Main-New']);
+ const appended = ['Main-HK', 'Main-HK-优选 2', 'Main-HK-优选 1', 'Main-HY2', 'Main-HY2-优选 2', 'Main-HY2-优选 1', 'Main-New'];
+ await expect(names('mainPreview')).toHaveText(appended);
+ const final = await subscription(page);
+ expect(outputNames(final.slice(0, 7))).toEqual(appended);
+ expect(final.slice(7)).toEqual(apiTail);
+});
+
+test('failed sorting saves retain published order and allow retry', async ({ page, isMobile }) => {
+ await seed(page); await addEndpoints(page); await save(page); await page.reload();
+ const before = await subscription(page);
+ const names = id => page.locator('#' + id + ' .subscription-card-heading strong');
+ await page.route('**/*', route => {
+  const action = route.request().headers()['x-node2link-action'];
+  if (action === 'save-originals' || action === 'save-endpoints') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: '模拟排序保存失败' }) });
+  return route.fallback();
+ });
+ await dragCardBefore(page, page.locator('#originalList [data-display-id]').nth(1), page.locator('#originalList [data-display-id]').first(), isMobile);
+ await expect(page.locator('#originalSaveStatus')).toContainText('模拟排序保存失败');
+ await expect(names('originalList')).toHaveText(['Main-HK', 'Main-HY2']);
+ expect(await subscription(page)).toEqual(before);
+ await dragCardBefore(page, page.locator('#endpointList [data-display-id]').nth(1), page.locator('#endpointList [data-display-id]').first(), isMobile);
+ await page.locator('#saveButton').click();
+ await expect(page.locator('#saveStatus')).toContainText('模拟排序保存失败');
+ await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
+ expect(await subscription(page)).toEqual(before);
+ await page.unroute('**/*');
+ await save(page);
+ await dragCardBefore(page, page.locator('#originalList [data-display-id]').nth(1), page.locator('#originalList [data-display-id]').first(), isMobile);
+ await expect(names('originalList')).toHaveText(['Main-HY2', 'Main-HK']);
+ await page.reload();
+ await expect(names('originalList')).toHaveText(['Main-HY2', 'Main-HK']);
+ await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
 });

@@ -1,4 +1,4 @@
-import { createDisplayOrder, attachCardSorting } from './main-display-order.js';
+import { reorderCards, attachCardSorting } from './main-card-sorting.js';
 import { subscriptionCard, subscriptionNodeDetails } from './subscription-card.js';
 import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS, reconcileMainEndpoints } from '../shared/main-subscription.js';
 
@@ -15,7 +15,6 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
  let endpointInitialValue = '', originalInitialValue = '', saving = false;
  const selectedOriginals = new Set();
- const displayOrder = createDisplayOrder('node2link:display-order:' + location.host + location.pathname);
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
  const state = (message, kind = '') => { el('saveStatus').textContent = message; el('saveStatus').className = 'save-state ' + kind; };
  // Compare configuration values, never the textarea's browser-normalized whitespace
@@ -50,10 +49,10 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  }
  function filteredOriginals() {
   const query = el('originalSearch').value.trim().toLowerCase();
-  return displayOrder.ordered(config.originals.map((node, index) => ({ ...node, name: mainNodeName(node.content, `主订阅节点 ${index + 1}`) })), 'originals').filter(node => (node.name + '\n' + node.content).toLowerCase().includes(query));
+  return config.originals.map((node, index) => ({ ...node, name: mainNodeName(node.content, `主订阅节点 ${index + 1}`) })).filter(node => (node.name + '\n' + node.content).toLowerCase().includes(query));
  }
  function sortHandle(name) {
-  return '<button type="button" class="card-sort-handle" data-sort-handle aria-label="拖动排序 ' + esc(name) + '" title="拖动调整展示顺序，也可用方向键移动"><svg viewBox="0 0 16 20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="4" r="1.5"/><circle cx="11" cy="4" r="1.5"/><circle cx="5" cy="10" r="1.5"/><circle cx="11" cy="10" r="1.5"/><circle cx="5" cy="16" r="1.5"/><circle cx="11" cy="16" r="1.5"/></svg></button>';
+  return '<button type="button" class="card-sort-handle" data-sort-handle aria-label="拖动排序 ' + esc(name) + '" title="拖动调整订阅顺序，也可用方向键移动"><svg viewBox="0 0 16 20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="4" r="1.5"/><circle cx="11" cy="4" r="1.5"/><circle cx="5" cy="10" r="1.5"/><circle cx="11" cy="10" r="1.5"/><circle cx="5" cy="16" r="1.5"/><circle cx="11" cy="16" r="1.5"/></svg></button>';
  }
  function renderOriginals() {
   const ids = new Set(config.originals.map(node => node.id));
@@ -85,7 +84,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function viewNode(content) { el('nodeViewValue').value = content; el('nodeViewDialog').showModal(); }
  function renderEndpoints() {
   const names = new Map(config.originals.map((node, index) => [node.id, mainNodeName(node.content, `主订阅节点 ${index + 1}`)]));
-  el('endpointList').innerHTML = displayOrder.ordered(config.endpoints, 'endpoints').slice(0, endpointLimit).map(endpoint => {
+  el('endpointList').innerHTML = config.endpoints.slice(0, endpointLimit).map(endpoint => {
    const label = endpoint.label || endpoint.address;
    const address = (endpoint.address.includes(':') ? '[' + endpoint.address + ']' : endpoint.address) + ':' + endpoint.port;
    const association = '应用到 ' + endpoint.originalIds.length + ' 个节点：' + endpoint.originalIds.map(id => names.get(id) || '【原始节点已移除，请重新选择】').join('、');
@@ -99,7 +98,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function renderPreview() {
   const query = el('previewSearch').value.trim().toLowerCase();
   const kind = el('previewKind').value;
-  const nodes = displayOrder.preview(compiled?.nodes || [], config).filter(node => (kind === 'all' || node.kind === kind) && (node.name + '\n' + node.content).toLowerCase().includes(query));
+  const nodes = (compiled?.nodes || []).filter(node => (kind === 'all' || node.kind === kind) && (node.name + '\n' + node.content).toLowerCase().includes(query));
   el('mainPreview').innerHTML = nodes.slice(0, previewLimit).map(node => {
    const actions = `<button type="button" class="tool-button" data-view-main="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-copy-main="${esc(node.id)}">复制</button>`;
    const footerNote = `<span class="main-badge">${node.kind === 'original' ? '原始' : '扩展'}</span>`;
@@ -422,8 +421,15 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
  window.addEventListener('beforeunload', event => { flush(); if (saving || snapshot() !== saved || originalHasChanges() || endpointHasChanges() || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
  for (const [listId, key] of [['originalList', 'originals'], ['endpointList', 'endpoints']]) {
-  attachCardSorting(el(listId), (id, targetId, after) => displayOrder.move(config[key], key, id, targetId, after), () => {
-   renderOriginals(); renderEndpoints(); renderPreview(); showToast('展示顺序已更新');
+  attachCardSorting(el(listId), async (id, targetId, after) => {
+   if (saving) return false;
+   flush();
+   const reordered = reorderCards(config[key], id, targetId, after);
+   if (!reordered) return false;
+   if (key === 'originals') return publishOriginals(reordered);
+   config.endpoints = reordered;
+   changed('优选顺序已修改，保存后生效');
+   return true;
   });
  }
  updateMetadata(pageData.savedMetadata); render(); updateSaveButton();

@@ -74,7 +74,7 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<section class="main-section main-workspace" id="originalSection" aria-labelledby="originalSectionTitle">
-  <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。拖动左侧手柄调整展示顺序，仅在当前浏览器保留。</p></div>
+  <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。拖动左侧手柄排序，立即保存并同步订阅。</p></div>
   <div class="editor-actions">
    <div class="original-filter-controls"><input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
     <div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
@@ -100,7 +100,7 @@ export function renderMainEditorSections() {
   <div class="editor-toolbar preferred-toolbar"><div><div class="main-workspace-title"><h3 id="preferredSectionTitle">优选配置与生成结果</h3><span class="main-scope-badge">统一保存</span></div><p class="main-help">配置优选地址与原始节点的关联，预览后统一发布扩展节点。</p></div><div class="preferred-save-actions"><span id="saveStatus" class="save-state" role="status">已同步</span><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="保存全部优选地址与关联并更新扩展节点" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div></div>
  <div class="preferred-sections">
  <section class="main-section" id="endpointSection" aria-labelledby="endpointSectionTitle">
-  <div class="main-section-head"><div class="main-section-heading"><h4 id="endpointSectionTitle"><i data-lucide="settings" aria-hidden="true"></i>优选域名 / IP 与端口</h4><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div><div class="main-action-group"><button id="addEndpoint" class="tool-button" type="button"><i data-lucide="plus"></i><span>添加优选地址</span></button></div></div>
+  <div class="main-section-head"><div class="main-section-heading"><h4 id="endpointSectionTitle"><i data-lucide="settings" aria-hidden="true"></i>优选域名 / IP 与端口</h4><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。拖动左侧手柄排序，保存后同步订阅。</p></div><div class="main-action-group"><button id="addEndpoint" class="tool-button" type="button"><i data-lucide="plus"></i><span>添加优选地址</span></button></div></div>
   <div id="endpointList" class="node-grid main-scroll subscription-card-grid" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </section>
  <section class="main-section" id="previewSection" aria-labelledby="previewSectionTitle">
