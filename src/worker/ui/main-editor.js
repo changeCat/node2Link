@@ -8,17 +8,24 @@ export const mainEditorStyles = `
  .main-action-group,.main-selection{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
  .main-action-group+.main-action-group{border-left:1px solid var(--line);padding-left:18px}
  .main-section-head p{margin:0;max-width:90ch}
- .main-section .main-filter{justify-content:flex-end;gap:10px}
- .main-section .main-filter>input{flex:1 1 240px}
+ .editor-toolbar>.primary-button{margin-left:auto;flex-shrink:0}
+ .main-section .editor-actions>.main-toolbar-search{flex:1 1 180px;width:180px;max-width:280px;margin-right:auto}
+ .main-section .main-toolbar-filters{flex:1 1 330px;justify-content:flex-start;margin:0 auto 0 0}
+ .main-section .main-toolbar-filters>input{flex:0 1 240px;width:240px;max-width:100%}
+ .main-section .main-filter{justify-content:flex-start;gap:10px}
+ .endpoint-port-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+ .endpoint-port-field select,.endpoint-port-field input{width:100%}
+ @media(max-width:760px){.main-section .editor-actions>.main-toolbar-search{flex-basis:100%;width:100%;max-width:100%}.main-section .main-toolbar-filters>input{flex:1 1 160px}.main-toolbar-filters{max-width:100%}}
  @media(max-width:760px){.main-action-group{flex-basis:100%}.main-action-group+.main-action-group{border-left:0;padding-left:0}.main-selection{width:100%}}
  @media(max-width:760px){.main-scroll{max-height:360px}}
  .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
  .node-grid .main-node-row{display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px;min-width:0}
  .node-grid strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .node-grid .main-row-actions{margin-top:8px;gap:6px}.node-grid .tool-button{height:28px;padding:0 8px}
- .endpoint-input-row{display:grid;grid-template-columns:minmax(0,2fr) 90px minmax(0,1fr) auto;gap:8px;margin-bottom:10px;align-items:end}
+ .endpoint-input-row{display:grid;grid-template-columns:minmax(0,2fr) 105px minmax(0,1fr) auto;gap:8px;margin-bottom:10px;align-items:start}
+ .endpoint-input-row>button{align-self:end}
  .endpoint-input-row label{display:flex;flex-direction:column;gap:6px;min-width:0}
- @media(max-width:600px){.endpoint-input-row{grid-template-columns:minmax(0,1fr) 85px}.endpoint-input-row label:nth-child(3){grid-column:1}.endpoint-input-row button{grid-column:2}}
+ @media(max-width:600px){.endpoint-input-row{grid-template-columns:minmax(0,1fr) 105px}.endpoint-input-row label:nth-child(3){grid-column:1}.endpoint-input-row button{grid-column:2}}
 
  .main-section{padding:18px;border-top:1px solid var(--line)}
  .main-section h3{margin:0;font-size:15px}.main-section p,.main-help{color:var(--muted);font-size:12px;line-height:1.65}
@@ -28,7 +35,7 @@ export const mainEditorStyles = `
  .main-section .main-progress>button{margin-left:auto}
  .main-section .main-row-actions>.main-badge{margin-right:auto}
  .main-filter input{flex:1;min-width:120px}.main-filter select{width:auto;max-width:100%}
- .main-section input,.main-section select,.main-edit-dialog input:not([type=checkbox]),.main-edit-dialog textarea{padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font:inherit;min-width:0}
+ .main-section input,.main-section select,.main-edit-dialog input:not([type=checkbox]),.main-edit-dialog select,.main-edit-dialog textarea{padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font:inherit;min-width:0}
  .main-section input,.main-section select{font-size:12px}.main-node-row,.main-endpoint-row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
  .main-node-row>div:first-child,.main-endpoint-row>div:first-child{flex:1;min-width:0}.main-node-row strong,.main-endpoint-row strong{font-size:12px;overflow-wrap:anywhere}
  .main-node-row small,.main-endpoint-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/1.7 ui-monospace,monospace;color:var(--muted)}
@@ -44,8 +51,9 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<div class="main-section" id="originalSection">
-  <div class="main-section-head"><h3>原始节点</h3><p>批量添加只加入编辑区；完成配置后，在生成结果预览处统一保存。修改名称、参数或 UUID 请用节点上的“编辑”，保留优选关联。</p></div>
+  <div class="main-section-head"><h3>原始节点</h3><p>批量添加只加入编辑区；完成配置后，点击顶部“保存全部并生效”统一发布。修改名称、参数或 UUID 请用节点上的“编辑”，保留优选关联。</p></div>
   <div class="editor-actions">
+   <input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
    <div class="main-action-group" role="group" aria-label="整理与恢复">
     <button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
     <button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
@@ -61,7 +69,7 @@ export function renderMainEditorSections() {
    </div>
    <input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
   </div>
-  <div class="main-filter"><input id="originalSearch" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点"><div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div></div>
+  <div class="main-filter"><div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div></div>
   <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
  <div class="main-section" id="endpointSection">
@@ -72,27 +80,26 @@ export function renderMainEditorSections() {
  <div class="main-section" id="previewSection">
   <div class="main-section-head"><h3>生成结果预览</h3><p id="mainPreviewNote" role="status"></p></div>
   <div class="editor-actions">
+   <div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
    <div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div>
-   <div class="main-action-group" role="group" aria-label="发布配置"><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div>
   </div>
-  <div class="main-filter"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
   <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>`;
 }
 
 export function renderMainEditorDialogs() {
- return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加和覆盖都必须填写节点。删除节点请使用列表中的删除操作。追加保留当前节点。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。应用后可撤销，保存全部并生效后发布。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖列表</button><button type="submit" value="append" class="primary-button">追加到列表</button></div></form></dialog>
+ return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加和覆盖都必须填写节点。删除节点请使用列表中的删除操作。追加保留当前节点。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。这两个按钮只更新编辑区，可撤销；点击页面顶部“保存全部并生效”后才写入服务器并更新订阅。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖编辑区</button><button type="submit" value="append" class="primary-button">追加到编辑区</button></div></form></dialog>
  <dialog id="nodeViewDialog" class="main-edit-dialog" aria-labelledby="nodeViewTitle"><div class="dialog-head"><strong id="nodeViewTitle">完整链接</strong><button id="closeNodeView" type="button" class="icon-button" aria-label="关闭">×</button></div><div class="dialog-body"><div class="main-field"><label for="nodeViewValue">完整链接</label><textarea id="nodeViewValue" readonly spellcheck="false"></textarea></div><div class="dialog-actions"><button id="copyNodeView" class="primary-button" type="button">复制链接</button></div></div></dialog>
  <dialog id="endpointDialog" class="main-edit-dialog" aria-labelledby="endpointTitle">
   <div class="dialog-head"><strong id="endpointTitle">添加优选地址</strong><button id="closeEndpoint" class="icon-button" type="button" aria-label="关闭">×</button></div>
   <form id="endpointForm" class="dialog-body">
-   <div id="endpointRows"></div><button id="addEndpointRow" class="tool-button" type="button">再加一行</button><datalist id="endpointPorts"></datalist>
-   <p class="main-help">每个地址分别填写端口与备注，以下关联节点应用到本次所有地址。备注不填则使用地址和端口。</p>
+   <div id="endpointRows"></div><button id="addEndpointRow" class="tool-button" type="button">再加一行</button>
+   <p class="main-help">每个地址分别填写端口与备注，以下关联节点应用到本次所有地址。端口可从 Cloudflare 的 HTTP / HTTPS 列表选择，或填写自定义端口。备注不填则使用地址和端口。</p>
    <label><input id="endpointEnabled" type="checkbox" checked> 启用此优选地址</label>
    <p class="main-help">选择要应用的原始节点。这里只生成链接，不进行协议适用性判断或测速。</p>
    <div class="main-filter"><input id="targetSearch" type="search" aria-label="搜索关联节点" placeholder="搜索原始节点"><button id="selectTargets" type="button" class="tool-button">选择筛选结果</button><button id="clearTargets" type="button" class="tool-button">清空选择</button></div>
    <div id="endpointTargets" class="main-targets"></div><div class="main-progress"><span id="targetCount"></span><button id="moreTargets" type="button" class="tool-button" hidden>显示更多</button></div>
-   <p id="endpointError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelEndpoint" class="tool-button" type="button">取消</button><button class="primary-button" type="submit">应用到编辑区</button></div><p class="main-help">应用后，点击主页面“保存全部并生效”发布全部更改。</p>
+   <p id="endpointError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelEndpoint" class="tool-button" type="button">取消</button><button class="primary-button" type="submit">应用到编辑区</button></div><p class="main-help">应用仅更新编辑区；点击页面顶部“保存全部并生效”后，原始节点和优选配置一起发布。</p>
   </form>
  </dialog>
  <dialog id="originalDialog" class="main-edit-dialog" aria-labelledby="originalTitle"><div class="dialog-head"><strong id="originalTitle">编辑原始节点</strong><button id="closeOriginal" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="originalForm" class="dialog-body"><div class="main-field"><label for="originalValue">完整链接</label><textarea id="originalValue" spellcheck="false" required></textarea><small class="main-help">修改连接信息、密码或名称后，原有优选地址关联仍然保留。</small></div><p id="originalError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelOriginal" type="button" class="tool-button">取消</button><button type="submit" class="primary-button">应用修改</button></div></form></dialog>`;
