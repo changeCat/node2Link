@@ -188,6 +188,7 @@ test('share pause, expiry and renewal retain the same link', async ({ page }) =>
 });
 
 test('API template save, token copy and reset, import and deletion', async ({ page }) => {
+ await saveMain(page, first);
 	await page.goto('/api-subscriptions');
 	await expect(page.locator('#apiToken')).toHaveValue(/^[A-Za-z0-9_-]{16,128}$/);
 	const oldToken = await page.locator('#apiToken').inputValue();
@@ -198,7 +199,9 @@ test('API template save, token copy and reset, import and deletion', async ({ pa
 	expect(Math.abs(copyBox.y - resetBox.y)).toBeLessThan(1);
 	await page.locator('#copyToken').click();
 	await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(oldToken);
-	await page.locator('#nodeTemplate').fill('vless://uuid@{{address}}:{{port}}#{{name}}');
+	if (await page.locator('#clearTemplateSelection').isEnabled()) await page.locator('#clearTemplateSelection').click();
+ await page.locator('[data-template-id]').first().check();
+ await expect(page.locator('#templatePreview')).toContainText('edge.example.com:443');
 	await page.locator('#nameTemplate').fill('Browser-{{address}}');
 	await page.locator('#saveSettings').click();
 	await expect(page.locator('#settingsMessage')).toContainText('已保存');

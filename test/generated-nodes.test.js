@@ -269,13 +269,13 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	const initial = await (await dispatch('/api/generated-nodes', { method: 'POST', headers: { ...authenticatedHeaders, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'initialize' }) })).json();
 	const apiPageHTML = await (await dispatch('/api-subscriptions', { headers: authenticatedHeaders })).text() + readFileSync(new URL('../src/client/generated-nodes.js', import.meta.url), 'utf8');
 	assert.match(apiPageHTML, /API 订阅/);
-	assert.match(apiPageHTML, /模板使用样例/);
+	assert.match(apiPageHTML, /生成预览/);
 	assert.match(apiPageHTML, /API 调用/);
 	assert.match(apiPageHTML, /原始 vless:\/\/ 节点无需转码/);
 	assert.doesNotMatch(apiPageHTML, /class="placeholder-help"/);
 	assert.match(apiPageHTML, /\{\{address\}\}<\/code>域名、IPv4 或 IPv6/);
 	assert.match(apiPageHTML, /\{\{port\}\}<\/code>API 传入的端口/);
-	assert.match(apiPageHTML, /\{\{name\}\}<\/code>由名称格式生成/);
+	assert.match(apiPageHTML, /\{\{name\}\}<\/code>在节点名称格式中代表原始节点名称/);
 	assert.match(apiPageHTML, /\{\{type\}\}<\/code>根据 address 自动判断/);
 	assert.match(apiPageHTML, /id="copyToken"[^>]*>复制<\/button>/);
 	assert.match(apiPageHTML, /id="resetToken"[^>]*>重置<\/button>/);

@@ -25,14 +25,25 @@ function updateSelectedCount() {
 function renderPicker() {
  clearTimeout(searchTimer);
  const visible = visibleNodes();
- let previousGroup = '';
- pickerList.innerHTML = visible.length ? visible.slice(0, visibleLimit).map(node => {
-  let heading = '';
-  if (node.source === 'main' && node.originalId && node.originalId !== previousGroup) {
-   previousGroup = node.originalId;
-   heading = '<div class="picker-main-group"><strong>' + esc(node.originalName || node.name) + '</strong><button type="button" class="button" data-main-group="' + esc(node.originalId) + '">选择本组</button></div>';
-  }
-  return heading + '<label class="picker-node"><input type="checkbox" data-node-id="' + esc(node.id) + '"' + (selected.has(node.selectionKey) ? ' checked' : '') + '><span><strong>' + esc(node.name) + '<span class="source-tag">' + esc(node.sourceName) + '</span></strong><small title="' + esc(node.content) + '">' + esc(node.content) + '</small></span></label>';
+ const groups = new Map();
+ for (const node of visible) {
+  const extension = node.source === 'main' && node.kind === 'extension' && node.originalId;
+  const key = extension ? 'extension:' + node.originalId : node.source === 'api' ? 'api' : 'original';
+  if (!groups.has(key)) groups.set(key, { key, originalId: extension ? node.originalId : '', title: extension ? (node.originalName || node.name) + ' · 扩展' : key === 'api' ? 'API 订阅' : '主订阅 · 原始', nodes: [] });
+  groups.get(key).nodes.push(node);
+ }
+ const ordered = [...groups.values()].sort((a, b) => {
+  const rank = group => group.key === 'original' ? 0 : group.key === 'api' ? 2 : 1;
+  return rank(a) - rank(b);
+ });
+ let remaining = visibleLimit;
+ pickerList.innerHTML = visible.length ? ordered.map(group => {
+  const shown = group.nodes.slice(0, remaining);
+  remaining -= shown.length;
+  if (!shown.length) return '';
+  const heading = group.originalId || ordered.length > 1
+   ? '<div class="picker-main-group"><strong>' + esc(group.title) + '</strong>' + (group.originalId ? '<button type="button" class="button" data-main-group="' + esc(group.originalId) + '">选择本组</button>' : '') + '</div>' : '';
+  return '<section class="picker-section" data-picker-section="' + esc(group.key) + '">' + heading + shown.map(node => '<label class="picker-node"><input type="checkbox" data-node-id="' + esc(node.id) + '"' + (selected.has(node.selectionKey) ? ' checked' : '') + '><span><strong>' + esc(node.name) + '<span class="source-tag">' + esc(node.sourceName) + '</span></strong><small title="' + esc(node.content) + '">' + esc(node.content) + '</small></span></label>').join('') + '</section>';
  }).join('') : '<div class="picker-empty">没有符合条件的节点</div>';
  document.getElementById('nodePickerProgress').textContent = '显示 ' + Math.min(visibleLimit, visible.length) + ' / ' + visible.length + ' 个结果';
  moreButton.hidden = visible.length <= visibleLimit;
@@ -102,7 +113,7 @@ retryButton.addEventListener('click', loadCandidates);
 pickerList.addEventListener('click', event => {
  const button = event.target.closest('[data-main-group]');
  if (!button) return;
- visibleNodes().filter(node => node.source === 'main' && node.originalId === button.dataset.mainGroup).forEach(node => selected.add(node.selectionKey));
+ visibleNodes().filter(node => node.source === 'main' && node.kind === 'extension' && node.originalId === button.dataset.mainGroup).forEach(node => selected.add(node.selectionKey));
  renderPicker();
 });
 pickerList.addEventListener('change', event => {
