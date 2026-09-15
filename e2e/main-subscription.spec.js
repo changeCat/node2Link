@@ -351,7 +351,8 @@ test('empty batches are rejected and bulk deletion supports history restore and 
 test('lists scroll independently and selection includes unloaded matching nodes', async ({ page }) => {
  const lines = Array.from({ length: 105 }, (_, i) => first.replace('#Main-HK', '#Node-' + i));
  await setOriginals(page, lines.join('\n'));
- await addEndpoints(page, Array.from({ length: 8 }, (_, i) => `cf${i}.example.com`).join('\n'));
+ // Enough compact cards to overflow the desktop grid as well as the mobile list.
+ await addEndpoints(page, Array.from({ length: 16 }, (_, i) => `cf${i}.example.com`).join('\n'));
  for (const id of ['originalList', 'endpointList', 'mainPreview']) {
   const metrics = await page.locator('#' + id).evaluate(el => ({ height: el.clientHeight, scroll: el.scrollHeight, overflow: getComputedStyle(el).overflowY }));
   expect(metrics.height).toBeLessThanOrEqual(480);

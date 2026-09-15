@@ -78,7 +78,12 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function viewNode(content) { el('nodeViewValue').value = content; el('nodeViewDialog').showModal(); }
  function renderEndpoints() {
   const names = new Map(config.originals.map((node, index) => [node.id, mainNodeName(node.content, `主订阅节点 ${index + 1}`)]));
-  el('endpointList').innerHTML = config.endpoints.slice(0, endpointLimit).map(endpoint => `<article class="main-endpoint-row"><div><strong>${esc(endpoint.label || endpoint.address)} <span class="main-badge">${endpoint.enabled ? '启用' : '停用'}</span></strong><small>${esc(endpoint.address.includes(':') ? `[${endpoint.address}]:${endpoint.port}` : `${endpoint.address}:${endpoint.port}`)}</small><p>应用到 ${endpoint.originalIds.length} 个节点：${esc(endpoint.originalIds.map(id => names.get(id) || '【原始节点已移除，请重新选择】').join('、'))}</p></div><div class="main-row-actions"><button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button" data-toggle-endpoint="${esc(endpoint.id)}">${endpoint.enabled ? '停用' : '启用'}</button><button type="button" class="tool-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button></div></article>`).join('') || '<p class="main-empty">添加优选域名或 IP，并勾选要应用的原始节点。</p>';
+  el('endpointList').innerHTML = config.endpoints.slice(0, endpointLimit).map(endpoint => {
+   const label = endpoint.label || endpoint.address;
+   const address = (endpoint.address.includes(':') ? '[' + endpoint.address + ']' : endpoint.address) + ':' + endpoint.port;
+   const association = '应用到 ' + endpoint.originalIds.length + ' 个节点：' + endpoint.originalIds.map(id => names.get(id) || '【原始节点已移除，请重新选择】').join('、');
+   return `<article class="main-node-row main-endpoint-row"><div><div class="endpoint-card-heading"><strong title="${esc(label)}">${esc(label)}</strong><span class="main-badge">${endpoint.enabled ? '启用' : '停用'}</span></div><small title="${esc(address)}">${esc(address)}</small><p title="${esc(association)}">${esc(association)}</p></div><div class="main-row-actions"><button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button" data-toggle-endpoint="${esc(endpoint.id)}">${endpoint.enabled ? '停用' : '启用'}</button><button type="button" class="tool-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button></div></article>`;
+  }).join('') || '<p class="main-empty">添加优选域名或 IP，并勾选要应用的原始节点。</p>';
   el('endpointProgress').textContent = `${Math.min(endpointLimit, config.endpoints.length)} / ${config.endpoints.length} 条`;
   el('moreEndpoints').hidden = config.endpoints.length <= endpointLimit;
  }
