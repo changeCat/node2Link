@@ -28,6 +28,15 @@ async function save(page) {
  await page.locator('#saveButton').click();
  await expect(page.locator('#saveStatus')).toHaveText(/^(刚刚已保存|已同步)$/);
 }
+async function restorePreviousOriginals(page) {
+ await page.locator('[onclick="openOriginalHistory()"]').click();
+ await expect(page.locator('#originalHistorySelect option').nth(1)).toBeAttached();
+ await page.locator('#originalHistorySelect').selectOption({ index: 1 });
+ await expect(page.locator('#restoreOriginalVersion')).toBeEnabled();
+ await page.locator('#restoreOriginalVersion').click();
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#originalHistoryDialog')).not.toBeVisible();
+}
 async function seed(page) { await setOriginals(page, first + '\n' + second); }
 async function addEndpoints(page, addresses = 'cf.example.com\n203.0.113.10:8443') {
  await page.locator('#addEndpoint').click();
@@ -284,8 +293,7 @@ test('compact cards, append, independent endpoints, exports and replacement clea
  await setOriginals(page, 'vless://new@new.example.com:443#New');
  await expect(page.locator('#duplicateCount')).toHaveText('0');
  await expect(page.locator('#endpointList .main-badge')).toHaveText(['停用', '停用']);
- await page.locator('#undoButton').click();
- await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await restorePreviousOriginals(page);
  await expect(page.locator('#saveButton')).toBeEnabled();
  await expect(page.locator('#duplicateCount')).toHaveText('0');
  await expect(page.locator('#nodeCount')).toHaveText('2');
@@ -295,10 +303,10 @@ test('compact cards, append, independent endpoints, exports and replacement clea
  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('empty batches are rejected and bulk deletion preserves undo and associations', async ({ page }) => {
+test('empty batches are rejected and bulk deletion supports history restore and cleans associations', async ({ page }) => {
  await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
  await expect(page.locator('.editor-toolbar button')).toHaveCount(1);
- await expect(page.locator('#originalSection #undoButton')).toHaveCount(1);
+ await expect(page.locator('#originalSection #undoButton')).toHaveCount(0);
  await expect(page.locator('#originalSection #saveButton')).toHaveCount(0);
  await expect(page.locator('#originalSection > .editor-actions #exportOriginals')).toHaveCount(1);
  await expect(page.locator('#originalSection > .editor-actions #addOriginals')).toHaveCount(1);
@@ -333,8 +341,7 @@ test('empty batches are rejected and bulk deletion preserves undo and associatio
  await expect(page.locator('#nodeCount')).toHaveText('0');
  await expect(page.locator('#endpointList')).toContainText('停用');
  await expect(page.locator('#deleteOriginals')).toBeDisabled();
- await page.locator('#undoButton').click();
- await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await restorePreviousOriginals(page);
  await expect(page.locator('#saveButton')).toBeEnabled();
  await expect(page.locator('#duplicateCount')).toHaveText('0');
  await expect(page.locator('#nodeCount')).toHaveText('2');
@@ -362,8 +369,7 @@ test('lists scroll independently and selection includes unloaded matching nodes'
  await page.locator('#deleteOriginals').click();
  await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
  await expect(page.locator('#nodeCount')).toHaveText('0');
- await page.locator('#undoButton').click();
- await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await restorePreviousOriginals(page);
  await expect(page.locator('#saveButton')).toBeEnabled();
  await expect(page.locator('#nodeCount')).toHaveText('105');
  await expect(page.locator('#duplicateCount')).toHaveText('0');
