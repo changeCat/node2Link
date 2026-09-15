@@ -1,44 +1,25 @@
-// Presentation preferences are separate from the subscription configuration and drafts.
-export function createDisplayOrder(storageKey) {
- let saved = {};
- try { saved = JSON.parse(localStorage.getItem(storageKey)) || {}; } catch { /* Use insertion order. */ }
- const orders = Object.fromEntries(['originals', 'endpoints'].map(key => [key, Array.isArray(saved[key]) ? saved[key].filter(id => typeof id === 'string') : []]));
- function ordered(items, key) {
-  const positions = new Map(orders[key].map((id, index) => [id, index]));
-  return [...items].sort((a, b) => (positions.get(a.id) ?? Infinity) - (positions.get(b.id) ?? Infinity));
- }
- function move(items, key, id, targetId, after) {
-  const ids = ordered(items, key).map(item => item.id);
-  if (id === targetId || !ids.includes(id) || !ids.includes(targetId)) return false;
-  const next = ids.filter(value => value !== id);
-  next.splice(next.indexOf(targetId) + Number(after), 0, id);
-  if (next.every((value, index) => value === ids[index])) return false;
-  orders[key] = next;
-  try { localStorage.setItem(storageKey, JSON.stringify(orders)); } catch { /* Sorting still works for this page. */ }
-  return true;
- }
- function preview(nodes, config) {
-  const originals = new Map(ordered(config.originals, 'originals').map((item, index) => [item.id, index]));
-  const endpoints = new Map(ordered(config.endpoints, 'endpoints').map((item, index) => [item.id, index]));
-  const childRank = node => node.kind === 'original' ? -1 : (endpoints.get(node.endpointId) ?? Infinity);
-  return [...nodes].sort((a, b) => (originals.get(a.originalId) ?? Infinity) - (originals.get(b.originalId) ?? Infinity) || childRank(a) - childRank(b));
- }
- return { ordered, move, preview };
+// Return a reordered copy; publishing follows each editor section's save rules.
+export function reorderCards(items, id, targetId, after) {
+ const from = items.findIndex(item => item.id === id), target = items.findIndex(item => item.id === targetId);
+ if (id === targetId || from < 0 || target < 0) return null;
+ const next = items.filter(item => item.id !== id);
+ next.splice(next.findIndex(item => item.id === targetId) + Number(after), 0, items[from]);
+ return next.every((item, index) => item.id === items[index].id) ? null : next;
 }
 
-export function attachCardSorting(container, move, onChange) {
+export function attachCardSorting(container, move) {
  let drag = null;
  const clearTarget = () => container.querySelectorAll('.sort-before,.sort-after').forEach(card => card.classList.remove('sort-before', 'sort-after'));
- function finish(cancelled = false) {
+ async function finish(cancelled = false) {
   if (!drag) return;
   const current = drag; drag = null;
   clearTarget(); current.card.classList.remove('is-sorting');
   if (current.handle.hasPointerCapture(current.pointerId)) current.handle.releasePointerCapture(current.pointerId);
-  if (!cancelled && current.targetId && move(current.id, current.targetId, current.after)) onChange();
+  if (!cancelled && current.targetId) await move(current.id, current.targetId, current.after);
  }
  container.addEventListener('pointerdown', event => {
   const handle = event.target.closest('[data-sort-handle]');
-  if (!handle || event.button !== 0 || !event.isPrimary) return;
+  if (!handle || handle.disabled || event.button !== 0 || !event.isPrimary) return;
   const card = handle.closest('[data-display-id]');
   if (!card) return;
   event.preventDefault(); handle.focus();
@@ -64,16 +45,16 @@ export function attachCardSorting(container, move, onChange) {
  container.addEventListener('pointerup', event => { if (drag?.pointerId === event.pointerId) finish(); });
  container.addEventListener('pointercancel', () => finish(true));
  container.addEventListener('lostpointercapture', () => finish(true));
- container.addEventListener('keydown', event => {
+ container.addEventListener('keydown', async event => {
   if (event.key === 'Escape') { finish(true); return; }
   const handle = event.target.closest('[data-sort-handle]');
   const delta = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
-  if (!handle || !delta) return;
+  if (!handle || handle.disabled || !delta) return;
   event.preventDefault();
   const cards = [...container.querySelectorAll('[data-display-id]')];
   const card = handle.closest('[data-display-id]'), target = cards[cards.indexOf(card) + delta];
-  if (target && move(card.dataset.displayId, target.dataset.displayId, delta > 0)) {
-   const id = card.dataset.displayId; onChange();
+  if (target && await move(card.dataset.displayId, target.dataset.displayId, delta > 0)) {
+   const id = card.dataset.displayId;
    [...container.querySelectorAll('[data-display-id]')].find(item => item.dataset.displayId === id)?.querySelector('[data-sort-handle]').focus();
   }
  });
