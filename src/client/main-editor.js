@@ -117,7 +117,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('validationStatus').classList.toggle('has-issues', Boolean(problem));
   el('validationStatus').querySelector('span').textContent = problem ? '配置需要修正' : '配置检查通过';
   el('validationIssues').textContent = problem;
-  el('mainPreviewNote').textContent = problem || `预览：${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 + ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。保存后用于订阅和分享；导出当前编辑结果，不受筛选影响。`;
+  el('mainPreviewNote').textContent = problem || `预览：${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 + ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。下方保存与上方相同，统一发布全部配置；导出当前编辑结果，不受筛选影响。`;
   renderPreview();
  }
  function updateMetadata(metadata) {
@@ -130,7 +130,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function updateSaveButtons() {
   for (const button of saveButtons) {
    button.disabled = saving;
-   button.querySelector('span').textContent = saving ? '保存中' : '保存并生效';
+   button.querySelector('span').textContent = saving ? '保存中' : '保存全部并生效';
    button.setAttribute('aria-busy', String(saving));
   }
  }

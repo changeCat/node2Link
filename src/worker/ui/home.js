@@ -5,6 +5,12 @@ import { DEFAULT_DISPLAY_FORMATS, SUBSCRIPTION_FORMAT_CATALOG, SUPPORTED_NODE_PR
 import { escapeHTML } from '../http.js';
 import { assetURL, basePageStyles, pageScript } from './assets.js';
 import { renderTopbar, renderFavicon } from './pages.js';
+
+function renderConverterEntry(label, address) {
+	const safeAddress = escapeHTML(address);
+	return `<div class="converter-entry"><div class="converter-entry-head"><b>${escapeHTML(label)}</b><button class="icon-button" type="button" data-converter-url="${safeAddress}" aria-label="复制完整转换后端地址" title="复制完整地址"><i data-lucide="copy"></i></button></div><details class="converter-address"><summary title="${safeAddress}" aria-label="展开或收起完整转换后端地址"><code>${safeAddress}</code><i data-lucide="chevron-down"></i></summary><code class="converter-full-url">${safeAddress}</code></details></div>`;
+}
+
 export function renderMainPage(request, runtime, record) {
 	const url = new URL(request.url);
 		const content = record.config ? originalText(record.config) : record.content;
@@ -21,11 +27,9 @@ export function renderMainPage(request, runtime, record) {
 		const ownerBase = runtime.subscriptionToken
 			? origin + "/" + encodeURIComponent(runtime.subscriptionToken)
 			: origin + "/s/" + encodeURIComponent(runtime.mainSubscriptionId);
-		const converterListHTML = runtime.subConverters.map((converter, index) =>
-			`<span class="converter-entry"><b>${index === 0 ? "主" : "备" + index}</b><code title="${escapeHTML(converter)}">${escapeHTML(converter)}</code></span>`
-		).join("");
+		const converterListHTML = runtime.subConverters.map((converter, index) => renderConverterEntry(index === 0 ? '主' : '备' + index, converter)).join('');
 		const activeConverterHTML = runtime.converterMode === 'custom'
-			? `<span class="converter-entry"><b>${escapeHTML(converterTypeLabel(runtime.customConverterType))}</b><code title="${escapeHTML(runtime.customConverterURL)}">${escapeHTML(runtime.customConverterURL)}</code></span>`
+			? renderConverterEntry(converterTypeLabel(runtime.customConverterType), runtime.customConverterURL)
 			: converterListHTML;
 		const converterWarningHTML = runtime.converterMode !== 'custom'
 			? '<div class="converter-warning" role="note"><strong>注意：当前未启用自建转换</strong><p>需要转换时将使用默认服务，该服务可读取订阅来源和节点信息。</p><a href="/settings">配置自定义转换</a></div>'
@@ -149,7 +153,15 @@ export function renderMainPage(request, runtime, record) {
 					.converter-list { display: flex; flex-direction: column; gap: 7px; }
 					.converter-entry { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 7px; }
 					.converter-entry b { justify-self: start; max-width: 100%; overflow-wrap: anywhere; padding: 2px 4px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: 10px; text-align: center; }
-					.converter-entry code { display:block; min-width:0; white-space:normal; overflow:visible; overflow-wrap:anywhere; word-break:break-word; text-overflow:clip; line-height:1.7; }
+					.converter-entry-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+					.converter-entry-head .icon-button { width:28px; height:28px; }
+					.converter-address { min-width:0; border:1px solid var(--line-soft); border-radius:6px; background:var(--surface-soft); }
+					.converter-address summary { display:flex; align-items:center; gap:8px; padding:9px 10px; cursor:pointer; list-style:none; }
+					.converter-address summary::-webkit-details-marker { display:none; }
+					.converter-address summary code { flex:1; min-width:0; font-size:11px; }
+					.converter-address summary svg { flex:none; width:14px; height:14px; color:var(--muted); transition:transform .16s ease; }
+					.converter-address[open] summary svg { transform:rotate(180deg); }
+					.converter-address .converter-full-url { padding:10px; border-top:1px solid var(--line-soft); white-space:normal; overflow-wrap:anywhere; word-break:break-all; font-size:11px; line-height:1.7; user-select:all; }
 					.converter-picker { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 					.converter-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 					.converter-option { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
