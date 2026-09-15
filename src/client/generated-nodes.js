@@ -1,3 +1,4 @@
+import { DEFAULT_API_PORT, MAX_API_TEMPLATES, optionalTemplatePort, normalizeTemplateReferences } from '../shared/api-templates.js';
 import { extendMainNode, mainNodeName } from '../shared/main-subscription.js';
 import { applyVariables } from '../shared/template-variables.js';
 const pageData = JSON.parse(document.getElementById('page-data-generated-nodes').textContent);
@@ -5,16 +6,20 @@ let { settings, nodes, originals } = pageData;
 const form = document.getElementById('settingsForm');
 const tokenInput = document.getElementById('apiToken');
 const nameInput = document.getElementById('nameTemplate');
-const templateInput = document.getElementById('nodeTemplate');
+const templateList = document.getElementById('templateList');
+const pickerDialog = document.getElementById('templatePickerDialog');
+const pending = new Map();
+let templates = normalizeTemplateReferences(settings.sourceTemplates || []);
+let pickerLoading = false;
+let loadingOriginals = null;
 const list = document.getElementById('nodeList');
 const originalList = document.getElementById('templateOriginalList');
 const searchInput = document.getElementById('templateSearch');
-const selected = new Set((settings.sourceTemplates || []).map(node => node.id));
 const message = document.getElementById('settingsMessage');
 let busy = false;
 function esc(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function copyText(value) { return navigator.clipboard.writeText(value); }
-function showMessage(text, error = false) { message.textContent = text; message.className = error ? 'message' : 'muted'; }
+function showMessage(text, error = false) { message.textContent = text; message.className = 'api-save-state ' + (error ? 'message' : 'muted'); }
 function askConfirm(text, title) {
  return new Promise(resolve => {
   const dialog = document.getElementById('confirmDialog');
@@ -50,56 +55,122 @@ function filteredOriginals() {
  const query = searchInput.value.trim().toLowerCase();
  return originals.filter(node => !query || (node.name + '\n' + node.protocol + '\n' + node.address).toLowerCase().includes(query));
 }
-function renderPreview() {
+function renderTemplates() {
  const byId = new Map(originals.map(node => [node.id, node]));
- const previews = [...selected].map(id => byId.get(id)).filter(node => node && !node.error).map(node => {
-  try {
-   const name = applyVariables(nameInput.value, { name: mainNodeName(node.content), address: 'edge.example.com', port: '443', type: '域名' }).trim().slice(0, 240);
-   const content = extendMainNode(node.content, { address: 'edge.example.com', port: 443 }, name);
-   return '<div class="example-box"><b>' + esc(name) + '</b><code>' + esc(content) + '</code></div>';
-  } catch (error) { return '<p class="message">' + esc(error.message) + '</p>'; }
- });
- document.getElementById('templatePreview').innerHTML = previews.join('') || '<p class="muted">选择原始节点后显示生成预览。</p>';
+ const query = document.getElementById('savedTemplateSearch').value.trim().toLowerCase();
+ document.getElementById('templateCount').textContent = templates.length + ' / 20';
+ document.getElementById('addTemplate').disabled = busy || templates.length >= MAX_API_TEMPLATES;
+ templateList.innerHTML = templates.filter(template => {
+  const node = byId.get(template.id);
+  return !query || ((node?.name || template.id) + '\n' + (node?.protocol || '') + '\n' + (node?.address || '')).toLowerCase().includes(query);
+ }).map(template => {
+  const node = byId.get(template.id);
+  const error = !node ? '原始节点已删除，请移除此模板。' : node.error;
+  const id = esc(template.id);
+  return '<article class="api-template-card" data-saved-template="' + id + '"><div class="api-template-heading"><strong title="' + esc(node?.name || template.id) + '">' + esc(node?.name || '原始节点已删除') + '</strong><span class="node-kind">' + esc(node?.protocol || '失效') + '</span></div><small>' + esc(node?.address || template.id) + '</small>' + (error ? '<p class="message">' + esc(error) + '</p>' : '') + '<div class="api-port-field"><label for="port-' + id + '">指定端口</label><input id="port-' + id + '" data-template-port="' + id + '" type="number" min="1" max="65535" step="1" placeholder="可选，跟随 API" value="' + esc(template.port ?? '') + '"' + (busy ? ' disabled' : '') + '></div><div class="api-actions"><button class="button" type="button" data-preview-template="' + id + '"' + (error || busy ? ' disabled' : '') + '>预览</button><button class="button danger-button" type="button" data-remove-template="' + id + '"' + (busy ? ' disabled' : '') + '>移除</button></div></article>';
+ }).join('') || '<div class="empty-list">' + (templates.length ? '没有匹配的模板。' : '尚无模板，点击“添加模板”从原始节点中选择。') + '</div>';
 }
+function markChanged() { showMessage('配置已修改，尚未保存'); }
 function renderOriginals() {
- document.getElementById('templateCount').textContent = '已选 ' + selected.size + ' / 20';
- const missing = [...selected].filter(id => !originals.some(node => node.id === id));
+ const existing = new Set(templates.map(node => node.id));
  const visible = filteredOriginals();
- originalList.innerHTML = visible.map(node => '<label class="template-original' + (node.error ? ' unavailable' : '') + '"><input type="checkbox" data-template-id="' + esc(node.id) + '"' + (selected.has(node.id) ? ' checked' : '') + (node.error && !selected.has(node.id) ? ' disabled' : '') + '><span><strong>' + esc(node.name) + '</strong><small>' + esc(node.protocol + ' · ' + node.address) + (node.error ? ' · 无法生成模板：' + esc(node.error) : '') + '</small></span></label>').join('') + missing.map(id => {
-  const snapshot = settings.sourceTemplates?.find(node => node.id === id);
-  return '<label class="template-original unavailable"><input type="checkbox" data-template-id="' + esc(id) + '" checked><span><strong>' + esc(snapshot ? mainNodeName(snapshot.content) : id) + '</strong><small>原始节点已删除，请取消勾选后重新选择。</small></span></label>';
- }).join('');
- if (!visible.length && !missing.length) originalList.innerHTML = '<div class="empty-list">' + (originals.length ? '没有匹配的原始节点。' : '暂无已保存的原始节点，请先到主订阅添加。<a href="/">前往主订阅</a>') + '</div>';
- document.getElementById('selectTemplateResults').disabled = busy || !visible.some(node => !node.error);
- document.getElementById('clearTemplateSelection').disabled = busy || !selected.size;
- document.getElementById('legacyTemplateSection').hidden = !settings.nodeTemplate;
- renderPreview();
+ document.getElementById('pendingTemplateCount').textContent = '已选择 ' + pending.size + ' 个';
+ document.getElementById('confirmAddTemplates').disabled = pickerLoading || !pending.size;
+ document.getElementById('selectTemplateResults').disabled = pickerLoading || !visible.some(node => !node.error && !existing.has(node.id));
+ if (pickerLoading) { originalList.innerHTML = '<p class="muted">正在读取原始节点…</p>'; return; }
+ originalList.innerHTML = visible.map(node => {
+  const unavailable = existing.has(node.id) || Boolean(node.error);
+  const id = esc(node.id);
+  return '<div class="template-choice' + (unavailable ? ' unavailable' : '') + '"><label class="template-original"><input type="checkbox" data-template-id="' + id + '"' + (pending.has(node.id) ? ' checked' : '') + (unavailable ? ' disabled' : '') + '><span><strong>' + esc(node.name) + (existing.has(node.id) ? ' · 已添加' : '') + '</strong><small>' + esc(node.protocol + ' · ' + node.address) + (node.error ? ' · ' + esc(node.error) : '') + '</small></span></label>' + (pending.has(node.id) ? '<div class="api-port-field"><label for="pending-port-' + id + '">指定端口</label><input id="pending-port-' + id + '" data-pending-port="' + id + '" type="number" min="1" max="65535" step="1" placeholder="可选，跟随 API" value="' + esc(pending.get(node.id)) + '"></div>' : '') + '</div>';
+ }).join('') || '<div class="empty-list">' + (originals.length ? '没有匹配的原始节点。' : '暂无已保存的原始节点，请先到主订阅添加。<a href="/">前往主订阅</a>') + '</div>';
 }
-function selectionChanged() {
+function refreshOriginals() {
+ if (loadingOriginals) return loadingOriginals;
+ loadingOriginals = apiCall('GET').then(data => {
+  originals = data.originals;
+  renderTemplates();
+ }).finally(() => { loadingOriginals = null; });
+ return loadingOriginals;
+}
+async function loadPicker() {
+ pickerLoading = true;
+ document.getElementById('retryTemplateOriginals').hidden = true;
  document.getElementById('templateSelectionMessage').textContent = '';
- showMessage('选择已修改，尚未保存'); renderOriginals();
+ renderOriginals();
+ try { await refreshOriginals(); pickerLoading = false; renderOriginals(); }
+ catch (error) {
+  // Keep adding disabled until fresh candidates are available.
+  originalList.innerHTML = '';
+  document.getElementById('templateSelectionMessage').textContent = error.message;
+  document.getElementById('retryTemplateOriginals').hidden = false;
+ }
 }
+document.getElementById('addTemplate').addEventListener('click', () => {
+ pending.clear(); searchInput.value = ''; pickerDialog.showModal(); searchInput.focus(); loadPicker();
+});
+function closePicker() { pickerDialog.close(); }
+document.getElementById('closeTemplatePicker').addEventListener('click', closePicker);
+document.getElementById('cancelTemplatePicker').addEventListener('click', closePicker);
+pickerDialog.addEventListener('click', event => { if (event.target === pickerDialog) closePicker(); });
+document.getElementById('retryTemplateOriginals').addEventListener('click', loadPicker);
+searchInput.addEventListener('input', renderOriginals);
+document.getElementById('savedTemplateSearch').addEventListener('input', renderTemplates);
 originalList.addEventListener('change', event => {
  const checkbox = event.target.closest('[data-template-id]');
  if (!checkbox) return;
- if (checkbox.checked && selected.size >= 20) { checkbox.checked = false; document.getElementById('templateSelectionMessage').textContent = '最多选择 20 个原始节点'; return; }
- if (checkbox.checked) selected.add(checkbox.dataset.templateId); else selected.delete(checkbox.dataset.templateId);
- selectionChanged();
+ if (checkbox.checked && pending.size + templates.length >= MAX_API_TEMPLATES) {
+  checkbox.checked = false; document.getElementById('templateSelectionMessage').textContent = '最多添加 20 个模板'; return;
+ }
+ if (checkbox.checked) pending.set(checkbox.dataset.templateId, ''); else pending.delete(checkbox.dataset.templateId);
+ document.getElementById('templateSelectionMessage').textContent = '';
+ renderOriginals();
 });
-searchInput.addEventListener('input', renderOriginals);
-nameInput.addEventListener('input', () => { renderPreview(); showMessage('名称格式已修改，尚未保存'); });
+originalList.addEventListener('input', event => {
+ const input = event.target.closest('[data-pending-port]');
+ if (input) pending.set(input.dataset.pendingPort, input.value);
+});
 document.getElementById('selectTemplateResults').addEventListener('click', () => {
- const ids = new Set([...selected, ...filteredOriginals().filter(node => !node.error).map(node => node.id)]);
- if (ids.size > 20) { document.getElementById('templateSelectionMessage').textContent = '当前结果超过 20 个，请缩小搜索范围后再选择'; return; }
- ids.forEach(id => selected.add(id)); selectionChanged();
+ const existing = new Set(templates.map(node => node.id));
+ const ids = new Set([...pending.keys(), ...filteredOriginals().filter(node => !node.error && !existing.has(node.id)).map(node => node.id)]);
+ if (ids.size + templates.length > MAX_API_TEMPLATES) { document.getElementById('templateSelectionMessage').textContent = '当前结果超过可添加数量，请缩小搜索范围'; return; }
+ ids.forEach(id => { if (!pending.has(id)) pending.set(id, ''); });
+ renderOriginals();
 });
-document.getElementById('clearTemplateSelection').addEventListener('click', () => { selected.clear(); selectionChanged(); });
-document.getElementById('reloadTemplateOriginals').addEventListener('click', async function() {
- this.disabled = true;
- try { const data = await apiCall('GET'); originals = data.originals; renderOriginals(); showMessage('原始节点已刷新，保存后更新 API 模板'); }
- catch (error) { showMessage(error.message, true); }
- finally { this.disabled = false; }
+document.getElementById('templatePickerForm').addEventListener('submit', event => {
+ event.preventDefault();
+ if (pickerLoading || !pending.size) return;
+ try {
+  const added = normalizeTemplateReferences([...pending].map(([id, port]) => ({ id, port })));
+  normalizeTemplateReferences([...templates, ...added]);
+  templates.push(...added);
+  closePicker(); renderTemplates(); markChanged();
+ } catch (error) { document.getElementById('templateSelectionMessage').textContent = error.message; }
 });
+templateList.addEventListener('input', event => {
+ const input = event.target.closest('[data-template-port]');
+ if (!input) return;
+ templates.find(node => node.id === input.dataset.templatePort).port = input.value;
+ markChanged();
+});
+templateList.addEventListener('click', event => {
+ const remove = event.target.closest('[data-remove-template]');
+ if (remove) { templates = templates.filter(node => node.id !== remove.dataset.removeTemplate); renderTemplates(); markChanged(); return; }
+ const preview = event.target.closest('[data-preview-template]');
+ if (!preview) return;
+ try {
+  const template = templates.find(node => node.id === preview.dataset.previewTemplate);
+  const original = originals.find(node => node.id === template.id);
+  const port = optionalTemplatePort(template.port) ?? DEFAULT_API_PORT;
+  const name = applyVariables(nameInput.value, { name: mainNodeName(original.content), address: 'edge.example.com', port: String(port), type: '域名' }).trim().slice(0, 240);
+  document.getElementById('templatePreviewName').textContent = name;
+  document.getElementById('templatePreview').value = extendMainNode(original.content, { address: 'edge.example.com', port }, name);
+  document.getElementById('templatePreviewDialog').showModal();
+ } catch (error) { showMessage(error.message, true); }
+});
+document.getElementById('closeTemplatePreview').addEventListener('click', () => document.getElementById('templatePreviewDialog').close());
+nameInput.addEventListener('input', markChanged);
+// Refresh displayed original names/content when returning from the main editor; keep unsaved template edits.
+window.addEventListener('focus', () => { if (!busy && !pickerDialog.open) refreshOriginals().catch(error => showMessage(error.message, true)); });
 async function copyFeedback(button, text) {
  try { await copyText(text); const previous = button.textContent; button.textContent = '已复制'; setTimeout(() => { button.textContent = previous; }, 1200); }
  catch { showMessage('复制失败，请手动复制', true); }
@@ -112,20 +183,21 @@ document.getElementById('resetToken').addEventListener('click', async () => {
 document.querySelectorAll('[data-copy-example]').forEach(button => button.addEventListener('click', () => copyFeedback(button, document.getElementById(button.dataset.copyExample).textContent)));
 function setBusy(value) {
  busy = value;
- form.querySelectorAll('input, textarea, button').forEach(control => { control.disabled = value; });
- renderOriginals();
- if (value) originalList.querySelectorAll('input').forEach(control => { control.disabled = true; });
+ form.querySelectorAll('input, button').forEach(control => { control.disabled = value; });
+ renderTemplates();
 }
 form.addEventListener('submit', async event => {
  event.preventDefault();
  if (busy) return;
- if (!selected.size && !settings.nodeTemplate) { showMessage('请至少选择一个原始节点', true); return; }
- const payload = { token: tokenInput.value, nameTemplate: nameInput.value, ...(selected.size ? { originalIds: [...selected] } : { nodeTemplate: settings.nodeTemplate }) };
+ let selection;
+ try { selection = normalizeTemplateReferences(templates); }
+ catch (error) { showMessage(error.message, true); return; }
  setBusy(true); showMessage('正在保存…');
  try {
-  const data = await apiCall('PUT', payload); settings = data.settings;
-  tokenInput.value = settings.token; nameInput.value = settings.nameTemplate; templateInput.value = settings.nodeTemplate;
-  syncExamples(); showMessage('配置已保存'); message.className = 'success';
+  const data = await apiCall('PUT', { token: tokenInput.value, nameTemplate: nameInput.value, templates: selection });
+  settings = data.settings; templates = normalizeTemplateReferences(settings.sourceTemplates || []);
+  tokenInput.value = settings.token; nameInput.value = settings.nameTemplate;
+  syncExamples(); showMessage('配置已保存'); message.className = 'success api-save-state';
  } catch (error) { showMessage(error.message, true); }
  finally { setBusy(false); }
 });
@@ -140,8 +212,7 @@ list.addEventListener('click', async event => {
 });
 tokenInput.value = settings.token;
 nameInput.value = !settings.nodeTemplate && !settings.sourceTemplates ? '{{name}}-{{type}}-{{address}}:{{port}}' : settings.nameTemplate;
-templateInput.value = settings.nodeTemplate;
-syncExamples(); renderNodes(); renderOriginals();
+syncExamples(); renderNodes(); renderTemplates();
 if (!settings.token) {
  setBusy(true);
  apiCall('POST', { action: 'initialize' }).then(data => {

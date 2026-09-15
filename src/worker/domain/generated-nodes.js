@@ -1,8 +1,8 @@
+import { DEFAULT_API_PORT, normalizeTemplateReferences } from '../../shared/api-templates.js';
 import { applyVariables, hasVariable } from '../../shared/template-variables.js';
 export { applyFilter, applyVariables, hasVariable } from '../../shared/template-variables.js';
 import { extendMainNode, mainNodeName, mainNodeSummary } from '../../shared/main-subscription.js';
 const SUPPORTED_PROTOCOL = /^(vless|vmess|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard|socks|socks5):\/\//i;
-const CLOUDFLARE_HTTPS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
 const MAX_TEMPLATE_LINES = 20;
 const MAX_IMPORT_ITEMS = 100;
 const MAX_TEMPLATE_LINE_BYTES = 16 * 1024;
@@ -42,21 +42,15 @@ export function isDomain(value) {
 	return labels.length >= 2 && labels.every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
 }
 
-export function randomCloudflareHTTPSPort() {
-	const random = new Uint32Array(1);
-	crypto.getRandomValues(random);
-	return CLOUDFLARE_HTTPS_PORTS[random[0] % CLOUDFLARE_HTTPS_PORTS.length];
-}
-
 export function normalizeEndpoint(payload) {
 	const address = String(payload?.address || '').trim();
 	if (!address) throw new Error('请传入 address 参数');
 	const input = address.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
 	const addressType = isDomain(input) ? 'domain' : isIPv4(input) || isIPv6(input) ? 'ip' : '';
 	if (!addressType) throw new Error('address 参数不是有效的域名、IPv4 或 IPv6 地址');
-	const portInput = String(payload?.port || '').trim();
-	const port = portInput ? Number(portInput) : randomCloudflareHTTPSPort();
-	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('port 参数必须是 1 到 65535 的整数');
+	const portInput = String(payload?.port ?? '').trim();
+	const port = portInput ? Number(portInput) : DEFAULT_API_PORT;
+	if (portInput && !/^\d+$/.test(portInput) || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('port 参数必须是 1 到 65535 的整数');
 	return { kind: 'endpoint', addressType, address: input, port };
 }
 
@@ -65,7 +59,9 @@ export function normalizeEndpoints(payload) {
 	const addresses = cleanBatchValues(input);
 	if (!addresses.length) throw new Error('请传入 address 参数');
 	if (addresses.length > MAX_IMPORT_ITEMS) throw new Error(`一次最多导入 ${MAX_IMPORT_ITEMS} 个地址`);
-	const ports = cleanBatchValues(payload?.port);
+	// Keep empty per-address ports in position so they fall back independently.
+	const portInput = payload?.port;
+	const ports = portInput === undefined || portInput === null ? [] : (Array.isArray(portInput) ? portInput : [portInput]).flatMap(value => String(value ?? '').split(/\r?\n/).map(port => port.trim()));
 	if (ports.length > 1 && ports.length !== addresses.length) throw new Error('多个 port 参数必须与 address 参数数量一致');
 	return addresses.map((item, index) => {
 		const isObject = item && typeof item === 'object' && !Array.isArray(item);
@@ -78,7 +74,7 @@ export function normalizeEndpoints(payload) {
 	});
 }
 
-// Persist selected originals as snapshots: API generation does not depend on later main edits.
+// Validate current original nodes before binding or generating API templates.
 export function apiTemplateOriginal(node) {
  const content = String(node?.content || '');
  const name = mainNodeName(content);
@@ -92,23 +88,11 @@ export function apiTemplateOriginal(node) {
  } catch (error) { return { ...base, error: error.message }; }
 }
 
-function normalizeSourceTemplates(value) {
- if (!Array.isArray(value) || value.length > MAX_TEMPLATE_LINES) throw new Error('最多选择 20 个原始节点');
- const ids = new Set();
- return value.map(node => {
-  const original = apiTemplateOriginal(node);
-  if (original.error) throw new Error(original.name + '：' + original.error);
-  if (ids.has(original.id)) throw new Error('不能重复选择同一原始节点');
-  ids.add(original.id);
-  return { id: original.id, content: original.content };
- });
-}
-
 export function normalizeGeneratedNodeSettings(payload = {}, previous = {}, { generateToken = true } = {}) {
 	const tokenInput = String(payload.token ?? previous.token ?? '').trim();
 	if (tokenInput && !/^[A-Za-z0-9_-]{16,128}$/.test(tokenInput)) throw new Error('API Token 只能包含字母、数字、下划线或短横线，长度为 16–128 位');
 	const sourceInput = payload.sourceTemplates ?? (payload.nodeTemplate !== undefined ? undefined : previous.sourceTemplates);
-	const sourceTemplates = sourceInput === undefined ? undefined : normalizeSourceTemplates(sourceInput);
+	const sourceTemplates = sourceInput === undefined ? undefined : normalizeTemplateReferences(sourceInput);
 	const nodeTemplates = sourceTemplates === undefined ? cleanLines(payload.nodeTemplate ?? previous.nodeTemplate ?? '') : [];
 	if (nodeTemplates.length > MAX_TEMPLATE_LINES) throw new Error(`节点模板不能超过 ${MAX_TEMPLATE_LINES} 行`);
 	for (const [index, template] of nodeTemplates.entries()) {
@@ -144,10 +128,12 @@ export function generateNodesForEndpoint(settings, endpoint, createdAt) {
  if (Array.isArray(settings.sourceTemplates)) {
   if (!settings.sourceTemplates.length) throw new Error('管理员尚未选择原始节点模板');
   return settings.sourceTemplates.map(original => {
-   const variables = { address: endpoint.address, port: String(endpoint.port), type: endpoint.addressType === 'domain' ? '域名' : 'IP', name: mainNodeName(original.content) };
+   if (!original.content) throw new Error('原始节点已不存在，请移除失效模板');
+   const effectiveEndpoint = { ...endpoint, port: original.port ?? endpoint.port ?? DEFAULT_API_PORT };
+   const variables = { address: endpoint.address, port: String(effectiveEndpoint.port), type: endpoint.addressType === 'domain' ? '域名' : 'IP', name: mainNodeName(original.content) };
    const name = applyVariables(settings.nameTemplate, variables).trim().slice(0, 240);
    if (!name) throw new Error('节点名称格式生成了空名称');
-   return { id: createId(), ...endpoint, name, content: extendMainNode(original.content, endpoint, name), createdAt };
+   return { id: createId(), ...effectiveEndpoint, name, content: extendMainNode(original.content, effectiveEndpoint, name), createdAt };
   });
  }
 	const templates = cleanLines(settings.nodeTemplate);

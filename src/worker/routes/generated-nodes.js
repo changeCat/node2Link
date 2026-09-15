@@ -63,8 +63,9 @@ export async function handleGeneratedNodesAPI(request, env) {
 			const previous = await readGeneratedNodeSettings(env.KV);
 			// Accept identities only; derive credential-bearing templates from saved main nodes.
    const input = { token: payload.token, nameTemplate: payload.nameTemplate, nodeTemplate: payload.nodeTemplate };
-   if (payload.originalIds !== undefined) {
-    input.sourceTemplates = await resolveAPITemplateSelection(env.KV, payload.originalIds);
+   if (payload.templates !== undefined || payload.originalIds !== undefined) {
+    const selection = payload.templates ?? (Array.isArray(payload.originalIds) ? payload.originalIds.map(id => ({ id })) : payload.originalIds);
+    input.sourceTemplates = await resolveAPITemplateSelection(env.KV, selection);
     delete input.nodeTemplate;
    }
    const settings = normalizeGeneratedNodeSettings(input, previous);

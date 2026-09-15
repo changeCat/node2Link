@@ -1,3 +1,4 @@
+import { normalizeTemplateReferences } from '../../shared/api-templates.js';
 import { readMainRecord } from '../storage/main.js';
 import { legacyMainConfig, isMainNode } from '../../shared/main-subscription.js';
 import { apiTemplateOriginal } from '../domain/generated-nodes.js';
@@ -9,7 +10,7 @@ const MAX_STORED_BYTES = 20 * 1024 * 1024;
 
 export async function appendGeneratedNodes(kv, settings, payload) {
 	const isDirect = payload && (payload.node !== undefined || payload.nodes !== undefined || payload.content !== undefined);
-	const [existing, generated] = await Promise.all([readGeneratedNodes(kv), Promise.resolve(isDirect ? normalizeDirectNodes(payload) : generateNodesFromEndpoints(settings, payload))]);
+	const [existing, generated] = await Promise.all([readGeneratedNodes(kv), isDirect ? Promise.resolve(normalizeDirectNodes(payload)) : resolveAPITemplateSettings(kv, settings).then(current => generateNodesFromEndpoints(current, payload))]);
 	const contents = new Set(existing.map(node => node.content));
 	const added = [];
 	let duplicateCount = 0;
@@ -33,13 +34,19 @@ export async function readAPITemplateOriginals(kv) {
  return (record.config || legacyMainConfig(record.content)).originals.filter(node => isMainNode(node.content)).map(apiTemplateOriginal);
 }
 
-export async function resolveAPITemplateSelection(kv, ids) {
- if (!Array.isArray(ids) || !ids.length || ids.length > 20 || ids.some(id => typeof id !== 'string') || new Set(ids).size !== ids.length) throw new Error('请选择 1–20 个不同的原始节点');
+export async function resolveAPITemplateSelection(kv, selection) {
+ const references = normalizeTemplateReferences(selection);
  const originals = new Map((await readAPITemplateOriginals(kv)).map(node => [node.id, node]));
- return ids.map(id => {
-  const original = originals.get(id);
-  if (!original) throw new Error('所选原始节点已不存在，请刷新页面后重新选择');
+ return references.map(reference => {
+  const original = originals.get(reference.id);
+  if (!original) throw new Error('关联的原始节点已不存在，请移除失效模板');
   if (original.error) throw new Error(original.name + '：' + original.error);
-  return { id, content: original.content };
+  return { ...reference, content: original.content };
  });
+}
+
+// Read one current main revision per import, never generate from saved credential snapshots.
+export async function resolveAPITemplateSettings(kv, settings) {
+ if (!Array.isArray(settings.sourceTemplates)) return settings;
+ return { ...settings, sourceTemplates: await resolveAPITemplateSelection(kv, settings.sourceTemplates) };
 }

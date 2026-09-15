@@ -66,14 +66,14 @@ test('address 域名会替换地址、端口和固定名称', () => {
 	assert.equal(node.content, 'vless://uuid@cdn.example.com:8443?security=tls#CF-%E5%9F%9F%E5%90%8D-cdn.example.com%3A8443');
 });
 
-test('统一 address 参数支持随机标准 HTTPS 端口和名称截取', () => {
+test('统一 address 参数使用默认 8443 端口和名称截取', () => {
 	const slicedSettings = normalizeGeneratedNodeSettings({
 		token: 'abcdefghijklmnop',
 		nameTemplate: '{{address|split:.:0}}-{{address|slice:0:6}}-{{port}}',
 		nodeTemplate: 'vless://uuid@{{address}}:{{port}}#{{name}}'
 	});
 	const [node] = generateNodesFromEndpoints(slicedSettings, { address: 'cfsaas.080112.xyz' });
-	assert.ok([443, 2053, 2083, 2087, 2096, 8443].includes(node.port));
+	assert.equal(node.port, 8443);
 	assert.equal(node.name, `cfsaas-cfsaas-${node.port}`);
 });
 
@@ -271,12 +271,10 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /API 订阅/);
 	assert.match(apiPageHTML, /生成预览/);
 	assert.match(apiPageHTML, /API 调用/);
-	assert.match(apiPageHTML, /原始 vless:\/\/ 节点无需转码/);
+ assert.match(apiPageHTML, /grid-template-columns:minmax\(0,2fr\) minmax\(0,1fr\)/);
+ assert.match(apiPageHTML, /id="templatePickerDialog"/);
+ assert.doesNotMatch(apiPageHTML, /id="nodeTemplate"|legacyTemplateSection|variable-guide|快照/);
 	assert.doesNotMatch(apiPageHTML, /class="placeholder-help"/);
-	assert.match(apiPageHTML, /\{\{address\}\}<\/code>域名、IPv4 或 IPv6/);
-	assert.match(apiPageHTML, /\{\{port\}\}<\/code>API 传入的端口/);
-	assert.match(apiPageHTML, /\{\{name\}\}<\/code>在节点名称格式中代表原始节点名称/);
-	assert.match(apiPageHTML, /\{\{type\}\}<\/code>根据 address 自动判断/);
 	assert.match(apiPageHTML, /id="copyToken"[^>]*>复制<\/button>/);
 	assert.match(apiPageHTML, /id="resetToken"[^>]*>重置<\/button>/);
 	assert.match(apiPageHTML, /class="token-actions"/);
@@ -287,7 +285,6 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
 	assert.match(apiPageHTML, /--data-binary "\{\{node1\}\}\\n\{\{node2\}\}"/);
 	assert.match(apiPageHTML, /id="directExample"/);
-	assert.ok(apiPageHTML.indexOf('class="quick-api"') < apiPageHTML.indexOf('id="saveSettings"'));
 	assert.doesNotMatch(apiPageHTML, /\{\{rawAddress/);
 	assert.doesNotMatch(apiPageHTML, /\{\{rawName/);
 	assertInlineScriptsParse(apiPageHTML);
