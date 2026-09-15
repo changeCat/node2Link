@@ -1,4 +1,4 @@
-import { compileMainConfig, normalizeMainConfig, isMainNode, MainValidationError } from '../../shared/main-subscription.js';
+import { compileMainConfig, normalizeMainConfig, isMainNode, legacyMainConfig, MainValidationError } from '../../shared/main-subscription.js';
 import { DEFAULT_MAIN_DATA } from '../config.js';
 import { readJSON, readRequiredJSON, writeJSON, isObject, revisionKey } from './kv.js';
 
@@ -8,7 +8,8 @@ const PREFIX = 'blob.main.';
 async function readHead(kv) {
 	return readJSON(kv, MAIN_HEAD_KEY, null, value => isObject(value)
 		&& typeof value.current === 'string' && value.current.startsWith(PREFIX)
-		&& (value.previous === null || typeof value.previous === 'string' && value.previous.startsWith(PREFIX)));
+		&& (value.previous === null || typeof value.previous === 'string' && value.previous.startsWith(PREFIX))
+		&& (value.history === undefined || Array.isArray(value.history) && value.history.length <= 20 && value.history.every(item => isObject(item) && typeof item.revision === 'string' && item.revision.startsWith(PREFIX) && typeof item.savedAt === 'string' && Number.isInteger(item.count))));
 }
 
 function validateMainRecord(value) {
@@ -52,13 +53,43 @@ export async function readMainBackup(kv) {
 	return head?.previous ? readVersion(kv, head.previous) : null;
 }
 
-export class MainConflictError extends Error {
-	constructor() { super('主订阅已在其他页面更新。当前编辑已保留，请先下载备份，再刷新页面合并修改。'); this.status = 409; }
+async function hashOriginals(originals) {
+ const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(originals)));
+ return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function saveMainRecord(kv, content, { expectedRevision } = {}) {
+async function historyFromHead(kv, head) {
+ if (!head) return [];
+ const records = await Promise.all([head.current, head.previous].filter(Boolean).map(key => readVersion(kv, key)));
+ const versions = [];
+ for (const record of records) {
+  const originals = (record.config || legacyMainConfig(record.content)).originals;
+  const hash = await hashOriginals(originals);
+  if (versions.at(-1)?.hash !== hash) versions.push({ revision: record.revision, savedAt: record.metadata.savedAt || '', count: originals.length, hash });
+ }
+ return versions;
+}
+
+export async function readOriginalHistory(kv, limit = 3) {
+ const head = await readHead(kv);
+ return (head?.history || await historyFromHead(kv, head)).slice(0, limit);
+}
+
+export async function readOriginalVersion(kv, revision, limit = 3) {
+ const history = await readOriginalHistory(kv, limit);
+ if (!history.some(item => item.revision === revision)) throw new MainValidationError('该原始节点版本已不在保留范围内，请重新打开历史版本');
+ const record = await readVersion(kv, revision);
+ return { originals: (record.config || legacyMainConfig(record.content)).originals, metadata: record.metadata };
+}
+
+export class MainConflictError extends Error {
+	constructor() { super('主订阅已在其他页面更新。当前编辑已保留，请先导出当前内容，再刷新页面合并修改。'); this.status = 409; }
+}
+
+export async function saveMainRecord(kv, content, { expectedRevision, historyLimit = 3 } = {}) {
 	const head = await readHead(kv);
 	if (expectedRevision !== undefined && expectedRevision !== (head?.current || 'uninitialized')) throw new MainConflictError();
+	if (!Number.isInteger(historyLimit) || historyLimit < 1 || historyLimit > 20) throw new MainValidationError('历史版本数量必须为 1 到 20 的整数');
 	const compiled = typeof content === 'string' ? null : compileMainConfig(content);
 	if (compiled) content = compiled.content;
 	const metadata = { savedAt: new Date().toISOString(), bytes: new TextEncoder().encode(content).length, lines: content ? content.split(/\r?\n/).length : 0 };
@@ -75,11 +106,18 @@ export async function saveMainRecord(kv, content, { expectedRevision } = {}) {
 	// Publish the immutable body first, then atomically select current/previous.
 	// A failed head write leaves the visible content and backup untouched.
 	// Each version stores configuration and output together under the checked blob limit.
+	const originals = (record.config || legacyMainConfig(content)).originals;
+ const originalHash = await hashOriginals(originals);
+ let history = head?.history || await historyFromHead(kv, head);
+ if (originalHash !== (head?.originalHash || history[0]?.hash)) history = [{ revision: metadata.revision, savedAt: metadata.savedAt, count: originals.length }, ...history];
+ history = history.slice(0, historyLimit);
 	await writeJSON(kv, metadata.revision, record);
-	await writeJSON(kv, MAIN_HEAD_KEY, { current: metadata.revision, previous: head?.current || null });
-	if (head?.previous) {
-		try { await kv.delete(head.previous); } catch { /* Old-version cleanup is best effort. */ }
-	}
+ const nextHead = { current: metadata.revision, previous: head?.current || null, originalHash, history };
+ await writeJSON(kv, MAIN_HEAD_KEY, nextHead);
+ const retained = new Set([nextHead.current, nextHead.previous, ...history.map(item => item.revision)]);
+ for (const old of new Set([head?.current, head?.previous, ...(head?.history || []).map(item => item.revision)])) {
+  if (old && !retained.has(old)) try { await kv.delete(old); } catch { /* Cleanup must never prevent publication. */ }
+ }
 	return metadata;
 }
 

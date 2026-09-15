@@ -281,17 +281,15 @@ export function renderMainPage(request, runtime, record) {
 
 
 						<section class="section workspace-main" aria-labelledby="editor-title">
-							<div class="section-heading"><div><h2 id="editor-title">主订阅配置</h2><p>原始节点 + 优选地址关联，统一保存后生效</p></div></div>
+							<div class="section-heading"><div><h2 id="editor-title">主订阅配置</h2><p>原始节点即时保存，优选地址配置单独发布</p></div></div>
 
 							<div class="editor-shell">
 								<div class="editor-toolbar">
 									<div class="editor-meta">
 										<span><i data-lucide="list"></i><b id="lineCount">0</b> 行</span>
-										<span id="saveStatus" class="save-state">已同步</span>
+										<span id="originalSaveStatus" class="save-state" role="status">原始节点已同步</span>
 										<span><i data-lucide="clock-3"></i><span id="lastSaved" data-saved-at="${escapeHTML(savedMetadata.savedAt || "")}">读取中</span></span>
 									</div>
-
-								<button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="统一保存全部原始节点和优选配置" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button>
 								</div>
 								<div class="editor-insights" aria-label="内容统计">
 									<div class="metric"><span>原始节点</span><strong id="nodeCount">0</strong></div>

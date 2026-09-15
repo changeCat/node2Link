@@ -1,4 +1,4 @@
-import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, mainNodeSummary, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS } from '../shared/main-subscription.js';
+import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, mainNodeSummary, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS, reconcileMainEndpoints } from '../shared/main-subscription.js';
 
 export function initializeMainEditor(pageData, { showToast, askMainConfirm, copyText }) {
  const el = id => document.getElementById(id);
@@ -8,7 +8,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  let config = structuredClone(pageData.mainConfig || legacyMainConfig(textarea.defaultValue));
  let revision = pageData.revision;
  let saved = JSON.stringify({ config, text: textarea.defaultValue });
- let lastText = textarea.defaultValue, timer, pending = false, compiled = null;
+ let timer, pending = false, compiled = null;
  let originalLimit = 100, previewLimit = 100, endpointLimit = 50, targetLimit = 100;
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
  let endpointDirty = false, originalInitialValue = '', saving = false;
@@ -17,19 +17,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
  const state = (message, kind = '') => { el('saveStatus').textContent = message; el('saveStatus').className = 'save-state ' + kind; };
  const snapshot = () => JSON.stringify({ config, text: textarea.value });
- function syncText() {
-  if (lastText === textarea.value) return;
-  // Match exact content only. Editing a row explicitly keeps its identity; a bulk replacement
-  // cannot safely infer whether a changed line is an edit or a different node.
-  const byContent = new Map();
-  for (const node of config.originals) {
-   if (!byContent.has(node.content)) byContent.set(node.content, []);
-   byContent.get(node.content).push(node);
-  }
-  config.originals = mainLines(textarea.value).map(content => byContent.get(content)?.shift() || { id: mainId(), content });
-  lastText = textarea.value;
- }
- function remember() { syncText(); undo.push(snapshot()); if (undo.length > 10) undo.shift(); el('undoButton').disabled = false; }
+ function syncText() { textarea.value = originalText(config); }
  function persistDraft() {
   try { const current = snapshot(); if (current === saved) localStorage.removeItem(draftKey); else localStorage.setItem(draftKey, current); }
   catch { /* Editing remains available when local storage is full or disabled. */ }
@@ -42,15 +30,8 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   state(message, 'dirty'); pending = true; clearTimeout(timer); timer = setTimeout(flush, 250);
  }
  function changed(message) {
-  textarea.value = originalText(config); lastText = textarea.value;
+  textarea.value = originalText(config);
   render(); dirty(message);
- }
- function restore(value) {
-  const next = typeof value === 'string' ? JSON.parse(value) : value;
-  const nextConfig = normalizeMainConfig(next.config || next, { allowIncomplete: true });
-  config = nextConfig;
-  textarea.value = typeof next.text === 'string' ? next.text : originalText(config);
-  lastText = originalText(config); syncText(); render(); dirty('已载入，尚未保存');
  }
  function filteredOriginals() {
   const query = el('originalSearch').value.trim().toLowerCase();
@@ -75,10 +56,8 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('selectOriginals').setAttribute('aria-pressed', String(allSelected));
   el('selectOriginals').title = allSelected ? '取消当前筛选结果的选择，保留筛选外的选择' : '选择全部筛选结果，包括尚未显示的节点';
  }
- function removeOriginals(ids) {
-  remember(); config.originals = config.originals.filter(node => !ids.has(node.id));
-  config.endpoints.forEach(endpoint => { endpoint.originalIds = endpoint.originalIds.filter(id => !ids.has(id)); if (!endpoint.originalIds.length) endpoint.enabled = false; });
-  changed('节点已删除，关联已清理，尚未保存');
+ async function removeOriginals(ids) {
+  await publishOriginals(config.originals.filter(node => !ids.has(node.id)));
  }
  function summary(content, name) {
   const info = mainNodeSummary(content);
@@ -117,7 +96,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('validationStatus').classList.toggle('has-issues', Boolean(problem));
   el('validationStatus').querySelector('span').textContent = problem ? '配置需要修正' : '配置检查通过';
   el('validationIssues').textContent = problem;
-  el('mainPreviewNote').textContent = problem || `预览：${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 + ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。保存将统一发布全部原始节点和优选配置；导出当前编辑结果，不受筛选影响。`;
+  el('mainPreviewNote').textContent = problem || `预览：${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 + ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。基于已生效原始节点生成；优选修改保存后发布。导出当前预览，不受筛选影响。`;
   renderPreview();
  }
  function updateMetadata(metadata) {
@@ -129,6 +108,9 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  }
  function updateSaveButton() {
   saveButton.disabled = saving;
+  el('originalSection').querySelectorAll('button').forEach(button => { if (saving) { button.dataset.wasDisabled = String(button.disabled); button.disabled = true; } else if (button.dataset.wasDisabled !== undefined) { button.disabled = button.dataset.wasDisabled === 'true'; delete button.dataset.wasDisabled; } });
+  for (const id of ['originalForm', 'batchForm']) el(id).querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = saving; });
+  if (!saving) { el('undoButton').disabled = !undo.length; updateOriginalSelection(); }
   saveButton.querySelector('span').textContent = saving ? '保存中' : '保存全部并生效';
   saveButton.setAttribute('aria-busy', String(saving));
  }
@@ -137,17 +119,33 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   flush(); syncText();
   if (snapshot() === saved) { state('已同步'); return; }
   try { compileMainConfig(config); } catch (error) { state(error.message, 'error'); showToast(error.message); return; }
-  const savingSnapshot = snapshot();
   saving = true; updateSaveButton(); state('正在保存…');
   try {
-   const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': 'save-config', 'X-Node2Link-Revision': revision }, body: JSON.stringify(config), cache: 'no-store' });
+   const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': 'save-endpoints', 'X-Node2Link-Revision': revision }, body: JSON.stringify({ endpoints: config.endpoints }), cache: 'no-store' });
    const data = await response.json();
    if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
-   saved = savingSnapshot; revision = data.metadata.revision; updateMetadata(data.metadata);
+   saved = JSON.stringify({ config: data.config, text: originalText(data.config) }); revision = data.metadata.revision; updateMetadata(data.metadata);
    flush(); syncText(); persistDraft();
    state(snapshot() === saved ? '刚刚已保存' : '保存期间有新修改，请再次保存', snapshot() === saved ? '' : 'dirty');
-   showToast('主订阅已保存，原始与扩展节点已生效');
+   showToast('优选配置已保存，扩展节点已生效');
   } catch (error) { state('保存失败：' + error.message, 'error'); showToast(error.message); }
+  finally { saving = false; updateSaveButton(); }
+ }
+ async function publishOriginals(originals, { historyRevision, remember = true } = {}) {
+  if (saving) { showToast('正在保存，请稍后重试'); return false; }
+  const previous = structuredClone(config.originals);
+  saving = true; updateSaveButton(); el('originalSaveStatus').textContent = '正在保存原始节点…';
+  try {
+   const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': historyRevision ? 'restore-originals' : 'save-originals', 'X-Node2Link-Revision': revision }, body: JSON.stringify(historyRevision ? { revision: historyRevision } : { originals }), cache: 'no-store' });
+   const data = await response.json(); if (!response.ok) throw new Error(data.message || '保存失败');
+   if (remember && JSON.stringify(previous) !== JSON.stringify(data.config.originals)) { undo.push(previous); if (undo.length > 10) undo.shift(); }
+   config = { ...data.config, endpoints: reconcileMainEndpoints(config.endpoints, data.config.originals, previous) };
+   saved = JSON.stringify({ config: data.config, text: originalText(data.config) });
+   revision = data.metadata.revision; syncText(); render(); persistDraft(); updateMetadata(data.metadata);
+   state(snapshot() === saved ? '已同步' : '优选配置有未保存更改', snapshot() === saved ? '' : 'dirty');
+   el('originalSaveStatus').textContent = '原始节点已保存'; showToast('原始节点已生效，已发布的扩展节点同步更新');
+   return true;
+  } catch (error) { el('originalSaveStatus').textContent = '保存失败：' + error.message; showToast(error.message); return false; }
   finally { saving = false; updateSaveButton(); }
  }
  function renderTargets() {
@@ -207,7 +205,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    const next = { ...config, endpoints: editingEndpoint ? config.endpoints.map(endpoint => endpoint.id === editingEndpoint ? added[0] : endpoint) : [...config.endpoints, ...added] };
    normalizeMainConfig({ ...config, endpoints: added });
    normalizeMainConfig(next, { allowIncomplete: true });
-   remember(); config = next; changed('优选地址已加入，尚未保存'); el('endpointDialog').close();
+   config = next; changed('优选地址已加入，尚未保存'); el('endpointDialog').close();
   } catch (error) { el('endpointError').textContent = error.message; }
  });
  for (const id of ['closeEndpoint', 'cancelEndpoint']) el(id).addEventListener('click', closeEndpoint);
@@ -226,7 +224,6 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   if (button.dataset.editEndpoint) return openEndpoint(button.dataset.editEndpoint);
   const id = button.dataset.deleteEndpoint || button.dataset.toggleEndpoint;
   if (button.dataset.deleteEndpoint && !await askMainConfirm('删除此优选地址？保存后会移除它生成的全部扩展节点。', '删除优选地址')) return;
-  remember();
   if (button.dataset.deleteEndpoint) config.endpoints = config.endpoints.filter(item => item.id !== id);
   else { const endpoint = config.endpoints.find(item => item.id === id); if (endpoint) endpoint.enabled = !endpoint.enabled; }
   changed();
@@ -240,7 +237,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    editingOriginal = id; originalInitialValue = node.content; el('originalValue').value = node.content; el('originalError').textContent = ''; el('originalDialog').showModal(); return;
   }
   const count = config.endpoints.filter(endpoint => endpoint.originalIds.includes(id)).length;
-  if (!await askMainConfirm(`删除此原始节点？它关联 ${count} 条优选地址，保存后将移除对应扩展节点；没有剩余关联的地址会停用。`, '删除原始节点')) return;
+  if (!await askMainConfirm(`删除此原始节点？它关联 ${count} 条优选地址，立即移除对应扩展节点；没有剩余关联的地址会停用。`, '删除原始节点')) return;
   removeOriginals(new Set([id]));
  });
  el('originalList').addEventListener('change', event => {
@@ -259,19 +256,19 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const ids = new Set(selectedOriginals);
   if (!ids.size) return;
   const associations = config.endpoints.reduce((sum, endpoint) => sum + endpoint.originalIds.filter(id => ids.has(id)).length, 0);
-  if (!await askMainConfirm(`删除所选 ${ids.size} 项（含筛选外已选节点）及 ${associations} 个优选关联？没有剩余关联的地址会停用。可撤销，保存后生效。`, '批量删除原始节点')) return;
+  if (!await askMainConfirm(`删除所选 ${ids.size} 项（含筛选外已选节点）及 ${associations} 个优选关联？没有剩余关联的地址会停用。删除后立即生效。`, '批量删除原始节点')) return;
   removeOriginals(ids);
  });
- el('originalForm').addEventListener('submit', event => {
+ el('originalForm').addEventListener('submit', async event => {
   event.preventDefault();
   const value = el('originalValue').value.trim();
   if (!value || /[\r\n\0]/.test(value)) { el('originalError').textContent = '请填写一条完整链接'; return; }
-  remember(); const node = config.originals.find(item => item.id === editingOriginal);
-  if (node) node.content = value;
-  changed('原始节点已修改，关联关系已保留，尚未保存'); el('originalDialog').close();
+  if (await publishOriginals(config.originals.map(node => node.id === editingOriginal ? { ...node, content: value } : node))) el('originalDialog').close();
+  else el('originalError').textContent = '保存未完成，输入已保留。请根据提示修正后重试。';
  });
  const originalHasChanges = () => el('originalDialog').open && el('originalValue').value !== originalInitialValue;
  async function closeOriginal() {
+  if (saving) return;
   if (originalHasChanges() && !await askMainConfirm('放弃本次原始节点编辑？已应用的节点和优选关联不受影响。', '放弃节点编辑')) return;
   el('originalDialog').close();
  }
@@ -295,6 +292,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  el('copyNodeView').addEventListener('click', () => copyText(el('nodeViewValue').value).then(() => showToast('节点已复制')).catch(() => showToast('复制失败')));
  el('addOriginals').addEventListener('click', () => { flush(); el('batchValue').value = ''; el('batchError').textContent = ''; el('batchDialog').showModal(); });
  async function closeBatch() {
+  if (saving) return;
   if (el('batchValue').value.trim() && !await askMainConfirm('放弃本次输入的节点？', '放弃批量添加')) return;
   el('batchDialog').close();
  }
@@ -312,63 +310,96 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const removed = config.originals.filter(node => !ids.has(node.id)).length;
   const associations = config.endpoints.reduce((count, endpoint) => count + endpoint.originalIds.filter(id => !ids.has(id)).length, 0);
   if (replace && !await askMainConfirm(`覆盖后保留 ${originals.length} 项，移除 ${removed} 个旧节点及 ${associations} 个优选关联。没有剩余关联的地址会停用。修改名称或 UUID 请取消并使用逐条编辑。是否覆盖？`, '覆盖原始节点')) return;
-  const endpoints = config.endpoints.map(endpoint => { const originalIds = endpoint.originalIds.filter(id => ids.has(id)); return { ...endpoint, originalIds, enabled: endpoint.enabled && originalIds.length > 0 }; });
-  try {
-   const next = normalizeMainConfig({ ...config, originals, endpoints: replace ? endpoints : config.endpoints }, { allowIncomplete: true });
-   remember(); config = next; changed('批量修改已应用，尚未保存'); el('batchDialog').close();
-  } catch (error) { el('batchError').textContent = error.message; }
+  if (await publishOriginals(originals)) el('batchDialog').close();
+  else el('batchError').textContent = '保存未完成，输入已保留。请根据提示修正后重试。';
  });
  el('restoreInput').addEventListener('change', async event => {
   const file = event.target.files[0]; event.target.value = ''; if (!file) return;
   try {
-   if (file.size > 24 * 1024 * 1024) throw new Error('备份文件不能超过 24 MB');
-   const text = await file.text();
-   const next = file.name.toLowerCase().endsWith('.json') ? JSON.parse(text) : { config: legacyMainConfig(text), text };
-   normalizeMainConfig(next.config || next, { allowIncomplete: true });
-   if (!await askMainConfirm('将备份载入编辑器？JSON 恢复完整配置；文本文件载入为原始节点并清空优选配置。可撤销，保存后生效。', '载入备份')) return;
-   remember(); restore(next);
+   if (!file.name.toLowerCase().endsWith('.txt')) throw new Error('请选择 TXT 格式的原始节点文件');
+   if (file.size > 20 * 1024 * 1024) throw new Error('TXT 文件不能超过 20 MB');
+   const lines = mainLines(await file.text()); if (!lines.length) throw new Error('TXT 文件中没有节点');
+   if (!await askMainConfirm('从 TXT 覆盖原始节点并立即生效？相同链接保留关联，被移除节点的关联会清理。', '导入原始节点')) return;
+   const byContent = new Map();
+   config.originals.forEach(node => { if (!byContent.has(node.content)) byContent.set(node.content, []); byContent.get(node.content).push(node); });
+   await publishOriginals(lines.map(content => byContent.get(content)?.shift() || { id: mainId(), content }));
   } catch (error) { showToast(error.message); }
+ });
+ let historyVersion = null, historyRequest = 0;
+ async function historyRequestJSON(action, body = {}) {
+  const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': action }, body: JSON.stringify(body), cache: 'no-store' });
+  const data = await response.json(); if (!response.ok) throw new Error(data.message || '读取失败'); return data;
+ }
+ async function loadHistoryVersion() {
+  const serial = ++historyRequest; el('originalHistoryMessage').className = 'main-help';
+  historyVersion = null; el('restoreOriginalVersion').disabled = true; el('downloadOriginalVersion').disabled = true;
+  el('originalHistoryContent').value = ''; el('originalHistoryMessage').textContent = '正在读取版本…';
+  try {
+   const selected = el('originalHistorySelect').value;
+   const data = await historyRequestJSON('get-original-version', { revision: selected });
+   if (serial !== historyRequest) return;
+   historyVersion = { ...data, revision: selected };
+   el('originalHistoryContent').value = originalText({ originals: data.originals });
+   el('originalHistoryMessage').textContent = data.originals.length + ' 项原始节点 / 订阅源';
+   el('restoreOriginalVersion').disabled = JSON.stringify(data.originals) === JSON.stringify(config.originals);
+   el('downloadOriginalVersion').disabled = false;
+  } catch (error) { if (serial === historyRequest) { el('originalHistoryMessage').className = 'main-error'; el('originalHistoryMessage').textContent = error.message; } }
+ }
+ el('originalHistorySelect').addEventListener('change', loadHistoryVersion);
+ el('closeOriginalHistory').addEventListener('click', () => el('originalHistoryDialog').close());
+ el('downloadOriginalVersion').addEventListener('click', () => { if (historyVersion) download(originalText({ originals: historyVersion.originals }), 'txt', 'originals-' + historyVersion.metadata.savedAt.replace(/[^0-9]/g, '')); });
+ el('restoreOriginalVersion').addEventListener('click', async () => {
+  const version = historyVersion; if (!version) return;
+  if (!await askMainConfirm('将原始节点还原为所选版本并立即生效？当前优选配置保留，失效关联会清理。', '还原原始节点')) return;
+  if (await publishOriginals(null, { historyRevision: version.revision })) el('originalHistoryDialog').close();
  });
  Object.assign(window, {
   saveContent,
-  downloadBackup() { flush(); syncText(); download(snapshot(), 'json'); showToast('主订阅配置备份已下载'); },
-  async loadLastSavedVersion() {
+  async openOriginalHistory() {
+   ++historyRequest; el('originalHistoryMessage').className = 'main-help';
+   el('originalHistorySelect').innerHTML = ''; el('originalHistoryContent').value = '';
+   el('originalHistoryMessage').textContent = '正在读取历史版本…';
+   historyVersion = null; el('restoreOriginalVersion').disabled = true; el('downloadOriginalVersion').disabled = true;
+   el('originalHistoryDialog').showModal();
    try {
-    const response = await fetch(location.href, { method: 'POST', headers: { 'X-Node2Link-Action': 'get-backup' }, cache: 'no-store' });
-    const data = await response.json(); if (!response.ok) throw new Error(data.message);
-    if (!await askMainConfirm('载入上次保存的完整主订阅配置？当前内容可以撤销恢复，保存后生效。', '载入上次版本')) return;
-    remember(); restore({ config: data.config || legacyMainConfig(data.content), text: data.config ? originalText(data.config) : data.content });
-   } catch (error) { showToast(error.message); }
+    const data = await historyRequestJSON('list-original-history');
+    el('originalHistoryHelp').textContent = '最近 ' + data.limit + ' 个保存版本（包含最新版本），可在设置中调整。';
+    el('originalHistorySelect').innerHTML = data.versions.map((version, index) => '<option value="' + esc(version.revision) + '">' + (index === 0 ? '最新 · ' : '') + esc(new Date(version.savedAt).toLocaleString()) + ' · ' + version.count + ' 项</option>').join('');
+    if (data.versions.length) await loadHistoryVersion(); else el('originalHistoryMessage').textContent = '暂无保存版本';
+   } catch (error) { el('originalHistoryMessage').textContent = error.message; }
   },
-  undoLastChange() { if (!undo.length) return; const previous = undo.pop(); restore(previous); el('undoButton').disabled = !undo.length; },
+  async undoLastChange() {
+   if (!undo.length || saving) return;
+   if (!await askMainConfirm('撤销上次原始节点修改并立即保存？当前优选配置保留，已删除的关联不会恢复。', '撤销原始节点修改')) return;
+   if (await publishOriginals(undo.at(-1), { remember: false })) { undo.pop(); el('undoButton').disabled = !undo.length; }
+  },
   openDedupePreview() {
    flush(); const lines = mainLines(textarea.value);
    el('previewBefore').textContent = lines.length; el('previewDuplicates').textContent = lines.length - new Set(lines).size; el('previewAfter').textContent = new Set(lines).size;
    el('applyDedupeButton').disabled = [...new Set(lines)].join('\n') === textarea.value; el('toolDialog').showModal();
   },
   closeToolDialog() { el('toolDialog').close(); },
-  applyDedupe() {
-   remember(); const keep = new Map(), replacements = new Map();
-   config.originals.forEach(node => { if (keep.has(node.content)) replacements.set(node.id, keep.get(node.content).id); else keep.set(node.content, node); });
-   config.originals = [...keep.values()];
-   config.endpoints.forEach(endpoint => { endpoint.originalIds = [...new Set(endpoint.originalIds.map(id => replacements.get(id) || id))]; });
-   changed('整理结果尚未保存'); el('toolDialog').close();
+  async applyDedupe() {
+   const keep = new Map();
+   config.originals.forEach(node => { if (!keep.has(node.content)) keep.set(node.content, node); });
+   if (await publishOriginals([...keep.values()])) el('toolDialog').close();
   }
  });
- textarea.addEventListener('input', () => dirty());
  document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!document.querySelector('dialog[open]')) saveContent(); } });
  window.addEventListener('pagehide', flush);
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
- window.addEventListener('beforeunload', event => { flush(); if (snapshot() !== saved || originalHasChanges() || endpointDirty && el('endpointDialog').open || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
+ window.addEventListener('beforeunload', event => { flush(); if (saving || snapshot() !== saved || originalHasChanges() || endpointDirty && el('endpointDialog').open || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
  updateMetadata(pageData.savedMetadata); render(); updateSaveButton();
- if (textarea.value !== textarea.defaultValue) dirty();
- else {
+ syncText();
+ {
   try {
    const draft = localStorage.getItem(draftKey);
    if (draft && draft !== saved && draft !== textarea.value) {
-    askMainConfirm('发现尚未保存的主订阅草稿，是否恢复？', '恢复本地草稿').then(accepted => {
+    askMainConfirm('恢复本地优选草稿？原始节点以已生效列表为准；如旧草稿包含不同的原始节点，将下载为 TXT 供导入。', '恢复本地草稿').then(accepted => {
      if (!accepted) { localStorage.removeItem(draftKey); return; }
-     try { let value; try { value = JSON.parse(draft); } catch { value = { config: legacyMainConfig(draft), text: draft }; } restore(value); }
+     try { let value; try { value = JSON.parse(draft); } catch { value = { config: legacyMainConfig(draft), text: draft }; } const draftConfig = normalizeMainConfig(value.config || value, { allowIncomplete: true });
+      if (JSON.stringify(draftConfig.originals) !== JSON.stringify(config.originals)) download(originalText(draftConfig), 'txt', 'recovered-originals');
+      config.endpoints = reconcileMainEndpoints(draftConfig.endpoints, config.originals, draftConfig.originals); changed('已恢复优选草稿，尚未保存'); }
      catch (error) { showToast('草稿载入失败：' + error.message); }
     });
    }

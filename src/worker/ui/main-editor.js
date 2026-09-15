@@ -1,4 +1,6 @@
 export const mainEditorStyles = `
+ .preferred-workspace{border-top:6px solid var(--bg,#f3f6f3)}.preferred-toolbar{background:var(--green-soft);padding:16px 18px!important}.preferred-toolbar strong{font-size:14px}.preferred-toolbar p{margin:5px 0}.preferred-toolbar .save-state{font-size:12px}
+ .main-section .main-filter>.main-selection{margin-left:auto}
  .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
  #content[hidden]{display:none!important}
  .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable;align-content:start}
@@ -51,27 +53,28 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<div class="main-section" id="originalSection">
-  <div class="main-section-head"><h3>原始节点</h3><p>批量添加只加入编辑区；完成配置后，点击顶部“保存全部并生效”统一发布。修改名称、参数或 UUID 请用节点上的“编辑”，保留优选关联。</p></div>
+  <div class="main-section-head"><h3>原始节点</h3><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。</p></div>
   <div class="editor-actions">
    <input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
    <div class="main-action-group" role="group" aria-label="整理与恢复">
     <button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
     <button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
-    <button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
+    <button class="tool-button" type="button" onclick="openOriginalHistory()"><i data-lucide="history"></i><span>历史版本</span></button>
    </div>
    <div class="main-action-group" role="group" aria-label="导入与导出">
-    <button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
-    <button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
+    <button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="arrow-down-to-line"></i><span>导入 TXT</span></button>
     <button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button>
    </div>
    <div class="main-action-group" role="group" aria-label="添加节点">
     <button id="addOriginals" class="tool-button" type="button"><i data-lucide="plus"></i><span>批量添加</span></button>
    </div>
-   <input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
+   <input id="restoreInput" type="file" accept=".txt,text/plain" hidden>
   </div>
   <div class="main-filter"><div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div></div>
   <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
+ <div class="preferred-workspace" aria-label="优选配置与生成结果">
+  <div class="editor-toolbar preferred-toolbar"><div><strong>优选配置与生成结果</strong><p class="main-help">保存本区域的优选地址与关联，更新扩展节点。</p><span id="saveStatus" class="save-state" role="status">已同步</span></div><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="保存全部优选地址与关联并更新扩展节点" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div>
  <div class="main-section" id="endpointSection">
   <div class="main-section-head"><h3>优选域名 / IP 与端口</h3><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div>
   <div class="editor-actions"><button id="addEndpoint" class="tool-button" type="button"><i data-lucide="plus"></i><span>添加优选地址</span></button></div>
@@ -84,11 +87,11 @@ export function renderMainEditorSections() {
    <div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div>
   </div>
   <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
- </div>`;
+ </div></div>`;
 }
 
 export function renderMainEditorDialogs() {
- return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加和覆盖都必须填写节点。删除节点请使用列表中的删除操作。追加保留当前节点。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。这两个按钮只更新编辑区，可撤销；点击页面顶部“保存全部并生效”后才写入服务器并更新订阅。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖编辑区</button><button type="submit" value="append" class="primary-button">追加到编辑区</button></div></form></dialog>
+ return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加和覆盖都必须填写节点。删除节点请使用列表中的删除操作。追加保留当前节点。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。追加或覆盖后立即保存并更新订阅，可在历史版本中查看和还原原始节点。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖并生效</button><button type="submit" value="append" class="primary-button">追加并生效</button></div></form></dialog>
  <dialog id="nodeViewDialog" class="main-edit-dialog" aria-labelledby="nodeViewTitle"><div class="dialog-head"><strong id="nodeViewTitle">完整链接</strong><button id="closeNodeView" type="button" class="icon-button" aria-label="关闭">×</button></div><div class="dialog-body"><div class="main-field"><label for="nodeViewValue">完整链接</label><textarea id="nodeViewValue" readonly spellcheck="false"></textarea></div><div class="dialog-actions"><button id="copyNodeView" class="primary-button" type="button">复制链接</button></div></div></dialog>
  <dialog id="endpointDialog" class="main-edit-dialog" aria-labelledby="endpointTitle">
   <div class="dialog-head"><strong id="endpointTitle">添加优选地址</strong><button id="closeEndpoint" class="icon-button" type="button" aria-label="关闭">×</button></div>
@@ -99,8 +102,9 @@ export function renderMainEditorDialogs() {
    <p class="main-help">选择要应用的原始节点。这里只生成链接，不进行协议适用性判断或测速。</p>
    <div class="main-filter"><input id="targetSearch" type="search" aria-label="搜索关联节点" placeholder="搜索原始节点"><button id="selectTargets" type="button" class="tool-button">选择筛选结果</button><button id="clearTargets" type="button" class="tool-button">清空选择</button></div>
    <div id="endpointTargets" class="main-targets"></div><div class="main-progress"><span id="targetCount"></span><button id="moreTargets" type="button" class="tool-button" hidden>显示更多</button></div>
-   <p id="endpointError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelEndpoint" class="tool-button" type="button">取消</button><button class="primary-button" type="submit">应用到编辑区</button></div><p class="main-help">应用仅更新编辑区；点击页面顶部“保存全部并生效”后，原始节点和优选配置一起发布。</p>
+   <p id="endpointError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelEndpoint" class="tool-button" type="button">取消</button><button class="primary-button" type="submit">应用到编辑区</button></div><p class="main-help">应用仅更新优选编辑区；点击本区域顶部“保存全部并生效”后发布扩展节点。</p>
   </form>
  </dialog>
- <dialog id="originalDialog" class="main-edit-dialog" aria-labelledby="originalTitle"><div class="dialog-head"><strong id="originalTitle">编辑原始节点</strong><button id="closeOriginal" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="originalForm" class="dialog-body"><div class="main-field"><label for="originalValue">完整链接</label><textarea id="originalValue" spellcheck="false" required></textarea><small class="main-help">修改连接信息、密码或名称后，原有优选地址关联仍然保留。</small></div><p id="originalError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelOriginal" type="button" class="tool-button">取消</button><button type="submit" class="primary-button">应用修改</button></div></form></dialog>`;
+ <dialog id="originalHistoryDialog" class="main-edit-dialog" aria-labelledby="originalHistoryTitle"><div class="dialog-head"><strong id="originalHistoryTitle">原始节点历史版本</strong><button id="closeOriginalHistory" type="button" class="icon-button" aria-label="关闭">×</button></div><div class="dialog-body"><p id="originalHistoryHelp" class="main-help"></p><div class="main-field"><label for="originalHistorySelect">保存版本</label><select id="originalHistorySelect"></select></div><p id="originalHistoryMessage" class="main-help" role="status"></p><div class="main-field"><label for="originalHistoryContent">原始节点明细（每行一条完整链接）</label><textarea id="originalHistoryContent" readonly spellcheck="false" style="min-height:220px"></textarea></div><p class="main-help">还原后原始节点立即生效，保留当前优选配置并清理失效关联。已删除的关联不会随节点还原；还原操作也会记录为新版本。</p><div class="dialog-actions"><button id="downloadOriginalVersion" type="button" class="tool-button" disabled>下载 TXT</button><button id="restoreOriginalVersion" type="button" class="primary-button" disabled>还原此版本</button></div></div></dialog>
+ <dialog id="originalDialog" class="main-edit-dialog" aria-labelledby="originalTitle"><div class="dialog-head"><strong id="originalTitle">编辑原始节点</strong><button id="closeOriginal" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="originalForm" class="dialog-body"><div class="main-field"><label for="originalValue">完整链接</label><textarea id="originalValue" spellcheck="false" required></textarea><small class="main-help">应用修改后立即保存。原有优选关联保留，已生效的扩展节点同步更新。</small></div><p id="originalError" class="main-error" role="alert"></p><div class="dialog-actions"><button id="cancelOriginal" type="button" class="tool-button">取消</button><button type="submit" class="primary-button">应用修改</button></div></form></dialog>`;
 }

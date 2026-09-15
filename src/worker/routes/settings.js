@@ -9,7 +9,7 @@ export async function saveSettings(request, env, currentSettings) {
 	if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
 	try {
 		const payload = await readJSONBody(request, BODY_LIMITS.settings);
-		const allowedSections = ['display', 'entry', 'conversion', 'clients'];
+		const allowedSections = ['display', 'entry', 'conversion', 'clients', 'history'];
 		const section = payload.section === undefined || payload.section === 'all'
 			? 'all' : allowedSections.includes(payload.section) ? payload.section : '';
 		if (!section) return jsonResponse({ ok: false, message: '设置分区不存在' }, 400);
@@ -69,6 +69,11 @@ export async function saveSettings(request, env, currentSettings) {
 			settings.displayFormats = displayFormats;
 		}
 
+  if (section === 'history' || section === 'all') {
+   const limit = payload.originalHistoryLimit ?? currentSettings.originalHistoryLimit ?? 3;
+   if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('历史版本数量必须为 1 到 20 的整数');
+   settings.originalHistoryLimit = limit;
+  }
 		settings.savedAt = new Date().toISOString();
 		await saveSettingsSections(env.KV, settings, section);
 		return jsonResponse({ ok: true, section, settings });
