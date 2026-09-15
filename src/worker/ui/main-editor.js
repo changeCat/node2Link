@@ -14,8 +14,9 @@ export const mainEditorStyles = `
  .preferred-sections>.main-section{border:1px solid #cbd8d0;border-radius:8px;background:var(--surface);padding:18px;overflow:hidden}
  .preferred-sections .main-section-head{flex-direction:row;align-items:center;gap:12px 20px;margin:-18px -18px 16px;padding:15px 18px;border-bottom:1px solid #d7e2da;background:#f0f6f2;border-left:3px solid var(--green)}
  .preview-heading-tools{display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;flex-basis:100%;min-width:0}
- .main-section-heading{flex:1 1 360px;min-width:0;display:grid;gap:6px}
- .preferred-sections .main-section-head>.main-action-group{flex:0 1 auto;margin-left:auto;max-width:100%}
+ .main-section-heading{flex:1 1 100%;min-width:0;display:grid;gap:6px}
+ .preferred-sections .main-section-heading p{max-width:none;overflow-wrap:anywhere}
+ .preferred-sections .main-section-head>.main-action-group{flex:1 1 100%;margin-left:auto;max-width:100%}
  .preferred-sections h4{display:flex;align-items:center;gap:8px;margin:0;font-size:15px}
  .preferred-sections h4 svg{width:16px;height:16px;color:var(--green);flex:none}
  @media(max-width:760px){#originalSection.main-workspace,.preferred-toolbar{padding:14px}.preferred-sections{padding:10px;gap:10px}.preferred-sections>.main-section{padding:14px}.preferred-sections .main-section-head{margin:-14px -14px 14px;padding:13px 14px}.preferred-save-actions{width:100%}}
