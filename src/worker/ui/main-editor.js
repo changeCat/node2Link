@@ -10,11 +10,12 @@ export const mainEditorStyles = `
  .preferred-toolbar h3{margin:0;font-size:18px}.preferred-toolbar p{margin:7px 0 0;max-width:70ch}
  .preferred-save-actions{margin-left:auto;display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px}
  .preferred-save-actions .save-state{font-size:12px}
- .preferred-sections{display:grid;gap:14px;padding:18px;background:var(--surface-soft)}
- .preferred-sections>.main-section{border:1px solid var(--line-soft);border-radius:8px;background:var(--surface);padding:18px}
- .preferred-sections h4{margin:0;font-size:14px}
- @media(max-width:760px){#originalSection.main-workspace,.preferred-toolbar{padding:14px}.preferred-sections{padding:10px;gap:10px}.preferred-sections>.main-section{padding:14px}.preferred-save-actions{width:100%}}
- .main-section .main-filter>.main-selection{margin-left:auto}
+ .preferred-sections{display:grid;gap:20px;padding:20px;background:#eef2ee}
+ .preferred-sections>.main-section{border:1px solid #cbd8d0;border-radius:8px;background:var(--surface);padding:18px;overflow:hidden}
+ .preferred-sections .main-section-head{margin:-18px -18px 16px;padding:15px 18px;border-bottom:1px solid #d7e2da;background:#f0f6f2;border-left:3px solid var(--green)}
+ .preferred-sections h4{display:flex;align-items:center;gap:8px;margin:0;font-size:15px}
+ .preferred-sections h4 svg{width:16px;height:16px;color:var(--green);flex:none}
+ @media(max-width:760px){#originalSection.main-workspace,.preferred-toolbar{padding:14px}.preferred-sections{padding:10px;gap:10px}.preferred-sections>.main-section{padding:14px}.preferred-sections .main-section-head{margin:-14px -14px 14px;padding:13px 14px}.preferred-save-actions{width:100%}}
  .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
  #content[hidden]{display:none!important}
  .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable;align-content:start}
@@ -25,13 +26,16 @@ export const mainEditorStyles = `
  .main-action-group+.main-action-group{border-left:1px solid var(--line);padding-left:18px}
  .main-section-head p{margin:0;max-width:90ch}
  .editor-toolbar>.primary-button{margin-left:auto;flex-shrink:0}
- .main-section .editor-actions>.main-toolbar-search{flex:1 1 180px;width:180px;max-width:280px;margin-right:auto}
+ .original-management-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px 18px;max-width:100%}
+ .original-filter-controls{display:flex;align-items:center;gap:10px;flex:1 1 540px;min-width:0;margin-right:auto}
+ .original-filter-controls>.main-toolbar-search{flex:1 1 200px;width:200px;max-width:260px}
+ .original-filter-controls>.main-selection{flex:none;flex-wrap:nowrap;justify-content:flex-start}
  .main-section .main-toolbar-filters{flex:1 1 330px;justify-content:flex-start;margin:0 auto 0 0}
  .main-section .main-toolbar-filters>input{flex:0 1 240px;width:240px;max-width:100%}
  .main-section .main-filter{justify-content:flex-start;gap:10px}
  .endpoint-port-field{display:flex;flex-direction:column;gap:6px;min-width:0}
  .endpoint-port-field select,.endpoint-port-field input{width:100%}
- @media(max-width:760px){.main-section .editor-actions>.main-toolbar-search{flex-basis:100%;width:100%;max-width:100%}.main-section .main-toolbar-filters>input{flex:1 1 160px}.main-toolbar-filters{max-width:100%}}
+ @media(max-width:760px){.original-filter-controls{flex-wrap:wrap;flex-basis:100%}.original-filter-controls>.main-toolbar-search{flex-basis:100%;width:100%;max-width:100%}.original-filter-controls>.main-selection{flex-wrap:wrap}.main-section .main-toolbar-filters>input{flex:1 1 160px}.main-toolbar-filters{max-width:100%}}
  @media(max-width:760px){.main-action-group{flex-basis:100%}.main-action-group+.main-action-group{border-left:0;padding-left:0}.main-selection{width:100%}}
  @media(max-width:760px){.main-scroll{max-height:360px}}
  .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
@@ -69,7 +73,10 @@ export function renderMainEditorSections() {
  return `<section class="main-section main-workspace" id="originalSection" aria-labelledby="originalSectionTitle">
   <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑及删除后立即保存并生效。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。</p></div>
   <div class="editor-actions">
-   <input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
+   <div class="original-filter-controls"><input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
+    <div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
+   </div>
+   <div class="original-management-actions">
    <div class="main-action-group" role="group" aria-label="整理与恢复">
     <button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
     <button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
@@ -82,21 +89,21 @@ export function renderMainEditorSections() {
    <div class="main-action-group" role="group" aria-label="添加节点">
     <button id="addOriginals" class="tool-button" type="button"><i data-lucide="plus"></i><span>批量添加</span></button>
    </div>
+   </div>
    <input id="restoreInput" type="file" accept=".txt,text/plain" hidden>
   </div>
-  <div class="main-filter"><div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div></div>
   <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </section>
  <section class="main-workspace preferred-workspace" aria-labelledby="preferredSectionTitle">
   <div class="editor-toolbar preferred-toolbar"><div><div class="main-workspace-title"><h3 id="preferredSectionTitle">优选配置与生成结果</h3><span class="main-scope-badge">统一保存</span></div><p class="main-help">配置优选地址与原始节点的关联，预览后统一发布扩展节点。</p></div><div class="preferred-save-actions"><span id="saveStatus" class="save-state" role="status">已同步</span><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="保存全部优选地址与关联并更新扩展节点" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div></div>
  <div class="preferred-sections">
  <section class="main-section" id="endpointSection" aria-labelledby="endpointSectionTitle">
-  <div class="main-section-head"><h4 id="endpointSectionTitle">优选域名 / IP 与端口</h4><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div>
+  <div class="main-section-head"><h4 id="endpointSectionTitle"><i data-lucide="settings" aria-hidden="true"></i>优选域名 / IP 与端口</h4><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div>
   <div class="editor-actions"><button id="addEndpoint" class="tool-button" type="button"><i data-lucide="plus"></i><span>添加优选地址</span></button></div>
   <div id="endpointList" class="main-scroll" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </section>
  <section class="main-section" id="previewSection" aria-labelledby="previewSectionTitle">
-  <div class="main-section-head"><h4 id="previewSectionTitle">生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div>
+  <div class="main-section-head"><h4 id="previewSectionTitle"><i data-lucide="layers-3" aria-hidden="true"></i>生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div>
   <div class="editor-actions">
    <div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
    <div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div>
