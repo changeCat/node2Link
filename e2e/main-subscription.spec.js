@@ -137,6 +137,54 @@ test('endpoint validation retains input, and failed saves keep the current subsc
  expect(await subscription(page)).toHaveLength(3);
 });
 
+test('both save actions share pending state and preserve edits made during publication', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com');
+ let releaseSave, markStarted;
+ const gate = new Promise(resolve => { releaseSave = resolve; });
+ const started = new Promise(resolve => { markStarted = resolve; });
+ await page.route('http://127.0.0.1:8790/', async route => {
+  if (route.request().headers()['x-node2link-action'] !== 'save-config') return route.continue();
+  markStarted(); await gate; await route.continue();
+ });
+ try {
+  await page.locator('#previewSection [data-save-main]').click();
+  await started;
+  for (const button of await page.locator('[data-save-main]').all()) {
+   await expect(button).toBeDisabled();
+   await expect(button).toHaveText('保存中');
+  }
+  await setOriginals(page, first.replace('#Main-HK', '#During-save'), 'append');
+ } finally { releaseSave(); }
+ await expect(page.locator('#saveStatus')).toHaveText('保存期间有新修改，请再次保存');
+ expect(await subscription(page)).toHaveLength(4);
+ for (const button of await page.locator('[data-save-main]').all()) {
+  await expect(button).toBeEnabled();
+  await expect(button).toHaveText('保存并生效');
+ }
+ await page.unroute('http://127.0.0.1:8790/');
+ await save(page);
+ expect(await subscription(page)).toHaveLength(5);
+});
+
+test('closing a changed original requires a choice and keeps its associations', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ await page.locator('[data-edit-original]').first().click();
+ const edited = first.replace('uuid@', 'edited-uuid@');
+ await page.locator('#originalValue').fill(edited);
+ await page.locator('#closeOriginal').click();
+ await expect(page.locator('#mainConfirmTitle')).toHaveText('放弃节点编辑');
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '取消', exact: true }).click();
+ await expect(page.locator('#originalValue')).toHaveValue(edited);
+ await page.locator('#originalValue').press('Escape');
+ await expect(page.locator('#mainConfirmTitle')).toHaveText('放弃节点编辑');
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#originalDialog')).not.toBeVisible();
+ await expect(page.locator('#content')).toHaveValue(first + '\n' + second);
+ await expect(page.locator('#duplicateCount')).toHaveText('2');
+ await page.locator('[data-edit-original]').first().click();
+ await page.locator('#cancelOriginal').click();
+ await expect(page.locator('#mainConfirmDialog')).not.toBeVisible();
+});
 test('compact cards, append, independent endpoints, exports and replacement cleanup', async ({ page }) => {
  await setOriginals(page, first, 'append');
  await setOriginals(page, second, 'append');

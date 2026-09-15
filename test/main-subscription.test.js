@@ -94,6 +94,22 @@ test('stable identities survive original and endpoint edits, disabled addresses 
  assert.equal(compileMainConfig(config).nodes.length, 2);
 });
 
+test('extension identities distinguish hyphenated original and endpoint ID pairs', async () => {
+ const config = {
+  version: 2,
+  originals: [{ id: 'a-b', content: raw }, { id: 'a', content: other }],
+  endpoints: [
+   { ...endpoint, id: 'c', originalIds: ['a-b'] },
+   { ...endpoint, id: 'b-c', originalIds: ['a'] }
+  ]
+ };
+ const compiled = compileMainConfig(config);
+ assert.equal(new Set(compiled.nodes.map(node => node.id)).size, compiled.nodes.length);
+ const kv = new MemoryKV();
+ await saveMainRecord(kv, config);
+ assert.equal((await readMainRecord(kv)).mainNodes.length, 4);
+});
+
 test('invalid bindings or malformed encoded templates reject publication, while raw legacy content stays readable', () => {
  const config = fixtureConfig();
  config.endpoints[0].originalIds.push('missing');

@@ -4,13 +4,14 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  const el = id => document.getElementById(id);
  const esc = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
  const textarea = el('content');
+ const saveButtons = [...document.querySelectorAll('[data-save-main]')];
  let config = structuredClone(pageData.mainConfig || legacyMainConfig(textarea.defaultValue));
  let revision = pageData.revision;
  let saved = JSON.stringify({ config, text: textarea.defaultValue });
  let lastText = textarea.defaultValue, timer, pending = false, compiled = null;
  let originalLimit = 100, previewLimit = 100, endpointLimit = 50, targetLimit = 100;
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
- let endpointDirty = false;
+ let endpointDirty = false, originalInitialValue = '', saving = false;
  const selectedOriginals = new Set();
  const undo = [];
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
@@ -116,7 +117,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('validationStatus').classList.toggle('has-issues', Boolean(problem));
   el('validationStatus').querySelector('span').textContent = problem ? '配置需要修正' : '配置检查通过';
   el('validationIssues').textContent = problem;
-  el('mainPreviewNote').textContent = problem || `预览：${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 + ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。保存并生效后用于订阅和分享选择。`;
+  el('mainPreviewNote').textContent = problem || `预览：${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 + ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。保存后用于订阅和分享；导出当前编辑结果，不受筛选影响。`;
   renderPreview();
  }
  function updateMetadata(metadata) {
@@ -126,24 +127,30 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const url = URL.createObjectURL(new Blob([text], { type: extension === 'json' ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' }));
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = `node2link-main-${kind}-${new Date().toISOString().slice(0, 10)}.${extension}`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
  }
+ function updateSaveButtons() {
+  for (const button of saveButtons) {
+   button.disabled = saving;
+   button.querySelector('span').textContent = saving ? '保存中' : '保存并生效';
+   button.setAttribute('aria-busy', String(saving));
+  }
+ }
  async function saveContent() {
-  const button = el('saveButton');
-  if (button.disabled) return;
+  if (saving) return;
   flush(); syncText();
   if (snapshot() === saved) { state('已同步'); return; }
   try { compileMainConfig(config); } catch (error) { state(error.message, 'error'); showToast(error.message); return; }
-  const saving = snapshot();
-  button.disabled = true; button.querySelector('span').textContent = '保存中'; state('正在保存…');
+  const savingSnapshot = snapshot();
+  saving = true; updateSaveButtons(); state('正在保存…');
   try {
    const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': 'save-config', 'X-Node2Link-Revision': revision }, body: JSON.stringify(config), cache: 'no-store' });
    const data = await response.json();
    if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
-   saved = saving; revision = data.metadata.revision; updateMetadata(data.metadata);
+   saved = savingSnapshot; revision = data.metadata.revision; updateMetadata(data.metadata);
    flush(); syncText(); persistDraft();
    state(snapshot() === saved ? '刚刚已保存' : '保存期间有新修改，请再次保存', snapshot() === saved ? '' : 'dirty');
    showToast('主订阅已保存，原始与扩展节点已生效');
   } catch (error) { state('保存失败：' + error.message, 'error'); showToast(error.message); }
-  finally { button.disabled = false; button.querySelector('span').textContent = '保存并生效'; }
+  finally { saving = false; updateSaveButtons(); }
  }
  function renderTargets() {
   const query = el('targetSearch').value.trim().toLowerCase();
@@ -221,7 +228,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const node = config.originals.find(item => item.id === id); if (!node) return;
   if (button.dataset.viewOriginal) return viewNode(node.content);
   if (button.dataset.editOriginal) {
-   editingOriginal = id; el('originalValue').value = node.content; el('originalError').textContent = ''; el('originalDialog').showModal(); return;
+   editingOriginal = id; originalInitialValue = node.content; el('originalValue').value = node.content; el('originalError').textContent = ''; el('originalDialog').showModal(); return;
   }
   const count = config.endpoints.filter(endpoint => endpoint.originalIds.includes(id)).length;
   if (!await askMainConfirm(`删除此原始节点？它关联 ${count} 条优选地址，保存后将移除对应扩展节点；没有剩余关联的地址会停用。`, '删除原始节点')) return;
@@ -254,7 +261,13 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   if (node) node.content = value;
   changed('原始节点已修改，关联关系已保留，尚未保存'); el('originalDialog').close();
  });
- for (const id of ['closeOriginal', 'cancelOriginal']) el(id).addEventListener('click', () => el('originalDialog').close());
+ const originalHasChanges = () => el('originalDialog').open && el('originalValue').value !== originalInitialValue;
+ async function closeOriginal() {
+  if (originalHasChanges() && !await askMainConfirm('放弃本次原始节点编辑？已应用的节点和优选关联不受影响。', '放弃节点编辑')) return;
+  el('originalDialog').close();
+ }
+ for (const id of ['closeOriginal', 'cancelOriginal']) el(id).addEventListener('click', closeOriginal);
+ el('originalDialog').addEventListener('cancel', event => { event.preventDefault(); closeOriginal(); });
  el('mainPreview').addEventListener('click', event => {
   const button = event.target.closest('[data-copy-main], [data-view-main]');
   const node = compiled?.nodes.find(node => node.id === (button?.dataset.copyMain || button?.dataset.viewMain));
@@ -337,9 +350,9 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!document.querySelector('dialog[open]')) saveContent(); } });
  window.addEventListener('pagehide', flush);
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
- window.addEventListener('beforeunload', event => { flush(); if (snapshot() !== saved || endpointDirty && el('endpointDialog').open || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
+ window.addEventListener('beforeunload', event => { flush(); if (snapshot() !== saved || originalHasChanges() || endpointDirty && el('endpointDialog').open || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
  el('endpointPorts').innerHTML = [...MAIN_HTTPS_PORTS, ...MAIN_HTTP_PORTS].map(port => `<option value="${port}">${MAIN_HTTPS_PORTS.includes(port) ? 'HTTPS' : 'HTTP'}</option>`).join('');
- updateMetadata(pageData.savedMetadata); render(); el('saveButton').disabled = false;
+ updateMetadata(pageData.savedMetadata); render(); updateSaveButtons();
  if (textarea.value !== textarea.defaultValue) dirty();
  else {
   try {

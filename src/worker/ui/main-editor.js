@@ -3,8 +3,14 @@ export const mainEditorStyles = `
  #content[hidden]{display:none!important}
  .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable;align-content:start}
  .node-heading{display:flex;align-items:flex-start;gap:8px}.node-heading>div{min-width:0;flex:1}.node-heading input{flex:none;margin:3px 0;accent-color:var(--green)}
- #originalSection>.editor-actions{justify-content:flex-end;margin:10px 0;gap:7px}
- #originalSection>.editor-actions .primary-button{margin-left:0}
+ .main-section>.editor-actions{justify-content:flex-start;gap:10px 18px;margin:14px 0}
+ .main-section>.editor-actions .primary-button{margin-left:0}
+ .main-action-group,.main-selection{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+ .main-action-group+.main-action-group{border-left:1px solid var(--line);padding-left:18px}
+ .main-section-head p{margin:0;max-width:90ch}
+ .main-section .main-filter{gap:10px}
+ .main-section .main-filter>input{flex:1 1 240px}
+ @media(max-width:760px){.main-action-group{flex-basis:100%}.main-action-group+.main-action-group{border-left:0;padding-left:0}.main-selection{width:100%}}
  @media(max-width:760px){.main-scroll{max-height:360px}}
  .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
  .node-grid .main-node-row{display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px;min-width:0}
@@ -17,11 +23,11 @@ export const mainEditorStyles = `
  .main-section{padding:18px;border-top:1px solid var(--line)}
  .main-section h3{margin:0;font-size:15px}.main-section p,.main-help{color:var(--muted);font-size:12px;line-height:1.65}
  .main-section-head,.main-row-actions,.main-filter,.main-progress{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
- .main-section-head{justify-content:space-between;margin-bottom:10px}.main-filter{margin:10px 0}.main-progress{margin-top:10px;color:var(--muted);font-size:12px}
- .main-section .main-row-actions,.main-section .main-filter:has(#selectOriginals){justify-content:flex-end}
- .main-section-head>.main-row-actions,.main-section-head>button,.main-section .main-progress>button{margin-left:auto}
+ .main-section-head{flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:10px}.main-filter{margin:10px 0}.main-progress{margin-top:10px;color:var(--muted);font-size:12px}
+ .main-section .main-row-actions{justify-content:flex-end}
+ .main-section .main-progress>button{margin-left:auto}
  .main-section .main-row-actions>.main-badge{margin-right:auto}
- .main-filter input{flex:1;min-width:120px}.main-filter select{max-width:100%}
+ .main-filter input{flex:1;min-width:120px}.main-filter select{width:auto;max-width:100%}
  .main-section input,.main-section select,.main-edit-dialog input:not([type=checkbox]),.main-edit-dialog textarea{padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font:inherit;min-width:0}
  .main-section input,.main-section select{font-size:12px}.main-node-row,.main-endpoint-row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
  .main-node-row>div:first-child,.main-endpoint-row>div:first-child{flex:1;min-width:0}.main-node-row strong,.main-endpoint-row strong{font-size:12px;overflow-wrap:anywhere}
@@ -38,31 +44,38 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<div class="main-section" id="originalSection">
-  <div class="main-section-head"><h3>原始节点</h3></div>
-<div class="editor-actions">
-  <button id="addOriginals" class="primary-button" type="button">批量添加</button>
-										<button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
-										<button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
-										<button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
-										<button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
-										<button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
-										<input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
-  <button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button>
-										<button class="primary-button" id="saveButton" type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存并生效</span></button>
-									</div>
-  <p>批量添加节点或订阅源；修改名称、参数或重置 UUID 请使用“编辑”，保留已有优选关联。</p>
-  <div class="main-filter"><input id="originalSearch" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点"></div>
-  <div class="main-filter"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
+  <div class="main-section-head"><h3>原始节点</h3><p>批量添加只加入编辑区；“保存并生效”统一发布原始节点和优选配置。修改名称、参数或 UUID 请用节点上的“编辑”，保留优选关联。</p></div>
+  <div class="editor-actions">
+   <div class="main-action-group" role="group" aria-label="添加与发布">
+    <button id="addOriginals" class="tool-button" type="button"><i data-lucide="plus"></i><span>批量添加</span></button>
+    <button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存并生效</span></button>
+   </div>
+   <div class="main-action-group" role="group" aria-label="整理与恢复">
+    <button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
+    <button class="tool-button" id="undoButton" type="button" onclick="undoLastChange()" disabled><i data-lucide="undo-2"></i><span>撤销</span></button>
+    <button class="tool-button" type="button" onclick="loadLastSavedVersion()"><i data-lucide="history"></i><span>上次版本</span></button>
+   </div>
+   <div class="main-action-group" role="group" aria-label="导入与导出">
+    <button class="tool-button" type="button" onclick="document.getElementById('restoreInput').click()"><i data-lucide="upload"></i><span>导入</span></button>
+    <button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
+    <button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button>
+   </div>
+   <input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
+  </div>
+  <div class="main-filter"><input id="originalSearch" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点"><div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div></div>
   <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
- <div class="main-section">
-  <div class="main-section-head"><h3>优选域名 / IP 与端口</h3><button id="addEndpoint" class="primary-button" type="button">添加优选地址</button></div>
-  <p>填写优选地址，并勾选要扩展的原始节点。协议适用性由你确认；生成时仅替换连接地址、端口及名称，保留 Host、SNI、路径等其他参数。</p>
+ <div class="main-section" id="endpointSection">
+  <div class="main-section-head"><h3>优选域名 / IP 与端口</h3><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div>
+  <div class="editor-actions"><button id="addEndpoint" class="tool-button" type="button"><i data-lucide="plus"></i><span>添加优选地址</span></button></div>
   <div id="endpointList" class="main-scroll" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>
- <div class="main-section">
-  <div class="main-section-head"><h3>生成结果预览</h3><div class="main-row-actions"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button><button class="primary-button" type="button" onclick="saveContent()">保存并生效</button></div></div>
-  <p id="mainPreviewNote" role="status"></p>
+ <div class="main-section" id="previewSection">
+  <div class="main-section-head"><h3>生成结果预览</h3><p id="mainPreviewNote" role="status"></p></div>
+  <div class="editor-actions">
+   <div class="main-action-group" role="group" aria-label="发布配置"><button class="primary-button" data-save-main type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存并生效</span></button></div>
+   <div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div>
+  </div>
   <div class="main-filter"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
   <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
  </div>`;

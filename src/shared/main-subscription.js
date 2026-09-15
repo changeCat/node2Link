@@ -213,7 +213,7 @@ export function compileMainConfig(input) {
    const nameSuffix = endpoint.label || `${endpoint.address}:${endpoint.port}`;
    const extendedName = `${name}-${nameSuffix}`;
    try {
-    add(extendMainNode(original.content, endpoint, extendedName), { ...base, id: `main-extension-${original.id}-${endpoint.id}`, kind: 'extension', endpointId: endpoint.id, name: extendedName });
+    add(extendMainNode(original.content, endpoint, extendedName), { ...base, id: `main-extension-${original.id}:${endpoint.id}`, kind: 'extension', endpointId: endpoint.id, name: extendedName });
    } catch (error) { fail(`${name} → ${nameSuffix}：${error.message}`); }
   }
  }
