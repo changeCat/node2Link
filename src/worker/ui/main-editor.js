@@ -44,7 +44,7 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<div class="main-section" id="originalSection">
-  <div class="main-section-head"><h3>原始节点</h3><p>批量添加只加入编辑区；上下两个保存入口功能相同，均发布全部原始节点和优选配置。修改名称、参数或 UUID 请用节点上的“编辑”，保留优选关联。</p></div>
+  <div class="main-section-head"><h3>原始节点</h3><p>批量添加只加入编辑区；完成配置后，在生成结果预览处统一保存。修改名称、参数或 UUID 请用节点上的“编辑”，保留优选关联。</p></div>
   <div class="editor-actions">
    <div class="main-action-group" role="group" aria-label="整理与恢复">
     <button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
@@ -56,9 +56,8 @@ export function renderMainEditorSections() {
     <button class="tool-button" type="button" onclick="downloadBackup()"><i data-lucide="download"></i><span>备份 JSON</span></button>
     <button id="exportOriginals" class="tool-button" type="button">导出原始 TXT</button>
    </div>
-   <div class="main-action-group" role="group" aria-label="添加与发布">
+   <div class="main-action-group" role="group" aria-label="添加节点">
     <button id="addOriginals" class="tool-button" type="button"><i data-lucide="plus"></i><span>批量添加</span></button>
-    <button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button>
    </div>
    <input id="restoreInput" type="file" accept=".json,.txt,.conf,.list,application/json,text/plain" hidden>
   </div>
@@ -74,7 +73,7 @@ export function renderMainEditorSections() {
   <div class="main-section-head"><h3>生成结果预览</h3><p id="mainPreviewNote" role="status"></p></div>
   <div class="editor-actions">
    <div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button">导出扩展 TXT</button><button id="exportMain" class="tool-button" type="button">导出全部 TXT</button></div>
-   <div class="main-action-group" role="group" aria-label="发布配置"><button class="primary-button" data-save-main type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div>
+   <div class="main-action-group" role="group" aria-label="发布配置"><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div>
   </div>
   <div class="main-filter"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div>
   <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>

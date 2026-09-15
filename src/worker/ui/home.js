@@ -8,7 +8,7 @@ import { renderTopbar, renderFavicon } from './pages.js';
 
 function renderConverterEntry(label, address) {
 	const safeAddress = escapeHTML(address);
-	return `<div class="converter-entry"><div class="converter-entry-head"><b>${escapeHTML(label)}</b><button class="icon-button" type="button" data-converter-url="${safeAddress}" aria-label="复制完整转换后端地址" title="复制完整地址"><i data-lucide="copy"></i></button></div><details class="converter-address"><summary title="${safeAddress}" aria-label="展开或收起完整转换后端地址"><code>${safeAddress}</code><i data-lucide="chevron-down"></i></summary><code class="converter-full-url">${safeAddress}</code></details></div>`;
+	return `<div class="converter-entry"><b>${escapeHTML(label)}</b><code class="converter-full-url">${safeAddress}</code></div>`;
 }
 
 export function renderMainPage(request, runtime, record) {
@@ -33,7 +33,7 @@ export function renderMainPage(request, runtime, record) {
 			: converterListHTML;
 		const converterWarningHTML = runtime.converterMode !== 'custom'
 			? '<div class="converter-warning" role="note"><strong>注意：当前未启用自建转换</strong><p>需要转换时将使用默认服务，该服务可读取订阅来源和节点信息。</p><a href="/settings">配置自定义转换</a></div>'
-			: !runtime.customConverterURL ? '<div class="converter-warning" role="note"><strong>自建转换地址未配置或无效</strong><p>需要转换时将回退默认服务。</p><a href="/settings">检查转换配置</a></div>' : '<div class="converter-warning" role="note"><strong>自定义不可用时回退默认</strong><p>默认服务可读取订阅来源和节点信息；回退原因与实际服务会写入通知。</p></div>';
+			: !runtime.customConverterURL ? '<div class="converter-warning" role="note"><strong>自建转换地址未配置或无效</strong><p>需要转换时将回退默认服务。</p><a href="/settings">检查转换配置</a></div>' : '';
 		const formats = runtime.displayFormats
 			.map((key) => SUBSCRIPTION_FORMAT_CATALOG.find((item) => item.key === key))
 			.filter(Boolean);
@@ -153,15 +153,7 @@ export function renderMainPage(request, runtime, record) {
 					.converter-list { display: flex; flex-direction: column; gap: 7px; }
 					.converter-entry { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 7px; }
 					.converter-entry b { justify-self: start; max-width: 100%; overflow-wrap: anywhere; padding: 2px 4px; border-radius: 4px; background: var(--green-soft); color: var(--green); font-size: 10px; text-align: center; }
-					.converter-entry-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-					.converter-entry-head .icon-button { width:28px; height:28px; }
-					.converter-address { min-width:0; border:1px solid var(--line-soft); border-radius:6px; background:var(--surface-soft); }
-					.converter-address summary { display:flex; align-items:center; gap:8px; padding:9px 10px; cursor:pointer; list-style:none; }
-					.converter-address summary::-webkit-details-marker { display:none; }
-					.converter-address summary code { flex:1; min-width:0; font-size:11px; }
-					.converter-address summary svg { flex:none; width:14px; height:14px; color:var(--muted); transition:transform .16s ease; }
-					.converter-address[open] summary svg { transform:rotate(180deg); }
-					.converter-address .converter-full-url { padding:10px; border-top:1px solid var(--line-soft); white-space:normal; overflow-wrap:anywhere; word-break:break-all; font-size:11px; line-height:1.7; user-select:all; }
+					.converter-entry .converter-full-url { min-width:0; padding:10px; border:1px solid var(--line-soft); border-radius:6px; background:var(--surface-soft); white-space:normal; overflow-wrap:anywhere; word-break:break-all; text-overflow:clip; font-size:11px; line-height:1.7; }
 					.converter-picker { padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 					.converter-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 					.converter-option { display: flex; align-items: flex-start; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
