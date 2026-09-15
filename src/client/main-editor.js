@@ -1,4 +1,5 @@
-import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, mainNodeSummary, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS, reconcileMainEndpoints } from '../shared/main-subscription.js';
+import { subscriptionCard, subscriptionNodeDetails } from './subscription-card.js';
+import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS, reconcileMainEndpoints } from '../shared/main-subscription.js';
 
 export function initializeMainEditor(pageData, { showToast, askMainConfirm, copyText }) {
  const el = id => document.getElementById(id);
@@ -53,7 +54,12 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const ids = new Set(config.originals.map(node => node.id));
   for (const id of selectedOriginals) if (!ids.has(id)) selectedOriginals.delete(id);
   const nodes = filteredOriginals();
-  el('originalList').innerHTML = nodes.slice(0, originalLimit).map(node => `<article class="main-node-row"><div class="node-heading"><input type="checkbox" data-select-original="${esc(node.id)}" aria-label="选择 ${esc(node.name)}" ${selectedOriginals.has(node.id) ? 'checked' : ''}><div>${summary(node.content, isMainSource(node.content) ? '订阅源' : node.name)}</div></div><div class="main-row-actions"><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-delete-original="${esc(node.id)}">删除</button></div></article>`).join('') || '<p class="main-empty">没有匹配的节点，可点击“批量添加”添加节点或订阅源。</p>';
+  el('originalList').innerHTML = nodes.slice(0, originalLimit).map(node => {
+   const details = subscriptionNodeDetails(node.content);
+   const checkbox = `<input type="checkbox" data-select-original="${esc(node.id)}" aria-label="选择 ${esc(node.name)}" ${selectedOriginals.has(node.id) ? 'checked' : ''}>`;
+   const actions = `<button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button danger-button" data-delete-original="${esc(node.id)}">删除</button>`;
+   return '<article class="main-node-row subscription-card">' + subscriptionCard({ ...details, name: isMainSource(node.content) ? '订阅源' : node.name, checkbox, actions }) + '</article>';
+  }).join('') || '<p class="main-empty">没有匹配的节点，可点击“批量添加”添加节点或订阅源。</p>';
   updateOriginalSelection();
   el('originalProgress').textContent = `${Math.min(originalLimit, nodes.length)} / ${nodes.length} 项`;
   el('moreOriginals').hidden = nodes.length <= originalLimit;
@@ -71,10 +77,6 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  async function removeOriginals(ids) {
   await publishOriginals(config.originals.filter(node => !ids.has(node.id)));
  }
- function summary(content, name) {
-  const info = mainNodeSummary(content);
-  return `<strong title="${esc(name)}">${esc(name)}</strong><small><span class="main-badge">${esc(info.protocol)}</span> ${esc(info.address)}</small>`;
- }
  function viewNode(content) { el('nodeViewValue').value = content; el('nodeViewDialog').showModal(); }
  function renderEndpoints() {
   const names = new Map(config.originals.map((node, index) => [node.id, mainNodeName(node.content, `主订阅节点 ${index + 1}`)]));
@@ -82,7 +84,9 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    const label = endpoint.label || endpoint.address;
    const address = (endpoint.address.includes(':') ? '[' + endpoint.address + ']' : endpoint.address) + ':' + endpoint.port;
    const association = '应用到 ' + endpoint.originalIds.length + ' 个节点：' + endpoint.originalIds.map(id => names.get(id) || '【原始节点已移除，请重新选择】').join('、');
-   return `<article class="main-node-row main-endpoint-row"><div><div class="endpoint-card-heading"><strong title="${esc(label)}">${esc(label)}</strong><span class="main-badge">${endpoint.enabled ? '启用' : '停用'}</span></div><small title="${esc(address)}">${esc(address)}</small><p title="${esc(association)}">${esc(association)}</p></div><div class="main-row-actions"><button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button" data-toggle-endpoint="${esc(endpoint.id)}">${endpoint.enabled ? '停用' : '启用'}</button><button type="button" class="tool-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button></div></article>`;
+   const actions = `<button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button" data-toggle-endpoint="${esc(endpoint.id)}">${endpoint.enabled ? '停用' : '启用'}</button><button type="button" class="tool-button danger-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button>`;
+   const detail = `<p class="subscription-card-detail" title="${esc(association)}">${esc(association)}</p>`;
+   return '<article class="main-node-row main-endpoint-row subscription-card">' + subscriptionCard({ name: label, protocol: endpoint.enabled ? '启用' : '停用', address, port: endpoint.port, detail, actions }) + '</article>';
   }).join('') || '<p class="main-empty">添加优选域名或 IP，并勾选要应用的原始节点。</p>';
   el('endpointProgress').textContent = `${Math.min(endpointLimit, config.endpoints.length)} / ${config.endpoints.length} 条`;
   el('moreEndpoints').hidden = config.endpoints.length <= endpointLimit;
@@ -91,7 +95,11 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const query = el('previewSearch').value.trim().toLowerCase();
   const kind = el('previewKind').value;
   const nodes = (compiled?.nodes || []).filter(node => (kind === 'all' || node.kind === kind) && (node.name + '\n' + node.content).toLowerCase().includes(query));
-  el('mainPreview').innerHTML = nodes.slice(0, previewLimit).map(node => `<article class="main-node-row"><div>${summary(node.content, node.name)}</div><div class="main-row-actions"><span class="main-badge">${node.kind === 'original' ? '原始' : '扩展'}</span><button type="button" class="tool-button" data-view-main="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-copy-main="${esc(node.id)}">复制</button></div></article>`).join('') || `<p class="main-empty">${compiled ? '没有符合条件的节点' : '请先修正配置问题，再预览生成结果'}</p>`;
+  el('mainPreview').innerHTML = nodes.slice(0, previewLimit).map(node => {
+   const actions = `<button type="button" class="tool-button" data-view-main="${esc(node.id)}">查看</button><button type="button" class="tool-button" data-copy-main="${esc(node.id)}">复制</button>`;
+   const footerNote = `<span class="main-badge">${node.kind === 'original' ? '原始' : '扩展'}</span>`;
+   return '<article class="main-node-row subscription-card">' + subscriptionCard({ ...subscriptionNodeDetails(node.content), name: node.name, footerNote, actions }) + '</article>';
+  }).join('') || `<p class="main-empty">${compiled ? '没有符合条件的节点' : '请先修正配置问题，再预览生成结果'}</p>`;
   el('previewProgress').textContent = `${Math.min(previewLimit, nodes.length)} / ${nodes.length} 个`;
   el('morePreview').hidden = nodes.length <= previewLimit;
   el('exportMain').disabled = !compiled;

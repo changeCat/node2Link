@@ -1,3 +1,5 @@
+import { subscriptionCardStyles } from './subscription-cards.js';
+
 export const mainEditorStyles = `
  .editor-overview{border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden;margin-bottom:18px}
  .main-workspace{border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 6px 24px rgba(26,46,35,.035);overflow:hidden}
@@ -23,7 +25,6 @@ export const mainEditorStyles = `
  .main-section [hidden],.main-edit-dialog [hidden]{display:none!important}
  #content[hidden]{display:none!important}
  .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable;align-content:start}
- .node-heading{display:flex;align-items:flex-start;gap:8px}.node-heading>div{min-width:0;flex:1}.node-heading input{flex:none;margin:3px 0;accent-color:var(--green)}
  .main-section>.editor-actions{justify-content:flex-end;gap:10px 18px;margin:14px 0}
  .main-section>.editor-actions .primary-button{margin-left:0}
  .main-action-group,.main-selection{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
@@ -42,13 +43,6 @@ export const mainEditorStyles = `
  @media(max-width:760px){.original-filter-controls{flex-wrap:wrap;flex-basis:100%}.original-filter-controls>.main-toolbar-search{flex-basis:100%;width:100%;max-width:100%}.original-filter-controls>.main-selection{flex-wrap:wrap}.main-section .main-toolbar-filters>input{flex:1 1 160px}.main-toolbar-filters{max-width:100%}}
  @media(max-width:760px){.main-action-group{flex-basis:100%}.main-action-group+.main-action-group{border-left:0;padding-left:0}.main-selection{width:100%}}
  @media(max-width:760px){.main-scroll{max-height:360px}}
- .node-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:8px}
- .node-grid .main-node-row{display:block;border:1px solid var(--line-soft);border-radius:6px;padding:10px;min-width:0}
- .node-grid strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .node-grid .main-row-actions{margin-top:8px;gap:6px}.node-grid .tool-button{height:28px;padding:0 8px}
- .node-grid .main-endpoint-row{display:flex;flex-direction:column;align-items:stretch;gap:0}
- .endpoint-card-heading{display:flex;align-items:center;gap:8px}.endpoint-card-heading strong{flex:1;min-width:0}.endpoint-card-heading .main-badge{flex:none}
- .node-grid .main-endpoint-row p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
  .endpoint-input-row{display:grid;grid-template-columns:minmax(0,2fr) 105px minmax(0,1fr) auto;gap:8px;margin-bottom:10px;align-items:start}
  .endpoint-input-row>button{align-self:end}
  .endpoint-input-row label{display:flex;flex-direction:column;gap:6px;min-width:0}
@@ -63,10 +57,8 @@ export const mainEditorStyles = `
  .main-section .main-row-actions>.main-badge{margin-right:auto}
  .main-filter input{flex:1;min-width:120px}.main-filter select{width:auto;max-width:100%}
  .main-section input,.main-section select,.main-edit-dialog input:not([type=checkbox]),.main-edit-dialog select,.main-edit-dialog textarea{padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);font:inherit;min-width:0}
- .main-section input,.main-section select{font-size:12px}.main-node-row,.main-endpoint-row{display:flex;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--line-soft)}
- .main-node-row>div:first-child,.main-endpoint-row>div:first-child{flex:1;min-width:0}.main-node-row strong,.main-endpoint-row strong{font-size:12px;overflow-wrap:anywhere}
- .main-node-row small,.main-endpoint-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/1.7 ui-monospace,monospace;color:var(--muted)}
- .main-endpoint-row p{margin:4px 0 0;overflow-wrap:anywhere}.main-empty{padding:12px 0}
+ .main-section input,.main-section select{font-size:12px}
+ .main-empty{padding:12px 0}
  .main-badge{display:inline-block;padding:2px 6px;border-radius:4px;background:var(--green-soft);color:var(--green);font-size:10px;font-weight:500}
  .main-edit-dialog{width:min(720px,calc(100% - 28px));max-height:90vh}.main-edit-dialog .dialog-body{text-align:left;max-height:calc(90vh - 65px);overflow:auto}
  .main-edit-dialog label{font-size:13px}.main-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}.main-field textarea{width:100%;min-height:100px;resize:vertical;font:12px/1.6 ui-monospace,monospace}
@@ -74,6 +66,7 @@ export const mainEditorStyles = `
  .main-target{display:flex;gap:10px;padding:10px;border-bottom:1px solid var(--line-soft);cursor:pointer}.main-target input{flex-shrink:0}.main-target span{min-width:0}.main-target small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
  .main-error{color:var(--danger);font-size:12px;overflow-wrap:anywhere}.main-edit-dialog .dialog-actions{justify-content:flex-end;gap:8px}
  @media(max-width:760px){.main-section{padding:14px}.main-edit-dialog .dialog-body{padding:14px}.main-field-row{grid-template-columns:90px minmax(0,1fr)}.main-row-actions{width:100%}.main-node-row .tool-button{padding:0 8px}.workspace-main .editor{height:190px;min-height:150px}}
+${subscriptionCardStyles}
 `;
 
 export function renderMainEditorSections() {
@@ -98,19 +91,19 @@ export function renderMainEditorSections() {
    </div>
    <input id="restoreInput" type="file" accept=".txt,text/plain" hidden>
   </div>
-  <div id="originalList" class="node-grid main-scroll" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
+  <div id="originalList" class="node-grid main-scroll subscription-card-grid" tabindex="0" aria-label="原始节点列表"></div><div class="main-progress"><span id="originalProgress"></span><button id="moreOriginals" class="tool-button" type="button" hidden>显示更多</button></div>
  </section>
  <section class="main-workspace preferred-workspace" aria-labelledby="preferredSectionTitle">
   <div class="editor-toolbar preferred-toolbar"><div><div class="main-workspace-title"><h3 id="preferredSectionTitle">优选配置与生成结果</h3><span class="main-scope-badge">统一保存</span></div><p class="main-help">配置优选地址与原始节点的关联，预览后统一发布扩展节点。</p></div><div class="preferred-save-actions"><span id="saveStatus" class="save-state" role="status">已同步</span><button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="保存全部优选地址与关联并更新扩展节点" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button></div></div>
  <div class="preferred-sections">
  <section class="main-section" id="endpointSection" aria-labelledby="endpointSectionTitle">
   <div class="main-section-head"><div class="main-section-heading"><h4 id="endpointSectionTitle"><i data-lucide="settings" aria-hidden="true"></i>优选域名 / IP 与端口</h4><p>添加地址并勾选要扩展的原始节点，保存后生效。仅替换连接地址、端口和名称，保留 Host、SNI、路径等参数；协议适用性需自行确认。</p></div><div class="main-action-group"><button id="addEndpoint" class="tool-button" type="button"><i data-lucide="plus"></i><span>添加优选地址</span></button></div></div>
-  <div id="endpointList" class="node-grid main-scroll" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
+  <div id="endpointList" class="node-grid main-scroll subscription-card-grid" tabindex="0" aria-label="优选地址列表"></div><div class="main-progress"><span id="endpointProgress"></span><button id="moreEndpoints" class="tool-button" type="button" hidden>显示更多</button></div>
  </section>
  <section class="main-section" id="previewSection" aria-labelledby="previewSectionTitle">
   <div class="main-section-head"><div class="main-section-heading"><h4 id="previewSectionTitle"><i data-lucide="layers-3" aria-hidden="true"></i>生成结果预览</h4><p id="mainPreviewNote" role="status"></p></div><div class="preview-heading-tools"><div class="main-filter main-toolbar-filters"><input id="previewSearch" type="search" aria-label="搜索生成结果" placeholder="搜索节点名称或内容"><select id="previewKind" aria-label="结果类型"><option value="all">原始与扩展</option><option value="original">仅原始</option><option value="extension" selected>仅扩展</option></select></div><div class="main-action-group" role="group" aria-label="导出生成结果"><button id="exportExtensions" class="tool-button" type="button"><i data-lucide="arrow-up-from-line" aria-hidden="true"></i><span>导出扩展 TXT</span></button><button id="exportMain" class="tool-button" type="button"><i data-lucide="arrow-up-from-line" aria-hidden="true"></i><span>导出全部 TXT</span></button></div></div></div>
 
-  <div id="mainPreview" class="node-grid main-scroll" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
+  <div id="mainPreview" class="node-grid main-scroll subscription-card-grid" tabindex="0" aria-label="生成节点列表"></div><div class="main-progress"><span id="previewProgress"></span><button id="morePreview" class="tool-button" type="button" hidden>显示更多</button></div>
  </section></div></section>`;
 }
 
