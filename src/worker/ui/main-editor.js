@@ -3,12 +3,12 @@ export const mainEditorStyles = `
  #content[hidden]{display:none!important}
  .main-scroll{max-height:480px;overflow:auto;overscroll-behavior:auto;scrollbar-gutter:stable;align-content:start}
  .node-heading{display:flex;align-items:flex-start;gap:8px}.node-heading>div{min-width:0;flex:1}.node-heading input{flex:none;margin:3px 0;accent-color:var(--green)}
- .main-section>.editor-actions{justify-content:flex-start;gap:10px 18px;margin:14px 0}
+ .main-section>.editor-actions{justify-content:flex-end;gap:10px 18px;margin:14px 0}
  .main-section>.editor-actions .primary-button{margin-left:0}
- .main-action-group,.main-selection{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+ .main-action-group,.main-selection{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
  .main-action-group+.main-action-group{border-left:1px solid var(--line);padding-left:18px}
  .main-section-head p{margin:0;max-width:90ch}
- .main-section .main-filter{gap:10px}
+ .main-section .main-filter{justify-content:flex-end;gap:10px}
  .main-section .main-filter>input{flex:1 1 240px}
  @media(max-width:760px){.main-action-group{flex-basis:100%}.main-action-group+.main-action-group{border-left:0;padding-left:0}.main-selection{width:100%}}
  @media(max-width:760px){.main-scroll{max-height:360px}}
