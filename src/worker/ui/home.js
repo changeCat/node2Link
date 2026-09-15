@@ -291,6 +291,7 @@ export function renderMainPage(request, runtime, record) {
 										<span><i data-lucide="clock-3"></i><span id="lastSaved" data-saved-at="${escapeHTML(savedMetadata.savedAt || "")}">读取中</span></span>
 									</div>
 
+								<button class="primary-button" id="saveButton" data-save-main type="button" onclick="saveContent()" title="统一保存全部原始节点和优选配置" disabled><i data-lucide="save"></i><span>保存全部并生效</span></button>
 								</div>
 								<div class="editor-insights" aria-label="内容统计">
 									<div class="metric"><span>原始节点</span><strong id="nodeCount">0</strong></div>

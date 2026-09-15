@@ -173,10 +173,21 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  }
  function addEndpointRow(endpoint = {}) {
   const row = document.createElement('div'); row.className = 'endpoint-input-row';
-  row.innerHTML = `<label>域名 / IP<input data-address required spellcheck="false" placeholder="cf.example.com" value="${esc(endpoint.address || '')}"></label><label>端口<input data-port type="number" min="1" max="65535" step="1" list="endpointPorts" required value="${esc(endpoint.port || 443)}"></label><label>备注<input data-label maxlength="160" placeholder="可选" value="${esc(endpoint.label || '')}"></label><button type="button" class="tool-button" data-remove-endpoint-row>移除</button>`;
+  const port = Number(endpoint.port || 443);
+  const customPort = ![...MAIN_HTTPS_PORTS, ...MAIN_HTTP_PORTS].includes(port);
+  const portOptions = (ports, label) => `<optgroup label="${label}">${ports.map(value => `<option value="${value}" ${value === port ? 'selected' : ''}>${value}</option>`).join('')}</optgroup>`;
+  row.innerHTML = `<label>域名 / IP<input data-address required spellcheck="false" placeholder="cf.example.com" value="${esc(endpoint.address || '')}"></label><div class="endpoint-port-field"><label>端口<select data-port-preset>${portOptions(MAIN_HTTPS_PORTS, 'Cloudflare HTTPS')}${portOptions(MAIN_HTTP_PORTS, 'Cloudflare HTTP')}<option value="custom" ${customPort ? 'selected' : ''}>自定义</option></select></label><input data-port aria-label="自定义端口" type="number" min="1" max="65535" step="1" ${customPort ? 'required' : 'hidden'} value="${esc(port)}"></div><label>备注<input data-label maxlength="160" placeholder="可选" value="${esc(endpoint.label || '')}"></label><button type="button" class="tool-button" data-remove-endpoint-row>移除</button>`;
   el('endpointRows').append(row);
   for (const button of el('endpointRows').querySelectorAll('[data-remove-endpoint-row]')) button.hidden = editingEndpoint !== '' || el('endpointRows').children.length === 1;
  }
+ el('endpointRows').addEventListener('change', event => {
+  if (!event.target.matches('[data-port-preset]')) return;
+  const input = event.target.closest('.endpoint-port-field').querySelector('[data-port]');
+  const custom = event.target.value === 'custom';
+  input.hidden = !custom; input.required = custom;
+  if (custom) input.focus(); else input.value = event.target.value;
+  endpointDirty = true;
+ });
  el('addEndpointRow').addEventListener('click', () => { addEndpointRow(); endpointDirty = true; });
  el('endpointRows').addEventListener('click', event => {
   if (!event.target.closest('[data-remove-endpoint-row]')) return;
@@ -349,7 +360,6 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  window.addEventListener('pagehide', flush);
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
  window.addEventListener('beforeunload', event => { flush(); if (snapshot() !== saved || originalHasChanges() || endpointDirty && el('endpointDialog').open || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
- el('endpointPorts').innerHTML = [...MAIN_HTTPS_PORTS, ...MAIN_HTTP_PORTS].map(port => `<option value="${port}">${MAIN_HTTPS_PORTS.includes(port) ? 'HTTPS' : 'HTTP'}</option>`).join('');
  updateMetadata(pageData.savedMetadata); render(); updateSaveButton();
  if (textarea.value !== textarea.defaultValue) dirty();
  else {

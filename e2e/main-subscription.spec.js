@@ -36,7 +36,7 @@ async function addEndpoints(page, addresses = 'cf.example.com\n203.0.113.10:8443
   const [address, port = '443'] = value.split(':');
   const row = page.locator('.endpoint-input-row').nth(i);
   await row.locator('[data-address]').fill(address);
-  await row.locator('[data-port]').fill(port);
+  await row.locator('[data-port-preset]').selectOption(port);
   await row.locator('[data-label]').fill('优选 ' + (i + 1));
  }
  await page.locator('#selectTargets').click();
@@ -118,6 +118,36 @@ test('complete JSON backup, undo, deletion and invalid drafts preserve main asso
  await expect(page.locator('#content')).toHaveValue(first + '\n' + second);
  await expect(page.locator('#duplicateCount')).toHaveText('2');
 });
+test('Cloudflare port groups include every official port and retain custom ports', async ({ page }) => {
+ await seed(page);
+ await page.locator('#addEndpoint').click();
+ const preset = page.locator('[data-port-preset]').first();
+ await expect(preset).toHaveValue('443');
+ expect(await preset.locator('optgroup[label="Cloudflare HTTPS"] option').evaluateAll(options => options.map(option => option.value))).toEqual(['443', '2053', '2083', '2087', '2096', '8443']);
+ expect(await preset.locator('optgroup[label="Cloudflare HTTP"] option').evaluateAll(options => options.map(option => option.value))).toEqual(['80', '8080', '8880', '2052', '2082', '2086', '2095']);
+ await page.locator('[data-address]').fill('cf.example.com');
+ await preset.selectOption('2096');
+ await page.locator('#endpointTargets input').first().check();
+ await page.locator('#endpointForm button[type="submit"]').click();
+ await expect(page.locator('#mainPreview')).toContainText('cf.example.com:2096');
+ expect(await subscription(page)).toEqual([first, second]);
+ await save(page);
+ expect((await subscription(page)).some(line => line.includes('@cf.example.com:2096?'))).toBe(true);
+ await page.locator('[data-edit-endpoint]').click();
+ await expect(preset).toHaveValue('2096');
+ await preset.selectOption('custom');
+ await page.getByRole('spinbutton', { name: '自定义端口' }).fill('12345');
+ await page.locator('#endpointForm button[type="submit"]').click();
+ await save(page); await page.reload();
+ await page.locator('[data-edit-endpoint]').click();
+ await expect(preset).toHaveValue('custom');
+ await expect(page.getByRole('spinbutton', { name: '自定义端口' })).toHaveValue('12345');
+ await page.screenshot({ path: test.info().outputPath('endpoint-ports.png'), fullPage: true });
+ await preset.selectOption('2087');
+ await page.locator('#endpointForm button[type="submit"]').click();
+ await save(page);
+ expect((await subscription(page)).some(line => line.includes('@cf.example.com:2087?'))).toBe(true);
+});
 test('endpoint validation retains input, and failed saves keep the current subscription', async ({ page }) => {
  await seed(page);
  await page.locator('#addEndpoint').click();
@@ -140,7 +170,7 @@ test('endpoint validation retains input, and failed saves keep the current subsc
 test('single save action preserves edits made during publication', async ({ page }) => {
  await seed(page); await addEndpoints(page, 'cf.example.com');
  await expect(page.locator('[data-save-main]')).toHaveCount(1);
- await expect(page.locator('#previewSection #saveButton')).toHaveCount(1);
+ await expect(page.locator('.editor-toolbar #saveButton')).toHaveCount(1);
  let releaseSave, markStarted;
  const gate = new Promise(resolve => { releaseSave = resolve; });
  const started = new Promise(resolve => { markStarted = resolve; });
@@ -149,7 +179,7 @@ test('single save action preserves edits made during publication', async ({ page
   markStarted(); await gate; await route.continue();
  });
  try {
-  await page.locator('#previewSection [data-save-main]').click();
+  await page.locator('.editor-toolbar [data-save-main]').click();
   await started;
   for (const button of await page.locator('[data-save-main]').all()) {
    await expect(button).toBeDisabled();
@@ -232,7 +262,7 @@ test('compact cards, append, independent endpoints, exports and replacement clea
 
 test('empty batches are rejected and bulk deletion preserves undo and associations', async ({ page }) => {
  await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
- await expect(page.locator('.editor-toolbar button')).toHaveCount(0);
+ await expect(page.locator('.editor-toolbar button')).toHaveCount(1);
  await expect(page.locator('#originalSection #undoButton')).toHaveCount(1);
  await expect(page.locator('#originalSection #saveButton')).toHaveCount(0);
  await expect(page.locator('#originalSection > .editor-actions #exportOriginals')).toHaveCount(1);
