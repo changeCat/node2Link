@@ -1,7 +1,7 @@
 import { subscriptionCardStyles } from './subscription-cards.js';
 
 export const generatedNodesStyles = `
-.api-layout{display:grid;grid-template-columns:minmax(520px,1.35fr) minmax(320px,1fr);gap:18px;align-items:start}
+.api-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
 .api-config{display:grid;gap:18px;min-width:0}.api-layout .panel{min-width:0;padding:20px}.api-layout h2{margin:0;font-size:18px}
 .api-section-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}.api-section-head p{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.65}
 .api-title{display:flex;align-items:center;gap:9px}.count-badge,.node-kind{display:inline-block;padding:3px 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface-soft);font-size:11px;color:var(--muted);white-space:nowrap}

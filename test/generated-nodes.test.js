@@ -271,7 +271,7 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.match(apiPageHTML, /API 订阅/);
 	assert.match(apiPageHTML, /生成预览/);
 	assert.match(apiPageHTML, /API 调用/);
- assert.match(apiPageHTML, /grid-template-columns:minmax\(520px,1\.35fr\) minmax\(320px,1fr\)/);
+ assert.match(apiPageHTML, /\.api-layout\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
  assert.match(apiPageHTML, /id="templatePickerDialog"/);
  assert.doesNotMatch(apiPageHTML, /id="nodeTemplate"|legacyTemplateSection|variable-guide|快照/);
 	assert.doesNotMatch(apiPageHTML, /class="placeholder-help"/);
