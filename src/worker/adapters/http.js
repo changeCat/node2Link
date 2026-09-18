@@ -65,6 +65,32 @@ export async function fetchWithTimeout(input, init = {}, timeoutMs = REMOTE_FETC
 	}
 }
 
+function isTransientStatus(status) {
+	return status === 429 || status >= 500;
+}
+
+function isTransientNetworkError(error) {
+	return error?.name === 'TypeError' || error?.name === 'NetworkError';
+}
+
+// Retry one immediately rejected/transient request, but never extend the
+// original deadline. A request which consumes the whole budget is not retried.
+export async function fetchWithTransientRetry(input, init = {}, timeoutMs = REMOTE_FETCH_TIMEOUT_MS, options = {}) {
+	const deadline = Date.now() + timeoutMs;
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const remaining = deadline - Date.now();
+		if (remaining <= 0) throw new DOMException('Remote request timed out', 'TimeoutError');
+		try {
+			const response = await fetchWithTimeout(input, init, remaining, { ...options, discardErrorBody: true });
+			if (attempt === 0 && isTransientStatus(response.status) && deadline > Date.now()) continue;
+			return response;
+		} catch (error) {
+			if (attempt === 0 && isTransientNetworkError(error) && deadline > Date.now()) continue;
+			throw error;
+		}
+	}
+}
+
 export function logRemote(event, input, fields = {}) {
 	let host = 'invalid';
 	try { host = new URL(input instanceof Request ? input.url : String(input)).hostname; } catch {}

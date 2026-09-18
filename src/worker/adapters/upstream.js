@@ -1,7 +1,7 @@
 import { BASE64_SUBSCRIPTION_USER_AGENT } from '../config.js';
 import { splitSubscriptionLinks, base64Decode, isValidBase64, isStructuredSubscription } from '../domain/nodes.js';
 import { mapConcurrent } from '../storage/kv.js';
-import { fetchWithTimeout, logRemote, REMOTE_FETCH_TIMEOUT_MS } from './http.js';
+import { fetchWithTransientRetry, logRemote, REMOTE_FETCH_TIMEOUT_MS } from './http.js';
 
 export async function getSUB(sources, request, appendUA, userAgentHeader, options = {}) {
  const urls = [...new Set(sources || [])].filter(Boolean);
@@ -37,5 +37,5 @@ export async function getUrl(request, targetUrl, appendUA, userAgentHeader, sign
  headers.set('User-Agent', BASE64_SUBSCRIPTION_USER_AGENT + ' ' + appendUA + ' (' + (userAgentHeader || 'unknown') + ')');
  headers.set('Accept', request.headers.get('Accept') || '*/*');
  const outgoing = new Request(targetUrl, { method: 'GET', headers, signal, redirect: 'follow' });
- return fetchWithTimeout(outgoing, {}, options.timeoutMs || REMOTE_FETCH_TIMEOUT_MS, options);
+ return fetchWithTransientRetry(outgoing, {}, options.timeoutMs || REMOTE_FETCH_TIMEOUT_MS, options);
 }

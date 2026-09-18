@@ -82,7 +82,7 @@ test('local picker skips upstream and full picker retains local nodes on upstrea
 		assert.equal(local.nodes[0].content, node);
 		const fullResponse = await request('/api/node-candidates');
 		const full = await fullResponse.json();
-		assert.equal(calls, 1);
+		assert.equal(calls, 2);
 		assert.equal(full.upstreamFailures, 1);
 		assert.deepEqual(full.nodes, local.nodes);
 		const timing = fullResponse.headers.get('Server-Timing');

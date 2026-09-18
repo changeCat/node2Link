@@ -140,7 +140,7 @@ test('upstream failure stops partial Base64 delivery without any converter reque
   return new Response('failed', { status: 503 });
  }, { source: node + '\nhttps://upstream.example.com/sub' });
  assert.equal(response.status, 502);
- assert.deepEqual(calls, ['upstream.example.com']);
+ assert.deepEqual(calls, ['upstream.example.com', 'upstream.example.com']);
  assert.doesNotMatch(await response.text(), /fake-secret/);
 });
 

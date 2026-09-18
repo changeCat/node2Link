@@ -64,6 +64,26 @@ test('upstream concurrency is bounded while input ordering is retained', async (
 	assert.deepEqual(result[0].map(line => Number(line.split('#')[1])), Array.from({ length: 10 }, (_, i) => i));
 });
 
+test('upstream retries only transient failures within the existing deadline', async () => {
+	let transientAttempts = 0;
+	const recovered = await getSUB(['https://source.example.com/sub'], new Request('https://app.example.com'), 'v2rayn', '', {
+		timeoutMs: 100,
+		fetchImpl: async () => ++transientAttempts === 1
+			? new Response('temporary', { status: 503 })
+			: new Response('trojan://password@edge.example.com:443#node')
+	});
+	assert.equal(transientAttempts, 2);
+	assert.equal(recovered.failures, 0);
+
+	let permanentAttempts = 0;
+	const rejected = await getSUB(['https://source.example.com/missing'], new Request('https://app.example.com'), 'v2rayn', '', {
+		timeoutMs: 100,
+		fetchImpl: async () => { permanentAttempts++; return new Response('missing', { status: 404 }); }
+	});
+	assert.equal(permanentAttempts, 1);
+	assert.equal(rejected.failures, 1);
+});
+
 test('explicit format parameters override missing and conflicting User-Agent', () => {
 	assert.equal(selectSubscriptionFormat(new URL('https://example.com?clash'), null), 'clash');
 	assert.equal(selectSubscriptionFormat(new URL('https://example.com?clash'), 'sing-box'), 'clash');

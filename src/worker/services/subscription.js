@@ -8,6 +8,10 @@ import { fetchCustomSubscription, fetchConvertedSubscription, converterOrigin, c
 import { queueTelegram, sendMessage, shouldSendSubscriptionNotification } from '../adapters/telegram.js';
 import { detectSubscriptionClient, queueSubscriptionRequestLog } from '../storage/request-logs.js';
 import { readGeneratedNodes } from '../storage/generated-nodes.js';
+import { canProxySources, createSourceProxyURL } from '../source-proxy.js';
+
+const MAX_PROXIED_SOURCES = 8;
+const MAX_PROXY_SOURCE_LIST_LENGTH = 7 * 1024;
 
 async function fetchConfiguredConversion(runtime, target, sourceURL, init, options) {
  const budget = options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS;
@@ -41,6 +45,7 @@ async function fetchConfiguredConversion(runtime, target, sourceURL, init, optio
 
 export async function serveSubscription(request, env, ctx, runtime, sourceData, access, includeWarp, subscriptionId = '', subscriptionName = '', options = {}) {
 		const startedAt = Date.now();
+		const requestDeadline = startedAt + (options.subscriptionTimeoutMs || options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS);
 		const userAgentHeader = request.headers.get('User-Agent');
 		const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : 'null';
 		const url = new URL(request.url);
@@ -83,6 +88,8 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		let conversionFailed = false;
 		let sourceCountComplete = true;
 		let conversionAudit = null;
+		let sourceMode = 'normalized';
+		let sourceSafetyFailure = '';
 		const converterNotices = [];
 		if (url.searchParams.has('clash')) appendUA = 'clash';
 		else if (url.searchParams.has('singbox')) appendUA = 'singbox';
@@ -95,6 +102,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			const durationMs = Date.now() - startedAt;
 			headers['X-Node2Link-Format'] = subscriptionFormat;
 			if (converterRoute) headers['X-Node2Link-Converter-Route'] = converterRoute;
+			if (sourceMode !== 'normalized') headers['X-Node2Link-Source-Mode'] = sourceMode;
 			headers['Server-Timing'] = 'subscription;dur=' + durationMs;
 			if (upstreamFailures) headers['X-Node2Link-Upstream-Failures'] = String(upstreamFailures);
 			if (shouldNotifySubscription) {
@@ -117,15 +125,40 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		};
 
 		const uniqueSubscriptionLinks = [...new Set(urls)].filter(item => item?.trim?.());
-		if (uniqueSubscriptionLinks.length > 0 && !directSource) {
+		const warpSources = includeWarp && env.WARP ? splitSubscriptionLinks(env.WARP) : [];
+		const warpLinks = warpSources.filter(item => /^https?:\/\//i.test(item));
+		const warpNodes = warpSources.filter(item => !/^https?:\/\//i.test(item));
+		const convertedRequest = subscriptionFormat !== 'base64' && !isSubConverterRequest;
+		const proxyInputs = [...new Set([...uniqueSubscriptionLinks, ...warpLinks])];
+		let useSourceProxy = false;
+		const proxyCandidate = convertedRequest && subscriptionFormat !== 'loon'
+			&& proxyInputs.length > 0 && proxyInputs.length <= MAX_PROXIED_SOURCES && canProxySources(env);
+		if (proxyCandidate) {
+			try {
+				const proxyURLs = await timed(options.timings, 'source_proxy', () => Promise.all(proxyInputs.map(source => createSourceProxyURL(env, url.origin, source))));
+				const proxiedSourceURL = sourceBaseURL + '?base64&source=direct|' + proxyURLs.join('|');
+				if (proxiedSourceURL.length <= MAX_PROXY_SOURCE_LIST_LENGTH) {
+					converterSourceURL = proxiedSourceURL;
+					useSourceProxy = true;
+					sourceCountComplete = false;
+					sourceMode = 'proxied';
+				} else console.log(JSON.stringify({ event: 'source_proxy.skipped', reason: 'source_list_too_long', sources: proxyInputs.length }));
+			} catch (error) {
+				console.log(JSON.stringify({ event: 'source_proxy.skipped', reason: 'unavailable', type: error?.name || 'Error', sources: proxyInputs.length }));
+			}
+		}
+		if (uniqueSubscriptionLinks.length > 0 && !directSource && !useSourceProxy) {
 			const subscriptionResponses = await timed(options.timings, 'upstream', () => getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader, options));
 			upstreamFailures = subscriptionResponses.failures || 0;
 			requestData += subscriptionResponses[0].join('\n');
-			if (subscriptionResponses[1]) { converterSourceURL += '|' + subscriptionResponses[1]; sourceCountComplete = false; }
+			if (subscriptionResponses[1]) {
+				if (subscriptionFormat === 'loon') sourceSafetyFailure = 'structured_source_unverifiable';
+				else { converterSourceURL += '|' + subscriptionResponses[1]; sourceCountComplete = false; }
+			}
 			if (subscriptionFormat === 'base64' && !isSubConverterRequest && !upstreamFailures && subscriptionResponses[1].includes('://')) {
 				const mixedInit = { signal: request.signal, headers: { 'User-Agent': BASE64_SUBSCRIPTION_USER_AGENT } };
 				const mixedConversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
-					runtime, 'base64', subscriptionResponses[1], mixedInit, options
+					runtime, 'base64', subscriptionResponses[1], mixedInit, { ...options, conversionTimeoutMs: Math.max(1, requestDeadline - Date.now()) }
 				));
 				converterNotices.push(mixedConversion.notice);
 				converterRoute = mixedConversion.route;
@@ -150,7 +183,16 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			if (generatedNodes.length) requestData += '\n' + generatedNodes.map(node => node.content).join('\n');
 		}
 
-		if (includeWarp && env.WARP) { converterSourceURL += '|' + (splitSubscriptionLinks(env.WARP)).join('|'); sourceCountComplete = false; }
+		if ((directSource || (convertedRequest && subscriptionFormat === 'loon')) && warpNodes.length) requestData += '\n' + warpNodes.join('\n');
+		if (includeWarp && env.WARP && !useSourceProxy && !directSource) {
+			if (subscriptionFormat === 'loon') {
+				if (warpLinks.length) sourceSafetyFailure ||= 'remote_warp_unverifiable';
+				if (warpNodes.length) converterSourceURL += '|' + warpNodes.join('|');
+			} else {
+				converterSourceURL += '|' + warpSources.join('|');
+				sourceCountComplete = false;
+			}
+		}
 		let result = [...new Set(requestData.split('\n'))].join('\n');
 		let compatibility = null;
 		if (subscriptionFormat === 'base64' && isV2rayNUserAgent(userAgentHeader)) {
@@ -172,6 +214,11 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (compatibility?.filteredSsObfsTls) responseHeaders['X-Node2Link-Filtered'] = `ss-obfs-tls=${compatibility.filteredSsObfsTls}`;
 		if (compatibility?.normalizedAnytlsSni) responseHeaders['X-Node2Link-Normalized'] = `anytls-sni=${compatibility.normalizedAnytlsSni}`;
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = converterOrigin(usedConverter);
+		if (sourceSafetyFailure) {
+			converterNotices.push('处理方式: Loon 来源无法在本地完整核验，已停止更新', '转换服务: 未调用（避免泄露来源或返回缺失节点）');
+			console.log(JSON.stringify({ event: 'subscription.source_rejected', format: subscriptionFormat, reason: sourceSafetyFailure }));
+			return finish('订阅转换失败：Loon 来源无法完整核验，为避免节点缺失或来源泄露，已停止更新', responseHeaders, 502);
+		}
 		if (upstreamFailures && !conversionFailed) {
    converterNotices.push('处理方式: 来源读取失败，已停止更新，未返回不完整节点', '转换服务: 未调用（来源读取失败）');
    return finish('订阅转换失败：部分来源读取失败，请稍后重试', responseHeaders, 502);
@@ -180,8 +227,15 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (subscriptionFormat === 'base64') return finish(base64Data, responseHeaders);
 
 		const conversionInit = { signal: request.signal, headers: { 'User-Agent': userAgentHeader || DEFAULT_FILE_NAME } };
+		const remainingConversionMs = requestDeadline - Date.now();
+		if (remainingConversionMs <= 0) {
+			converterRoute = 'failed';
+			converterNotices.push('提示: 本次订阅处理已用完转换时间预算');
+			return finish('订阅转换失败：处理超时，请稍后重试', responseHeaders, 502);
+		}
 		const conversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
 			runtime, subscriptionFormat, converterSourceURL, conversionInit, { ...options,
+			conversionTimeoutMs: remainingConversionMs,
     validateContent: subscriptionFormat === 'loon' ? content => inspectLoonConversion(requestData, content, { completeSource: sourceCountComplete && !upstreamFailures }) : undefined
    }
 		));

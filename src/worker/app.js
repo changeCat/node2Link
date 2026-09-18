@@ -21,6 +21,7 @@ import { timed } from './timing.js';
 import { readShare } from './storage/shares.js';
 import { handleGeneratedNodesAPI, handlePublicNodeImport } from './routes/generated-nodes.js';
 import { withStorageBindings } from './storage/d1.js';
+import { handleSourceProxy, isSourceProxyRequest } from './source-proxy.js';
 
 const PAGE_METHODS = new Map([
 	['/', ['GET', 'POST']], ['/login', ['GET']], ['/api/login', ['POST']],
@@ -33,6 +34,8 @@ export default {
 		const startedAt = Date.now();
 		const timings = [];
 		try {
+			const url = new URL(request.url);
+			if (isSourceProxyRequest(url)) return withServerTiming(await handleSourceProxy(request, env, url), startedAt, timings);
 			env = withStorageBindings(env);
 			return withServerTiming(await dispatch(request, env, ctx, timings), startedAt, timings);
 		}
