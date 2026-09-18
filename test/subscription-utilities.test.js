@@ -59,7 +59,7 @@ test('subscription responses preserve Latin-1 and Unicode names and brand conver
  });
  assert.equal(converted.status, 200); assert.equal(requests, 1);
  let mixedRequests = 0;
- const mixed = await serveSubscription(new Request('https://app.example.com/?base64'), {}, {}, runtime, 'https://source.example.com/sub', 'main', false, '', '', {
+ const mixed = await serveSubscription(new Request('https://app.example.com/?base64'), { ADMIN_PASSWORD: 'secret' }, {}, runtime, 'https://source.example.com/sub', 'main', false, '', '', {
   fetchImpl: async (url, init) => {
    if (url instanceof Request) return new Response('proxies: []');
    mixedRequests++; assert.equal(new Headers(init.headers).get('User-Agent'), 'v2rayN/6.45 node2Link');

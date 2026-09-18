@@ -126,6 +126,46 @@ test('Loon fails closed instead of exposing a remote WARP source', async () => {
 	assert.match(await response.text(), /避免节点缺失或来源泄露/);
 });
 
+test('structured Base64 sources are encrypted before converter fallback', async () => {
+	const runtime = await createRuntimeConfig(env);
+	const structuredURL = 'https://structured.example.com/private.yaml?token=do-not-expose';
+	const converterCalls = [];
+	const response = await serveSubscription(
+		new Request('https://app.example.com/s/protected_base64_test?base64'), env, {}, runtime, structuredURL,
+		'share', false, 'protected_base64_test', 'Protected Base64', {
+			fetchImpl: async input => {
+				const url = new URL(input instanceof Request ? input.url : String(input));
+				if (url.hostname === 'structured.example.com') return new Response('proxies:\n  - name: remote\n    type: trojan\n    server: edge.example.com\n    port: 443');
+				converterCalls.push(url);
+				return new Response(btoa('trojan://password@edge.example.com:443#remote'));
+			}
+		}
+	);
+	assert.equal(response.status, 200);
+	assert.equal(converterCalls.length, 1);
+	const protectedSource = converterCalls[0].searchParams.get('url');
+	assert.match(new URL(protectedSource).pathname, /^\/_node2link\/source\//);
+	assert.doesNotMatch(converterCalls[0].href, /structured\.example\.com|do-not-expose/);
+});
+
+test('structured sources fail closed when no encryption secret is available', async () => {
+	const runtime = await createRuntimeConfig({});
+	let converterCalls = 0;
+	const response = await serveSubscription(
+		new Request('https://app.example.com/s/unprotected_base64_test?base64'), {}, {}, runtime,
+		'https://structured.example.com/private.yaml?token=do-not-expose', 'share', false,
+		'unprotected_base64_test', 'Unprotected Base64', { fetchImpl: async input => {
+			const url = new URL(input instanceof Request ? input.url : String(input));
+			if (url.hostname === 'structured.example.com') return new Response('proxies:\n  - name: remote');
+			converterCalls++;
+			return new Response(btoa('trojan://password@edge.example.com:443#remote'));
+		} }
+	);
+	assert.equal(response.status, 502);
+	assert.equal(converterCalls, 0);
+	assert.match(await response.text(), /避免节点缺失或来源泄露/);
+});
+
 test('too many proxy sources safely fall back to normalized prefetch', async () => {
 	const runtime = await createRuntimeConfig(env);
 	const sources = Array.from({ length: 9 }, (_, index) => `https://source${index}.example.com/sub`);

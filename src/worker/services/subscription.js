@@ -13,6 +13,20 @@ import { canProxySources, createSourceProxyURL } from '../source-proxy.js';
 const MAX_PROXIED_SOURCES = 8;
 const MAX_PROXY_SOURCE_LIST_LENGTH = 7 * 1024;
 
+async function protectRemoteSources(env, origin, sources, sourcePrefix, options = {}) {
+	const uniqueSources = [...new Set(sources || [])].filter(Boolean);
+	if (!uniqueSources.length || uniqueSources.length > MAX_PROXIED_SOURCES || !canProxySources(env)) return '';
+	try {
+		const proxyURLs = await timed(options.timings, 'source_proxy', () => Promise.all(uniqueSources.map(source => createSourceProxyURL(env, origin, source))));
+		const protectedSources = proxyURLs.join('|');
+		if ((sourcePrefix + '|' + protectedSources).length > MAX_PROXY_SOURCE_LIST_LENGTH) return '';
+		return protectedSources;
+	} catch (error) {
+		console.log(JSON.stringify({ event: 'source_proxy.skipped', reason: 'unavailable', type: error?.name || 'Error', sources: uniqueSources.length }));
+		return '';
+	}
+}
+
 async function fetchConfiguredConversion(runtime, target, sourceURL, init, options) {
  const budget = options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS;
  const deadline = Date.now() + budget;
@@ -90,6 +104,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		let conversionAudit = null;
 		let sourceMode = 'normalized';
 		let sourceSafetyFailure = '';
+		let protectedStructuredSources = '';
 		const converterNotices = [];
 		if (url.searchParams.has('clash')) appendUA = 'clash';
 		else if (url.searchParams.has('singbox')) appendUA = 'singbox';
@@ -153,12 +168,16 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			requestData += subscriptionResponses[0].join('\n');
 			if (subscriptionResponses[1]) {
 				if (subscriptionFormat === 'loon') sourceSafetyFailure = 'structured_source_unverifiable';
-				else { converterSourceURL += '|' + subscriptionResponses[1]; sourceCountComplete = false; }
+				else {
+					protectedStructuredSources = await protectRemoteSources(env, url.origin, splitSubscriptionLinks(subscriptionResponses[1]), converterSourceURL, options);
+					if (!protectedStructuredSources) sourceSafetyFailure = 'structured_source_unprotected';
+					else { converterSourceURL += '|' + protectedStructuredSources; sourceCountComplete = false; }
+				}
 			}
-			if (subscriptionFormat === 'base64' && !isSubConverterRequest && !upstreamFailures && subscriptionResponses[1].includes('://')) {
+			if (subscriptionFormat === 'base64' && !isSubConverterRequest && !upstreamFailures && protectedStructuredSources) {
 				const mixedInit = { signal: request.signal, headers: { 'User-Agent': BASE64_SUBSCRIPTION_USER_AGENT } };
 				const mixedConversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
-					runtime, 'base64', subscriptionResponses[1], mixedInit, { ...options, conversionTimeoutMs: Math.max(1, requestDeadline - Date.now()) }
+					runtime, 'base64', protectedStructuredSources, mixedInit, { ...options, conversionTimeoutMs: Math.max(1, requestDeadline - Date.now()) }
 				));
 				converterNotices.push(mixedConversion.notice);
 				converterRoute = mixedConversion.route;
@@ -189,8 +208,14 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 				if (warpLinks.length) sourceSafetyFailure ||= 'remote_warp_unverifiable';
 				if (warpNodes.length) converterSourceURL += '|' + warpNodes.join('|');
 			} else {
-				converterSourceURL += '|' + warpSources.join('|');
-				sourceCountComplete = false;
+				let protectedWarpSources = '';
+				if (warpLinks.length) {
+					protectedWarpSources = await protectRemoteSources(env, url.origin, warpLinks, converterSourceURL, options);
+					if (!protectedWarpSources) sourceSafetyFailure ||= 'remote_warp_unprotected';
+				}
+				const converterWarpSources = [...warpNodes, ...(protectedWarpSources ? protectedWarpSources.split('|') : [])];
+				if (converterWarpSources.length) converterSourceURL += '|' + converterWarpSources.join('|');
+				if (warpSources.length) sourceCountComplete = false;
 			}
 		}
 		let result = [...new Set(requestData.split('\n'))].join('\n');
@@ -215,9 +240,9 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		if (compatibility?.normalizedAnytlsSni) responseHeaders['X-Node2Link-Normalized'] = `anytls-sni=${compatibility.normalizedAnytlsSni}`;
 		if (usedConverter) responseHeaders['X-Subconverter-Used'] = converterOrigin(usedConverter);
 		if (sourceSafetyFailure) {
-			converterNotices.push('处理方式: Loon 来源无法在本地完整核验，已停止更新', '转换服务: 未调用（避免泄露来源或返回缺失节点）');
+			converterNotices.push('处理方式: 远程来源无法安全核验或隐藏，已停止更新', '转换服务: 未调用（避免泄露来源或返回缺失节点）');
 			console.log(JSON.stringify({ event: 'subscription.source_rejected', format: subscriptionFormat, reason: sourceSafetyFailure }));
-			return finish('订阅转换失败：Loon 来源无法完整核验，为避免节点缺失或来源泄露，已停止更新', responseHeaders, 502);
+			return finish('订阅转换失败：远程来源无法安全核验或隐藏，为避免节点缺失或来源泄露，已停止更新', responseHeaders, 502);
 		}
 		if (upstreamFailures && !conversionFailed) {
    converterNotices.push('处理方式: 来源读取失败，已停止更新，未返回不完整节点', '转换服务: 未调用（来源读取失败）');

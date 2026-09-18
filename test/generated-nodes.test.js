@@ -417,6 +417,12 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 	let upstreamRequest;
 	const converterSources = [];
 	const customConverterSources = [];
+	const assertProtectedSources = sourceList => {
+		const sources = sourceList.split('|');
+		assert.equal(sources.length, 2);
+		assert.ok(sources.every(source => new URL(source).pathname.startsWith('/_node2link/source/')));
+		assert.doesNotMatch(sourceList, /upstream\.example\.com|mihomo|singbox/);
+	};
 	globalThis.fetch = async input => {
 		const requestURL = input instanceof Request ? input.url : String(input);
 		if (requestURL === upstreamURL) {
@@ -473,7 +479,8 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 		assert.equal(new URL(anytlsLine).searchParams.get('sni'), 'cover.example.com');
 		assert.equal(structuredSubscriptionResponse.headers.get('X-Node2Link-Filtered'), 'ss-obfs-tls=1');
 		assert.equal(structuredSubscriptionResponse.headers.get('X-Node2Link-Normalized'), 'anytls-sni=1');
-		assert.deepEqual(converterSources, [[clashURL, singboxURL].join('|')]);
+		assert.equal(converterSources.length, 1);
+		assertProtectedSources(converterSources[0]);
 
 		const otherClientEncoded = await (await dispatch(`/s/${structured.id}?base64`, {
 			headers: { 'User-Agent': 'v2rayNG' }
@@ -491,8 +498,10 @@ test('分享可保存上游订阅链接，并在访问生成链接时合并上�
 			headers: { 'User-Agent': 'v2rayN' }
 		})).text();
 		assert.match(Buffer.from(customEncoded, 'base64').toString('utf8'), /custom\.example\.com:443/);
-		assert.deepEqual(customConverterSources, [[clashURL, singboxURL].join('|')]);
+		assert.equal(customConverterSources.length, 1);
+		assertProtectedSources(customConverterSources[0]);
 		assert.equal(converterSources.length, 2);
+		assertProtectedSources(converterSources[1]);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

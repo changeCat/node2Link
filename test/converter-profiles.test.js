@@ -17,7 +17,7 @@ const profiles = [
 const outputs = { clash: 'proxies: []', singbox: '{"outbounds":[]}', surge: '[Proxy]\nNode = trojan,node.example.com,443,fake-secret', loon: '[Proxy]\nNode = trojan,node.example.com,443,fake-secret', quanx: '[server_local]\ntrojan=node.example.com:443,password=fake-secret,tag=Node', base64: Buffer.from(node).toString('base64') };
 async function serve(active, format, fetchImpl, extra = {}) {
  const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'test' }, { converterMode: 'custom', customConverters: profiles, activeCustomConverterId: active });
- return serveSubscription(new Request('https://app.example.com/s/profile_test_id?' + format, extra.requestInit), {}, {}, runtime, extra.source || node, 'share', false, 'profile_test_id', 'Nodes', { ...extra, fetchImpl });
+ return serveSubscription(new Request('https://app.example.com/s/profile_test_id?' + format, extra.requestInit), { ADMIN_PASSWORD: 'test' }, {}, runtime, extra.source || node, 'share', false, 'profile_test_id', 'Nodes', { ...extra, fetchImpl });
 }
 const settingsRequest = payload => new Request('https://app.example.com/api/settings', { method: 'POST', headers: { Origin: 'https://app.example.com', 'Content-Type': 'application/json' }, body: JSON.stringify({ section: 'conversion', converterMode: 'custom', ...payload }) });
 

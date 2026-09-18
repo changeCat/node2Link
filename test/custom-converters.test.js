@@ -25,7 +25,7 @@ const runtime = settings => createRuntimeConfig({ ADMIN_PASSWORD: 'secret' }, {
 });
 const serve = async (format, fetchImpl, options = {}) => serveSubscription(
  new Request('https://app.example.com/s/private_subscription_id?' + format, { headers: { 'User-Agent': 'Loon/3.2.4', ...options.headers }, signal: options.signal }),
- {}, {}, await runtime(options.settings), options.sourceData || node, options.access || 'share', false, 'private_subscription_id', 'Share', { ...options, fetchImpl }
+ { ADMIN_PASSWORD: 'secret' }, {}, await runtime(options.settings), options.sourceData || node, options.access || 'share', false, 'private_subscription_id', 'Share', { ...options, fetchImpl }
 );
 
 test('every custom target uses Subconverter and preserves the gateway path without embedding node credentials', async () => {
