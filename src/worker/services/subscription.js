@@ -92,9 +92,12 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		const sourceBaseURL = access === 'main'
 			? `${url.origin}/s/${encodeURIComponent(runtime.mainSubscriptionId)}`
 			: url.origin + url.pathname;
+		const warpSources = includeWarp && env.WARP ? splitSubscriptionLinks(env.WARP) : [];
+		const warpLinks = warpSources.filter(item => /^https?:\/\//i.test(item));
+		const warpNodes = warpSources.filter(item => !/^https?:\/\//i.test(item));
 		// Let our callback normalize ordinary upstream subscriptions before the
 		// converter sees them. Structured subscriptions remain direct converter inputs.
-		let converterSourceURL = sourceBaseURL + '?base64&source=normalized';
+		let converterSourceURL = sourceBaseURL + '?base64&source=normalized' + (subscriptionFormat === 'loon' && warpNodes.length ? '&warp=1' : '');
 		let requestData = mainData;
 		let appendUA = 'v2rayn';
 		let usedConverter = '';
@@ -140,9 +143,6 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		};
 
 		const uniqueSubscriptionLinks = [...new Set(urls)].filter(item => item?.trim?.());
-		const warpSources = includeWarp && env.WARP ? splitSubscriptionLinks(env.WARP) : [];
-		const warpLinks = warpSources.filter(item => /^https?:\/\//i.test(item));
-		const warpNodes = warpSources.filter(item => !/^https?:\/\//i.test(item));
 		const convertedRequest = subscriptionFormat !== 'base64' && !isSubConverterRequest;
 		const proxyInputs = [...new Set([...uniqueSubscriptionLinks, ...warpLinks])];
 		let useSourceProxy = false;
@@ -167,12 +167,9 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			upstreamFailures = subscriptionResponses.failures || 0;
 			requestData += subscriptionResponses[0].join('\n');
 			if (subscriptionResponses[1]) {
-				if (subscriptionFormat === 'loon') sourceSafetyFailure = 'structured_source_unverifiable';
-				else {
-					protectedStructuredSources = await protectRemoteSources(env, url.origin, splitSubscriptionLinks(subscriptionResponses[1]), converterSourceURL, options);
-					if (!protectedStructuredSources) sourceSafetyFailure = 'structured_source_unprotected';
-					else { converterSourceURL += '|' + protectedStructuredSources; sourceCountComplete = false; }
-				}
+				protectedStructuredSources = await protectRemoteSources(env, url.origin, splitSubscriptionLinks(subscriptionResponses[1]), converterSourceURL, options);
+				if (!protectedStructuredSources) sourceSafetyFailure = 'structured_source_unprotected';
+				else { converterSourceURL += '|' + protectedStructuredSources; sourceCountComplete = false; }
 			}
 			if (subscriptionFormat === 'base64' && !isSubConverterRequest && !upstreamFailures && protectedStructuredSources) {
 				const mixedInit = { signal: request.signal, headers: { 'User-Agent': BASE64_SUBSCRIPTION_USER_AGENT } };
@@ -202,21 +199,16 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			if (generatedNodes.length) requestData += '\n' + generatedNodes.map(node => node.content).join('\n');
 		}
 
-		if ((directSource || (convertedRequest && subscriptionFormat === 'loon')) && warpNodes.length) requestData += '\n' + warpNodes.join('\n');
+		if ((directSource || (convertedRequest && subscriptionFormat === 'loon') || (isSubConverterRequest && url.searchParams.get('source') === 'normalized' && url.searchParams.has('warp'))) && warpNodes.length) requestData += '\n' + warpNodes.join('\n');
 		if (includeWarp && env.WARP && !useSourceProxy && !directSource) {
-			if (subscriptionFormat === 'loon') {
-				if (warpLinks.length) sourceSafetyFailure ||= 'remote_warp_unverifiable';
-				if (warpNodes.length) converterSourceURL += '|' + warpNodes.join('|');
-			} else {
-				let protectedWarpSources = '';
-				if (warpLinks.length) {
-					protectedWarpSources = await protectRemoteSources(env, url.origin, warpLinks, converterSourceURL, options);
-					if (!protectedWarpSources) sourceSafetyFailure ||= 'remote_warp_unprotected';
-				}
-				const converterWarpSources = [...warpNodes, ...(protectedWarpSources ? protectedWarpSources.split('|') : [])];
-				if (converterWarpSources.length) converterSourceURL += '|' + converterWarpSources.join('|');
-				if (warpSources.length) sourceCountComplete = false;
+			let protectedWarpSources = '';
+			if (warpLinks.length) {
+				protectedWarpSources = await protectRemoteSources(env, url.origin, warpLinks, converterSourceURL, options);
+				if (!protectedWarpSources) sourceSafetyFailure ||= 'remote_warp_unprotected';
 			}
+			const converterWarpSources = [...(subscriptionFormat === 'loon' ? [] : warpNodes), ...(protectedWarpSources ? protectedWarpSources.split('|') : [])];
+			if (converterWarpSources.length) converterSourceURL += '|' + converterWarpSources.join('|');
+			if (warpLinks.length || (subscriptionFormat !== 'loon' && warpNodes.length)) sourceCountComplete = false;
 		}
 		let result = [...new Set(requestData.split('\n'))].join('\n');
 		let compatibility = null;
