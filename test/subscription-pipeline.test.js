@@ -237,3 +237,76 @@ test('remote diagnostics exclude subscription paths, tokens and response content
 	assert.equal(JSON.parse(lines[0]).host, 'example.com');
 	assert.doesNotMatch(lines.join(''), /password|private-id|secret/);
 });
+
+
+test('a reduced conversion budget still reaches the third backend after two stalls', async () => {
+ const attempts = [], cancelled = [];
+ const converters = ['https://first.example.com', 'https://second.example.com', 'https://third.example.com'];
+ const result = await fetchConvertedSubscription(converters, 'loon', 'https://source.example.com', '', {}, {
+  conversionTimeoutMs: 450,
+  fetchImpl: async input => {
+   const origin = new URL(input).origin;
+   attempts.push(origin);
+   return origin === converters[2] ? new Response('[Proxy]\nnode = trojan,example.com,443,password')
+    : new Response(new ReadableStream({ cancel() { cancelled.push(origin); } }));
+  }
+ });
+ assert.equal(result?.converter, converters[2]);
+ assert.deepEqual(attempts, converters);
+ assert.deepEqual(cancelled, converters.slice(0, 2));
+});
+
+test('Loon recovers a transient default converter failure and still checks node counts', async () => {
+ const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' });
+ for (const failure of [429, 502, 503, 504, 'network']) {
+  let calls = 0;
+  const response = await serveSubscription(new Request('https://app.example.com/s/abcdefghijklmnop?loon'), {}, {}, runtime,
+   'trojan://secret@example.com:443#node', 'share', false, 'abcdefghijklmnop', 'Share', {
+    fetchImpl: async () => {
+     if (++calls === 1) {
+      if (failure === 'network') throw new TypeError('connection reset');
+      return new Response('temporary', { status: failure });
+     }
+     return new Response('[Proxy]\nnode = trojan,example.com,443,password');
+    }
+   });
+  assert.equal(response.status, 200);
+  assert.equal(calls, 2);
+  assert.equal(response.headers.get('X-Node2Link-Conversion-Check'), 'counts-match');
+ }
+});
+
+test('last converter retries at most once and does not retry permanent or invalid responses', async () => {
+ for (const [status, content, expectedCalls] of [[503, 'temporary', 2], [404, 'missing', 1], [200, '<html>error</html>', 1]]) {
+  let calls = 0;
+  const result = await fetchConvertedSubscription(['https://converter.example.com'], 'loon', 'https://source.example.com', '', {}, {
+   fetchImpl: async () => { calls++; return new Response(content, { status }); }
+  });
+  assert.equal(result, null);
+  assert.equal(calls, expectedCalls);
+ }
+});
+
+test('a retry shares the original converter deadline and cancels a stalled body', async () => {
+ let calls = 0, cancelled = false;
+ const result = await fetchConvertedSubscription(['https://converter.example.com'], 'loon', 'https://source.example.com', '', {}, {
+  conversionTimeoutMs: 100,
+  fetchImpl: async () => {
+   if (++calls === 1) return new Response('temporary', { status: 503 });
+   return new Response(new ReadableStream({ cancel() { cancelled = true; } }));
+  }
+ });
+ assert.equal(result, null);
+ assert.equal(calls, 2);
+ assert.equal(cancelled, true);
+});
+
+test('caller cancellation stops retries on the last converter', async () => {
+ const controller = new AbortController();
+ let calls = 0;
+ const result = await fetchConvertedSubscription(['https://converter.example.com'], 'loon', 'https://source.example.com', '', { signal: controller.signal }, {
+  fetchImpl: async () => { calls++; controller.abort(new TypeError('cancelled')); throw new TypeError('cancelled'); }
+ });
+ assert.equal(result, null);
+ assert.equal(calls, 1);
+});

@@ -77,15 +77,16 @@ function isTransientNetworkError(error) {
 // original deadline. A request which consumes the whole budget is not retried.
 export async function fetchWithTransientRetry(input, init = {}, timeoutMs = REMOTE_FETCH_TIMEOUT_MS, options = {}) {
 	const deadline = Date.now() + timeoutMs;
+	const signal = init.signal || (input instanceof Request ? input.signal : null);
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const remaining = deadline - Date.now();
 		if (remaining <= 0) throw new DOMException('Remote request timed out', 'TimeoutError');
 		try {
 			const response = await fetchWithTimeout(input, init, remaining, { ...options, discardErrorBody: true });
-			if (attempt === 0 && isTransientStatus(response.status) && deadline > Date.now()) continue;
+			if (attempt === 0 && !signal?.aborted && isTransientStatus(response.status) && deadline > Date.now()) continue;
 			return response;
 		} catch (error) {
-			if (attempt === 0 && isTransientNetworkError(error) && deadline > Date.now()) continue;
+			if (attempt === 0 && !signal?.aborted && isTransientNetworkError(error) && deadline > Date.now()) continue;
 			throw error;
 		}
 	}

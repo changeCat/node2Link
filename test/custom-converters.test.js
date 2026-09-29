@@ -74,7 +74,7 @@ test('all converted targets attempt defaults after custom HTTP failure for main 
     return new Response('unavailable', { status: 503 });
    }, { access });
    assert.equal(response.status, 502);
-   assert.equal(calls, 2);
+   assert.equal(calls, 3);
   }
  }
 });
@@ -89,7 +89,7 @@ test('stalled HTTP error bodies are cancelled immediately before fallback', asyn
   assert.equal(response.status, 502);
   assert.equal(cancelled, true);
   assert.equal(read, false);
-  assert.equal(calls, 2);
+  assert.equal(calls, status === 404 ? 2 : 3);
  }
 });
 
@@ -117,7 +117,7 @@ test('network failures fall back while caller cancellation stops further request
    throw new TypeError('connection failed');
   }, { signal: controller.signal });
   assert.equal(response.status, 502);
-  assert.deepEqual(calls, cancel ? ['custom.example.com'] : ['custom.example.com', 'subapi.cmliussss.net']);
+  assert.deepEqual(calls, cancel ? ['custom.example.com'] : ['custom.example.com', 'subapi.cmliussss.net', 'subapi.cmliussss.net']);
  }
 });
 
@@ -136,7 +136,7 @@ test('structured upstream Base64 conversion failure returns 502 instead of parti
   return url.hostname === 'upstream.example.com' ? new Response('proxies: []') : new Response('unavailable', { status: 503 });
  }, { sourceData: node + '\nhttps://upstream.example.com/sub' });
  assert.equal(response.status, 502);
- assert.deepEqual(calls, ['upstream.example.com', 'custom.example.com', 'subapi.cmliussss.net']);
+ assert.deepEqual(calls, ['upstream.example.com', 'custom.example.com', 'subapi.cmliussss.net', 'subapi.cmliussss.net']);
  assert.doesNotMatch(await response.text(), /node-secret/);
 });
 

@@ -1,4 +1,4 @@
-import { fetchWithTimeout, logRemote } from './http.js';
+import { fetchWithTimeout, fetchWithTransientRetry, logRemote } from './http.js';
 import { CONVERTER_FETCH_TIMEOUT_MS, DEFAULT_SUB_CONVERTER } from '../config.js';
 import { base64Decode, isValidBase64 } from '../domain/nodes.js';
 export function parseSubConverters(value) {
@@ -59,7 +59,8 @@ export async function fetchCustomSubscription(converter, target, sourceURL, init
  try {
   const requestURL = type === 'sublink' ? createSublinkURL(converter, target, sourceURL)
    : createSubConverterURL(converter, target === 'base64' ? 'mixed' : target, sourceURL, options.configURL || '');
-  const response = await fetchWithTimeout(requestURL, createNoStoreFetchInit(init), options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS, { ...options, discardErrorBody: true });
+  const fetchRemote = options.retryTransient ? fetchWithTransientRetry : fetchWithTimeout;
+  const response = await fetchRemote(requestURL, createNoStoreFetchInit(init), options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS, { ...options, discardErrorBody: true });
   if (!response.ok) {
    logRemote('converter.response', converter, { status: response.status, target, durationMs: Date.now() - startedAt });
    return fail('HTTP ' + response.status);
@@ -112,12 +113,18 @@ export function createSubConverterURL(converter, target, sourceURL, configURL) {
 
 export async function fetchConvertedSubscription(converters, target, sourceURL, configURL, init, options = {}) {
  const deadline = Date.now() + (options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS);
- for (const converter of converters) {
+ for (const [index, converter] of converters.entries()) {
   const remaining = deadline - Date.now();
   if (remaining <= 0 || init.signal?.aborted) break;
+  const attemptsLeft = converters.length - index;
+  // Reserve time for backups even when earlier subscription stages were slow.
+  const attemptBudget = attemptsLeft === 1 ? remaining
+   : Math.min(options.attemptTimeoutMs || 20000, Math.max(1, Math.floor(remaining / attemptsLeft)));
   const result = await fetchCustomSubscription(converter, target, sourceURL, init, { ...options,
    converterType: 'subconverter', configURL,
-   conversionTimeoutMs: converters.length === 1 ? remaining : Math.min(remaining, options.attemptTimeoutMs || 20000)
+   // Prefer another backend first; retry only when there are no backups left.
+   retryTransient: attemptsLeft === 1,
+   conversionTimeoutMs: attemptBudget
   });
   if (result) return result;
  }
