@@ -88,7 +88,7 @@ test('Loon keeps strict normalized prefetch even when source proxy secrets are a
 	assert.equal(response.headers.get('X-Node2Link-Source-Mode'), null);
 	assert.equal(response.headers.get('X-Node2Link-Conversion-Check'), 'counts-match');
 	assert.deepEqual(calls.map(url => url.hostname), ['upstream.example.com', 'subapi.cmliussss.net']);
-	assert.equal(calls[1].searchParams.get('url'), 'https://app.example.com/s/strict_loon_test?base64&source=normalized');
+	assert.match(calls[1].searchParams.get('url'), /^https:\/\/app\.example\.com\/s\/strict_loon_test\?base64&source=loon&request=[a-f0-9-]{36}$/);
 });
 
 test('Loon converts protected structured sources without exposing their URLs', async () => {

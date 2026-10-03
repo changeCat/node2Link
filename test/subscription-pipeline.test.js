@@ -117,7 +117,7 @@ test('conversion resolves ordinary upstreams through its base64 callback; failur
 	assert.match(await failed.text(), /订阅转换失败/);
 });
 
-test('adaptive Loon keeps ordinary upstream URLs behind the normalized callback', async () => {
+test('adaptive Loon keeps ordinary upstream URLs behind a fresh raw-node callback', async () => {
 	const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' });
 	const upstreamURL = 'https://upstream.example.com/private?token=secret';
 	let converterSource = '';
@@ -134,11 +134,11 @@ test('adaptive Loon keeps ordinary upstream URLs behind the normalized callback'
 	);
 	assert.equal(response.status, 200);
 	assert.equal(response.headers.get('X-Node2Link-Format'), 'loon');
-	assert.equal(converterSource, 'https://app.example.com/s/abcdefghijklmnop?base64&source=normalized');
+	assert.match(converterSource, /^https:\/\/app\.example\.com\/s\/abcdefghijklmnop\?base64&source=loon&request=[a-f0-9-]{36}$/);
 	assert.doesNotMatch(converterSource, /upstream\.example\.com|token=secret/);
 });
 
-test('every converted format tries custom first and preserves callback-only node delivery', async () => {
+test('Loon uses defaults while other converted formats try custom first with callback-only node delivery', async () => {
  const runtime = await createRuntimeConfig({ ADMIN_PASSWORD: 'secret' }, { converterMode: 'custom', customConverterURL: 'https://custom.example.com' });
  const outputs = {
   loon: '[Proxy]\nnode = trojan,example.com,443,password',
@@ -152,19 +152,21 @@ test('every converted format tries custom first and preserves callback-only node
    'trojan://private-password@example.com:443#node', 'share', false, 'abcdefghijklmnop', 'Share', { timings, fetchImpl: async (input, init) => {
     const url = new URL(input);
     calls.push(url);
-    assert.equal(url.hostname, 'custom.example.com');
+    assert.equal(url.hostname, format === 'loon' ? 'subapi.cmliussss.net' : 'custom.example.com');
     assert.equal(url.pathname, '/sub');
     assert.equal(url.searchParams.get('target'), format);
-    assert.equal(url.searchParams.get('url'), 'https://app.example.com/s/abcdefghijklmnop?base64&source=normalized');
+    if (format === 'loon') assert.match(url.searchParams.get('url'), /^https:\/\/app\.example\.com\/s\/abcdefghijklmnop\?base64&source=loon&request=[a-f0-9-]{36}$/);
+    else assert.equal(url.searchParams.get('url'), 'https://app.example.com/s/abcdefghijklmnop?base64&source=normalized');
     assert.doesNotMatch(url.href, /private-password|data%3A/);
     assert.equal(new Headers(init.headers).get('Cache-Control'), 'no-store, no-cache, max-age=0');
     return new Response(content);
    } });
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'custom');
-  assert.equal(response.headers.get('X-Subconverter-Used'), 'https://custom.example.com');
+  assert.equal(response.headers.get('X-Node2Link-Converter-Route'), format === 'loon' ? 'default' : 'custom');
+  assert.equal(response.headers.get('X-Subconverter-Used'), format === 'loon' ? 'https://subapi.cmliussss.net' : 'https://custom.example.com');
   assert.equal(calls.length, 1);
-  assert.ok(timings.some(value => value.startsWith('conversion_custom;')));
+  assert.ok(timings.some(value => value.startsWith(format === 'loon' ? 'conversion_default;' : 'conversion_custom;')));
+  if (format === 'loon') assert.ok(!timings.some(value => value.startsWith('conversion_custom;')));
   assert.ok(!timings.some(value => value.startsWith('conversion_fallback;')));
  }
 });

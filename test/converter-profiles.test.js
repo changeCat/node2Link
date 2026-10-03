@@ -90,7 +90,7 @@ test('only the active profile is attempted and failure goes straight to default'
  }
 });
 
-test('Sublink Loon and QuanX support is determined by actual responses, including after an upgrade', async () => {
+test('Loon bypasses Sublink while QuanX support is determined by actual responses', async () => {
  for (const target of ['loon', 'quanx']) {
   for (const customOutput of [null, '<html>missing endpoint</html>', outputs[target]]) {
    const calls = [];
@@ -98,15 +98,15 @@ test('Sublink Loon and QuanX support is determined by actual responses, includin
     const url = new URL(input); calls.push(url.hostname);
     if (url.hostname === 'worker.example.com') {
      assert.equal(url.pathname, '/private-key/' + target);
-     assert.match(url.searchParams.get('config'), /source=normalized/);
+     assert.match(url.searchParams.get('config'), target === 'loon' ? /source=loon&request=[a-f0-9-]{36}$/ : /source=normalized/);
      return customOutput === null ? new Response('missing', { status: 404 }) : new Response(customOutput);
     }
     return new Response(outputs[target]);
    });
    const supported = customOutput === outputs[target];
    assert.equal(response.status, 200);
-   assert.equal(response.headers.get('X-Node2Link-Converter-Route'), supported ? 'custom' : 'fallback');
-   assert.deepEqual(calls, supported ? ['worker.example.com'] : ['worker.example.com', 'subapi.cmliussss.net']);
+   assert.equal(response.headers.get('X-Node2Link-Converter-Route'), target === 'loon' ? 'default' : supported ? 'custom' : 'fallback');
+   assert.deepEqual(calls, target === 'loon' ? ['subapi.cmliussss.net'] : supported ? ['worker.example.com'] : ['worker.example.com', 'subapi.cmliussss.net']);
   }
  }
 });

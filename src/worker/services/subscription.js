@@ -28,11 +28,14 @@ async function protectRemoteSources(env, origin, sources, sourcePrefix, options 
 }
 
 async function fetchConfiguredConversion(runtime, target, sourceURL, init, options) {
+ // Loon always uses the default Subconverter chain, independent of the saved
+ // custom selection. Other formats keep their configured routing policy.
+ const useCustom = target !== 'loon' && runtime.converterMode === 'custom';
  const budget = options.conversionTimeoutMs || options.timeoutMs || CONVERTER_FETCH_TIMEOUT_MS;
  const deadline = Date.now() + budget;
  let failure = null, customNotice = '';
  const onFailure = value => { failure = value; };
- if (runtime.converterMode === 'custom') {
+ if (useCustom) {
   const customLabel = '自建 ' + converterTypeLabel(runtime.customConverterType) + '（' + (converterOrigin(runtime.customConverterURL) || '地址未配置或无效') + '）';
   const result = await timed(options.timings, 'conversion_custom', () => fetchCustomSubscription(runtime.customConverterURL, target, sourceURL, init, {
    ...options, converterType: runtime.customConverterType, configURL: runtime.subConfig, onFailure,
@@ -44,15 +47,15 @@ async function fetchConfiguredConversion(runtime, target, sourceURL, init, optio
  if (init.signal?.aborted) return { result: null, notice: customNotice + '\n提示: 请求已取消，未继续回退', route: 'failed', audit: failure?.audit };
  const customFailure = failure;
  const remaining = deadline - Date.now();
- const result = remaining > 0 ? await timed(options.timings, runtime.converterMode === 'custom' ? 'conversion_fallback' : 'conversion_default', () => fetchConvertedSubscription(
+ const result = remaining > 0 ? await timed(options.timings, useCustom ? 'conversion_fallback' : 'conversion_default', () => fetchConvertedSubscription(
   runtime.subConverters, target === 'base64' ? 'mixed' : target, sourceURL, runtime.subConfig, init,
   { ...options, conversionTimeoutMs: remaining, onFailure }
  )) : null;
  const service = result ? converterOrigin(result.converter) : runtime.subConverters.map(converterOrigin).join('、');
- return { result, route: result ? runtime.converterMode === 'custom' ? 'fallback' : 'default' : 'failed',
+ return { result, route: result ? useCustom ? 'fallback' : 'default' : 'failed',
   audit: result?.audit || failure?.audit || customFailure?.audit,
   notice: (customNotice ? customNotice + '\n' : '') + '转换服务: 默认 Subconverter（' + service + '）'
-   + (runtime.converterMode === 'custom' ? '\n回退结果: ' + (result ? '已使用默认服务' : '默认服务也不可用，已停止更新') : result ? '' : '\n提示: 默认转换服务不可用')
+   + (useCustom ? '\n回退结果: ' + (result ? '已使用默认服务' : '默认服务也不可用，已停止更新') : result ? '' : '\n提示: 默认转换服务不可用')
    + (!result && failure?.reason ? '\n失败原因: ' + failure.reason : '')
  };
 }
@@ -82,12 +85,14 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		urls = splitSubscriptionLinks(subscriptionLinks);
 
 		const directSource = url.searchParams.get('source') === 'direct';
-		const isSubConverterRequest = directSource || url.searchParams.get('source') === 'normalized' || request.headers.get('subconverter-request')
+		const loonSourceCallback = url.searchParams.get('source') === 'loon';
+		const isSubConverterRequest = directSource || loonSourceCallback || url.searchParams.get('source') === 'normalized' || request.headers.get('subconverter-request')
 			|| request.headers.get('subconverter-version')
 			|| userAgent.includes('subconverter');
 		const shouldNotifySubscription = !isSubConverterRequest && request.method === 'GET' && shouldSendSubscriptionNotification(request);
 
 		const subscriptionFormat = selectSubscriptionFormat(url, userAgentHeader, isSubConverterRequest);
+		const loonSource = subscriptionFormat === 'loon' || loonSourceCallback;
 
 		const sourceBaseURL = access === 'main'
 			? `${url.origin}/s/${encodeURIComponent(runtime.mainSubscriptionId)}`
@@ -97,7 +102,10 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		const warpNodes = warpSources.filter(item => !/^https?:\/\//i.test(item));
 		// Let our callback normalize ordinary upstream subscriptions before the
 		// converter sees them. Structured subscriptions remain direct converter inputs.
-		let converterSourceURL = sourceBaseURL + '?base64&source=normalized' + (subscriptionFormat === 'loon' && warpNodes.length ? '&warp=1' : '');
+		let converterSourceURL = sourceBaseURL + '?base64&source=normalized';
+		// Some converters cache by source URL regardless of our no-store headers.
+		// Keep a fresh callback per Loon update, shared by all its fallback attempts.
+		if (subscriptionFormat === 'loon') converterSourceURL = sourceBaseURL + '?base64&source=loon&request=' + crypto.randomUUID() + (warpNodes.length ? '&warp=1' : '');
 		let requestData = mainData;
 		let appendUA = 'v2rayn';
 		let usedConverter = '';
@@ -163,7 +171,10 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			}
 		}
 		if (uniqueSubscriptionLinks.length > 0 && !directSource && !useSourceProxy) {
-			const subscriptionResponses = await timed(options.timings, 'upstream', () => getSUB(uniqueSubscriptionLinks, request, appendUA, userAgentHeader, options));
+			// Prefetch and callback must both ask for raw nodes. Forwarding Loon's
+			// identity can make adaptive upstreams return a structured Loon profile.
+			const subscriptionResponses = await timed(options.timings, 'upstream', () => getSUB(uniqueSubscriptionLinks, request,
+				loonSource ? 'v2rayn' : appendUA, loonSource ? BASE64_SUBSCRIPTION_USER_AGENT : userAgentHeader, options));
 			upstreamFailures = subscriptionResponses.failures || 0;
 			requestData += subscriptionResponses[0].join('\n');
 			if (subscriptionResponses[1]) {
@@ -199,14 +210,14 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 			if (generatedNodes.length) requestData += '\n' + generatedNodes.map(node => node.content).join('\n');
 		}
 
-		if ((directSource || (convertedRequest && subscriptionFormat === 'loon') || (isSubConverterRequest && url.searchParams.get('source') === 'normalized' && url.searchParams.has('warp'))) && warpNodes.length) requestData += '\n' + warpNodes.join('\n');
+		if ((directSource || loonSource || (isSubConverterRequest && url.searchParams.get('source') === 'normalized' && url.searchParams.has('warp'))) && warpNodes.length) requestData += '\n' + warpNodes.join('\n');
 		if (includeWarp && env.WARP && !useSourceProxy && !directSource) {
 			let protectedWarpSources = '';
 			if (warpLinks.length) {
 				protectedWarpSources = await protectRemoteSources(env, url.origin, warpLinks, converterSourceURL, options);
 				if (!protectedWarpSources) sourceSafetyFailure ||= 'remote_warp_unprotected';
 			}
-			const converterWarpSources = [...(subscriptionFormat === 'loon' ? [] : warpNodes), ...(protectedWarpSources ? protectedWarpSources.split('|') : [])];
+			const converterWarpSources = [...(loonSource ? [] : warpNodes), ...(protectedWarpSources ? protectedWarpSources.split('|') : [])];
 			if (converterWarpSources.length) converterSourceURL += '|' + converterWarpSources.join('|');
 			if (warpLinks.length || (subscriptionFormat !== 'loon' && warpNodes.length)) sourceCountComplete = false;
 		}

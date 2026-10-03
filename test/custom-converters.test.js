@@ -57,24 +57,24 @@ test('HTTP 200 invalid content falls back and fails when defaults also return in
    const response = await serve(format, async input => { calls.push(new URL(input).hostname); return new Response(content); }, { timings });
    assert.equal(response.status, 502);
    assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'failed');
-   assert.deepEqual(calls, ['custom.example.com', 'subapi.cmliussss.net']);
-   assert.ok(timings.some(value => value.startsWith('conversion_custom;')));
-   assert.ok(timings.some(value => value.startsWith('conversion_fallback;')));
+   assert.deepEqual(calls, format === 'loon' ? ['subapi.cmliussss.net'] : ['custom.example.com', 'subapi.cmliussss.net']);
+   assert.equal(timings.some(value => value.startsWith('conversion_custom;')), format !== 'loon');
+   assert.ok(timings.some(value => value.startsWith(format === 'loon' ? 'conversion_default;' : 'conversion_fallback;')));
   }
  }
 });
 
-test('all converted targets attempt defaults after custom HTTP failure for main and shared subscriptions', async () => {
+test('main and shared subscriptions stop when configured conversion routes fail', async () => {
  for (const access of ['main', 'share']) {
   for (const format of ['loon', 'quanx', 'surge', 'clash', 'singbox']) {
    let calls = 0;
    const response = await serve(format, async input => {
     calls++;
-    assert.equal(new URL(input).hostname, calls === 1 ? 'custom.example.com' : 'subapi.cmliussss.net');
+    assert.equal(new URL(input).hostname, format !== 'loon' && calls === 1 ? 'custom.example.com' : 'subapi.cmliussss.net');
     return new Response('unavailable', { status: 503 });
    }, { access });
    assert.equal(response.status, 502);
-   assert.equal(calls, 3);
+   assert.equal(calls, format === 'loon' ? 2 : 3);
   }
  }
 });
@@ -89,7 +89,7 @@ test('stalled HTTP error bodies are cancelled immediately before fallback', asyn
   assert.equal(response.status, 502);
   assert.equal(cancelled, true);
   assert.equal(read, false);
-  assert.equal(calls, status === 404 ? 2 : 3);
+  assert.equal(calls, status === 404 ? 1 : 2);
  }
 });
 
@@ -108,7 +108,7 @@ test('default converter backups still skip stalled error bodies', async () => {
  assert.equal(result.converter, 'https://backup.example.com');
 });
 
-test('network failures fall back while caller cancellation stops further requests', async () => {
+test('Loon network failures retry defaults while caller cancellation stops further requests', async () => {
  for (const cancel of [false, true]) {
   const controller = new AbortController(), calls = [];
   const response = await serve('loon', async input => {
@@ -117,7 +117,7 @@ test('network failures fall back while caller cancellation stops further request
    throw new TypeError('connection failed');
   }, { signal: controller.signal });
   assert.equal(response.status, 502);
-  assert.deepEqual(calls, cancel ? ['custom.example.com'] : ['custom.example.com', 'subapi.cmliussss.net', 'subapi.cmliussss.net']);
+  assert.deepEqual(calls, cancel ? ['subapi.cmliussss.net'] : ['subapi.cmliussss.net', 'subapi.cmliussss.net']);
  }
 });
 
@@ -184,11 +184,11 @@ test('main page highlights defaults and settings describe both custom types and 
 test('response headers and diagnostics never expose the gateway key or subscription credentials', async t => {
  const logs = [];
  t.mock.method(console, 'log', line => logs.push(line));
- const response = await serve('loon', async () => new Response(outputs.loon));
+ const response = await serve('quanx', async () => new Response(outputs.quanx));
  assert.equal(response.status, 200);
  assert.equal(response.headers.get('X-Subconverter-Used'), 'https://custom.example.com');
  assert.doesNotMatch(JSON.stringify([...response.headers]), /private_gateway_key/);
- await serve('loon', async () => new Response('<html>node-secret</html>'));
+ await serve('quanx', async () => new Response('<html>node-secret</html>'));
  assert.doesNotMatch(logs.join('\n'), /node-secret|private_subscription_id|private_gateway_key|node\.example\.com/);
  assert.ok(logs.some(line => JSON.parse(line).event === 'converter.invalid_content'));
  assert.ok(logs.some(line => JSON.parse(line).event === 'converter.complete'));
@@ -204,7 +204,8 @@ test('notifications identify local, custom and default results without exposing 
  });
  for (const scenario of [
   { mode: 'custom', format: 'base64', fail: false, service: '未调用（无需转换）' },
-  { mode: 'custom', format: 'loon', fail: false, service: '自建 Subconverter' },
+  { mode: 'custom', format: 'quanx', fail: false, service: '自建 Subconverter' },
+  { mode: 'custom', format: 'loon', fail: false, service: '默认 Subconverter' },
   { mode: 'custom', format: 'loon', fail: true, service: '默认 Subconverter' },
   { mode: 'default', format: 'loon', fail: false, service: '默认 Subconverter' },
   { mode: 'default', format: 'loon', fail: true, service: '默认 Subconverter' }
@@ -215,7 +216,7 @@ test('notifications identify local, custom and default results without exposing 
    {}, { waitUntil(task) { pending.push(task); } }, config, node, 'share', false, 'notify_unique_id', 'Share', {
     fetchImpl: async input => {
      assert.ok(['custom.example.com', 'subapi.cmliussss.net'].includes(new URL(input).hostname));
-     return scenario.fail ? new Response('failed', { status: 503 }) : new Response(outputs.loon);
+     return scenario.fail ? new Response('failed', { status: 503 }) : new Response(outputs[scenario.format]);
     }
    });
   await Promise.all(pending);
@@ -223,8 +224,8 @@ test('notifications identify local, custom and default results without exposing 
   const message = messages.at(-1);
   assert.ok(message.includes('转换服务: ' + scenario.service));
   assert.ok(message.includes('订阅结果: ' + (scenario.fail ? '失败（HTTP 502）' : '成功')));
-  if (scenario.fail && scenario.mode === 'custom') assert.match(message, /默认服务也不可用，已停止更新/);
+  if (scenario.format === 'loon') assert.doesNotMatch(message, /自定义尝试|回退原因|回退结果/);
   assert.doesNotMatch(message, /private_gateway_key|node-secret/);
  }
- assert.equal(messages.length, 5);
+ assert.equal(messages.length, 6);
 });

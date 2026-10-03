@@ -54,14 +54,14 @@ async function requestSubscription({ userAgent = 'Loon/975', output = fullOutput
    const url = new URL(input);
    calls.push(url);
    assert.equal(url.searchParams.get('target'), 'loon');
-   assert.equal(url.searchParams.get('url'), 'https://app.example.com/s/audit_subscription_id?base64&source=normalized');
+   assert.match(url.searchParams.get('url'), /^https:\/\/app\.example\.com\/s\/audit_subscription_id\?base64&source=loon&request=[a-f0-9-]{36}$/);
    return new Response(typeof output === 'function' ? output(url) : output);
   }
  });
  return { response, calls };
 }
 
-test('custom and default Loon outputs cannot silently discard VLESS', async () => {
+test('Loon defaults cannot silently discard VLESS regardless of the saved converter mode', async () => {
  for (const mode of ['custom', 'default']) {
   const { response, calls } = await requestSubscription({ mode, output: '[Proxy]\n' + hy2Output });
   assert.equal(response.status, 502);
@@ -70,8 +70,8 @@ test('custom and default Loon outputs cannot silently discard VLESS', async () =
   assert.equal(response.headers.get('X-Node2Link-Input-Nodes'), '18');
   assert.equal(response.headers.get('X-Node2Link-Output-Nodes'), '4');
   assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'failed');
-  assert.equal(calls.length, mode === 'custom' ? 2 : 1);
-  assert.equal(calls[0].hostname, mode === 'custom' ? 'custom.example.com' : 'subapi.cmliussss.net');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].hostname, 'subapi.cmliussss.net');
  }
 });
 
@@ -81,7 +81,7 @@ test('all clients use the same format-based policy and retain all 18 supported n
   assert.equal(response.status, 200);
   if (userAgent.startsWith('Loon')) {
    assert.equal(calls.length, 1);
-   assert.equal(calls[0].hostname, 'custom.example.com');
+   assert.equal(calls[0].hostname, 'subapi.cmliussss.net');
    assert.equal(response.headers.get('X-Node2Link-Conversion-Check'), 'counts-match');
    assert.equal(await response.text(), fullOutput);
   } else {
@@ -106,22 +106,23 @@ test('node loss notification includes safe counts, target and selected converter
  assert.equal(messages.length, 1);
  assert.match(messages[0], /目标格式: Loon/);
  assert.match(messages[0], /订阅结果: 失败/);
- assert.match(messages[0], /自定义尝试: 自建 Subconverter/);
+ assert.match(messages[0], /转换服务: 默认 Subconverter/);
+ assert.doesNotMatch(messages[0], /自定义尝试|回退原因|回退结果/);
  assert.match(messages[0], /已读取 18，转换输出 4/);
  assert.match(messages[0], /缺少 VLESS 14 个/);
  assert.doesNotMatch(messages[0] + logs.join(''), /gateway-secret|fictional-password|audit_subscription_id|vless0/);
  assert.ok(logs.some(line => JSON.parse(line).conversionCheck === 'incomplete'));
 });
 
-test('Loon drops from 18 to 4 on custom and recovers all nodes through defaults', async () => {
+test('Loon bypasses a custom service that would discard VLESS and retains all nodes through defaults', async () => {
  const { response, calls } = await requestSubscription({ output: url => url.hostname === 'custom.example.com' ? '[Proxy]\n' + hy2Output : fullOutput });
  assert.equal(response.status, 200);
- assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'fallback');
+ assert.equal(response.headers.get('X-Node2Link-Converter-Route'), 'default');
  assert.equal(response.headers.get('X-Subconverter-Used'), 'https://subapi.cmliussss.net');
  assert.equal(response.headers.get('X-Node2Link-Output-Nodes'), '18');
  assert.equal(response.headers.get('X-Node2Link-Conversion-Check'), 'counts-match');
  assert.equal(await response.text(), fullOutput);
- assert.deepEqual(calls.map(url => url.hostname), ['custom.example.com', 'subapi.cmliussss.net']);
+ assert.deepEqual(calls.map(url => url.hostname), ['subapi.cmliussss.net']);
 });
 
 test('default backups reject node loss before trying the next default backend', async () => {
