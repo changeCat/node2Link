@@ -8,8 +8,8 @@ export function subscriptionNodeDetails(content) {
 }
 
 // Only callers supply markup for controls; all node/configuration text is escaped here.
-export function subscriptionCard({ name, protocol, address, port, checkbox = '', actions = '', detail = '', footerNote = '', addressTitle = address, portAttributes = '', showPort = false, dragHandle = '' }) {
- return '<div class="subscription-card-heading">' + dragHandle + checkbox + '<strong title="' + esc(name) + '">' + esc(name) + '</strong><span class="main-badge">' + esc(protocol) + '</span></div>'
+export function subscriptionCard({ name, protocol, address, port, checkbox = '', actions = '', detail = '', footerNote = '', addressTitle = address, portAttributes = '', showPort = false, dragHandle = '', toggle = '' }) {
+ return '<div class="subscription-card-heading">' + dragHandle + checkbox + '<strong title="' + esc(name) + '">' + esc(name) + '</strong><span class="subscription-card-controls"><span class="main-badge" title="' + esc(protocol) + '">' + esc(protocol) + '</span>' + toggle + '</span></div>'
   + '<small class="subscription-card-address" title="' + esc(addressTitle) + '">' + esc(address) + '</small>' + detail
   + '<div class="subscription-card-footer">' + (showPort ? '<div class="subscription-card-port">端口 <strong' + portAttributes + '>' + esc(port) + '</strong></div>' : '') + footerNote + '<div class="subscription-card-actions">' + actions + '</div></div>';
 }

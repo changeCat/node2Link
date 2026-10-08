@@ -22,7 +22,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function snapshot(value = config) {
   const normalized = {
    version: value.version,
-   originals: value.originals.map(({ id, content }) => ({ id, content })),
+   originals: value.originals.map(({ id, content, enabled = true }) => ({ id, content, enabled })),
    endpoints: value.endpoints.map(({ id, address, port, label, enabled, originalIds }) => ({ id, address, port, label, enabled, originalIds }))
   };
   return JSON.stringify({ config: normalized, text: originalText(normalized) });
@@ -54,6 +54,10 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  function sortHandle(name) {
   return '<button type="button" class="card-sort-handle" data-sort-handle aria-label="拖动排序 ' + esc(name) + '" title="拖动调整订阅顺序，也可用方向键移动"><svg viewBox="0 0 16 20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="4" r="1.5"/><circle cx="11" cy="4" r="1.5"/><circle cx="5" cy="10" r="1.5"/><circle cx="11" cy="10" r="1.5"/><circle cx="5" cy="16" r="1.5"/><circle cx="11" cy="16" r="1.5"/></svg></button>';
  }
+ function enableSwitch(kind, item, name) {
+  const enabled = item.enabled !== false;
+  return `<button type="button" class="node-enable-switch" role="switch" aria-checked="${enabled}" aria-label="启用 ${esc(name)}" title="${enabled ? '已启用，点击停用' : '已停用，点击启用'}" data-toggle-${kind}="${esc(item.id)}"></button>`;
+ }
  function renderOriginals() {
   const ids = new Set(config.originals.map(node => node.id));
   for (const id of selectedOriginals) if (!ids.has(id)) selectedOriginals.delete(id);
@@ -62,7 +66,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    const details = subscriptionNodeDetails(node.content);
    const checkbox = `<input type="checkbox" data-select-original="${esc(node.id)}" aria-label="选择 ${esc(node.name)}" ${selectedOriginals.has(node.id) ? 'checked' : ''}>`;
    const actions = `<button type="button" class="tool-button" data-edit-original="${esc(node.id)}">编辑</button><button type="button" class="tool-button" data-view-original="${esc(node.id)}">查看</button><button type="button" class="tool-button danger-button" data-delete-original="${esc(node.id)}">删除</button>`;
-   return '<article class="main-node-row subscription-card" data-display-id="' + esc(node.id) + '">' + subscriptionCard({ ...details, dragHandle: sortHandle(node.name), name: isMainSource(node.content) ? '订阅源' : node.name, checkbox, actions }) + '</article>';
+   return '<article class="main-node-row subscription-card" data-display-id="' + esc(node.id) + '">' + subscriptionCard({ ...details, dragHandle: sortHandle(node.name), name: isMainSource(node.content) ? '订阅源' : node.name, checkbox, actions, toggle: enableSwitch('original', node, node.name) }) + '</article>';
   }).join('') || '<p class="main-empty">没有匹配的节点，可点击“批量添加”添加节点或订阅源。</p>';
   updateOriginalSelection();
   el('originalProgress').textContent = `${Math.min(originalLimit, nodes.length)} / ${nodes.length} 项`;
@@ -83,14 +87,16 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  }
  function viewNode(content) { el('nodeViewValue').value = content; el('nodeViewDialog').showModal(); }
  function renderEndpoints() {
+  const protocols = new Map(config.originals.map(node => [node.id, subscriptionNodeDetails(node.content).protocol]));
   const names = new Map(config.originals.map((node, index) => [node.id, mainNodeName(node.content, `主订阅节点 ${index + 1}`)]));
   el('endpointList').innerHTML = config.endpoints.slice(0, endpointLimit).map(endpoint => {
    const label = endpoint.label || endpoint.address;
    const address = (endpoint.address.includes(':') ? '[' + endpoint.address + ']' : endpoint.address) + ':' + endpoint.port;
    const association = '应用到 ' + endpoint.originalIds.length + ' 个节点：' + endpoint.originalIds.map(id => names.get(id) || '【原始节点已移除，请重新选择】').join('、');
-   const actions = `<button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button" data-toggle-endpoint="${esc(endpoint.id)}">${endpoint.enabled ? '停用' : '启用'}</button><button type="button" class="tool-button danger-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button>`;
+   const actions = `<button type="button" class="tool-button" data-edit-endpoint="${esc(endpoint.id)}">编辑关联</button><button type="button" class="tool-button danger-button" data-delete-endpoint="${esc(endpoint.id)}">删除</button>`;
+   const protocol = [...new Set(endpoint.originalIds.map(id => protocols.get(id)).filter(Boolean))].join(' / ') || '未关联';
    const detail = `<p class="subscription-card-detail" title="${esc(association)}">${esc(association)}</p>`;
-   return '<article class="main-node-row main-endpoint-row subscription-card" data-display-id="' + esc(endpoint.id) + '">' + subscriptionCard({ name: label, dragHandle: sortHandle(label), protocol: endpoint.enabled ? '启用' : '停用', address, port: endpoint.port, detail, actions }) + '</article>';
+   return '<article class="main-node-row main-endpoint-row subscription-card" data-display-id="' + esc(endpoint.id) + '">' + subscriptionCard({ name: label, dragHandle: sortHandle(label), protocol, address, port: endpoint.port, detail, actions, toggle: enableSwitch('endpoint', endpoint, label) }) + '</article>';
   }).join('') || '<p class="main-empty">添加优选域名或 IP，并勾选要应用的原始节点。</p>';
   el('endpointProgress').textContent = `${Math.min(endpointLimit, config.endpoints.length)} / ${config.endpoints.length} 条`;
   el('moreEndpoints').hidden = config.endpoints.length <= endpointLimit;
@@ -266,8 +272,13 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  });
  el('originalList').addEventListener('click', async event => {
   const button = event.target.closest('button'); if (!button) return;
-  const id = button.dataset.editOriginal || button.dataset.deleteOriginal || button.dataset.viewOriginal;
+  const id = button.dataset.editOriginal || button.dataset.deleteOriginal || button.dataset.viewOriginal || button.dataset.toggleOriginal;
   const node = config.originals.find(item => item.id === id); if (!node) return;
+  if (button.dataset.toggleOriginal) {
+   const success = await publishOriginals(config.originals.map(item => item.id === id ? { ...item, enabled: item.enabled === false } : item));
+   if (success) el('originalList').querySelector(`[data-toggle-original="${id}"]`)?.focus({ preventScroll: true });
+   return;
+  }
   if (button.dataset.viewOriginal) return viewNode(node.content);
   if (button.dataset.editOriginal) {
    editingOriginal = id; originalInitialValue = node.content; el('originalValue').value = node.content; el('originalError').textContent = ''; el('originalDialog').showModal(); return;

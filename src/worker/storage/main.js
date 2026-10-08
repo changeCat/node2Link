@@ -27,7 +27,7 @@ function validateMainRecord(value) {
     || typeof node.id !== 'string' || seenIds.has(node.id) || typeof node.name !== 'string' || typeof node.originalName !== 'string'
     || !originals.has(node.originalId) || !isMainNode(lines[node.line])) return false;
    if (node.kind === 'original') {
-    if (lines[node.line] !== originals.get(node.originalId).content) return false;
+    if (!originals.get(node.originalId).enabled || lines[node.line] !== originals.get(node.originalId).content) return false;
    } else if (node.kind === 'extension') {
     const endpoint = endpoints.get(node.endpointId);
     if (!endpoint?.enabled || !endpoint.originalIds.includes(node.originalId)) return false;

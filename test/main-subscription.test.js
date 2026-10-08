@@ -11,7 +11,7 @@ import worker from '../src/worker/app.js';
 const raw = 'vless://uuid@origin.example.com:443?security=tls&type=ws&host=origin.example.com&sni=tls.example.com&path=%2Fa%3Fb%3D1&custom=first&custom=second#HongKong';
 const other = 'hysteria2://secret@origin2.example.com:443?sni=origin2.example.com#HY2';
 const endpoint = { id: 'endpoint-1', address: 'cf.example.com', port: 8443, label: '优选 A', enabled: true, originalIds: ['original-1'] };
-const fixtureConfig = () => ({ version: 2, originals: [{ id: 'original-1', content: raw }, { id: 'original-2', content: other }], endpoints: [structuredClone(endpoint)] });
+const fixtureConfig = () => ({ version: 2, originals: [{ id: 'original-1', content: raw, enabled: true }, { id: 'original-2', content: other, enabled: true }], endpoints: [structuredClone(endpoint)] });
 
 test('compact summaries decode supported formats and omit credentials and query parameters', () => {
  assert.deepEqual(mainNodeSummary(raw), { protocol: 'VLESS', address: 'origin.example.com:443' });
@@ -255,4 +255,63 @@ test('separate save routes isolate endpoints, propagate UUID edits, dedupe assoc
  assert.equal((await request('', { section: 'history', originalHistoryLimit: 2 }, null, '/api/settings')).status, 200);
  const history = await (await request('list-original-history', {})).json();
  assert.equal(history.limit, 2); assert.equal(history.versions.length, 2);
+});
+
+
+test('original switches default on and exclude originals and sources while preserving extensions', async () => {
+ const config = fixtureConfig();
+ delete config.originals[0].enabled;
+ assert.equal(compileMainConfig(config).config.originals[0].enabled, true);
+ config.originals[0].enabled = 'false';
+ assert.throws(() => compileMainConfig(config), /启用状态无效/);
+ config.originals[0].enabled = false;
+ config.originals.push({ id: 'upstream', content: 'https://disabled.example.com/sub', enabled: false });
+ const compiled = compileMainConfig(config);
+ const extension = extendMainNode(raw, endpoint, 'HongKong-优选 A');
+ assert.equal(compiled.content, extension + '\n' + other);
+ assert.deepEqual(compiled.nodes.map(node => node.kind), ['extension', 'original']);
+ assert.deepEqual(compiled.config.endpoints, config.endpoints);
+ const kv = new MemoryKV();
+ const disabled = await saveMainRecord(kv, config);
+ assert.equal((await readMainRecord(kv)).content, extension + '\n' + other);
+ assert.equal((await readOriginalVersion(kv, disabled.revision)).originals[0].enabled, false);
+ config.originals[0].enabled = true;
+ assert.equal(compileMainConfig(config).nodes.length, 3);
+ config.originals.forEach(node => { node.enabled = false; });
+ assert.equal(compileMainConfig(config).content, extension);
+ config.originals[0].content = raw.replace('uuid@', 'updated@');
+ assert.match(compileMainConfig(config).content, /^vless:\/\/updated@cf\.example\.com/);
+ await saveMainRecord(kv, config);
+ assert.equal((await readMainRecord(kv)).mainNodes[0].kind, 'extension');
+ config.endpoints[0].enabled = false;
+ assert.equal(compileMainConfig(config).content, '');
+ await saveMainRecord(kv, config);
+ assert.equal((await readMainRecord(kv)).content, '');
+});
+
+test('saving original switches immediately filters subscription and picker without fetching disabled sources', async () => {
+ const origin = 'https://main.example.com';
+ const env = { KV: new MemoryKV(), DB: new MemoryD1(), ADMIN_PASSWORD: 'test-password', SESSION_SECRET: 'test-secret', TOKEN: 'switch-token' };
+ const headers = { Cookie: (await createSessionCookie(env)).split(';')[0], Origin: origin, 'Content-Type': 'application/json' };
+ const request = (path, init = {}) => worker.fetch(new Request(origin + path, init), env, { waitUntil() {} });
+ const config = fixtureConfig();
+ const initial = await (await request('/', { method: 'POST', headers: { ...headers, 'X-Node2Link-Action': 'save-config' }, body: JSON.stringify(config) })).json();
+ config.originals[0].enabled = false;
+ config.originals.push({ id: 'upstream', content: 'https://disabled.example.com/sub', enabled: false });
+ const saved = await (await request('/', { method: 'POST', headers: { ...headers, 'X-Node2Link-Action': 'save-originals', 'X-Node2Link-Revision': initial.metadata.revision }, body: JSON.stringify({ originals: config.originals }) })).json();
+ assert.equal(saved.ok, true);
+ assert.deepEqual(saved.config.endpoints, config.endpoints);
+ const previousFetch = globalThis.fetch;
+ const calls = [];
+ globalThis.fetch = async url => { calls.push(String(url)); throw new Error('Unexpected upstream request'); };
+ try {
+  const response = await request('/switch-token?b64');
+  assert.equal(response.status, 200);
+  const expected = [extendMainNode(raw, endpoint, 'HongKong-优选 A'), other];
+  assert.deepEqual(Buffer.from(await response.text(), 'base64').toString().trim().split('\n'), expected);
+  const candidates = await (await request('/api/node-candidates?source=local', { headers })).json();
+  assert.deepEqual(candidates.nodes.map(node => node.content), expected);
+  assert.deepEqual(candidates.nodes.map(node => node.kind), ['extension', 'original']);
+  assert.deepEqual(calls, []);
+ } finally { globalThis.fetch = previousFetch; }
 });

@@ -294,7 +294,7 @@ test('compact cards, append, independent endpoints, exports and replacement clea
  }
  await setOriginals(page, 'vless://new@new.example.com:443#New');
  await expect(page.locator('#duplicateCount')).toHaveText('0');
- await expect(page.locator('#endpointList .main-badge')).toHaveText(['停用', '停用']);
+ await expect(page.locator('#endpointList [role="switch"][aria-checked="false"]')).toHaveCount(2);
  await restorePreviousOriginals(page);
  await expect(page.locator('#saveButton')).toBeEnabled();
  await expect(page.locator('#duplicateCount')).toHaveText('0');
@@ -341,7 +341,7 @@ test('empty batches are rejected and bulk deletion supports history restore and 
  await page.locator('#deleteOriginals').click();
  await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
  await expect(page.locator('#nodeCount')).toHaveText('0');
- await expect(page.locator('#endpointList')).toContainText('停用');
+ await expect(page.locator('#endpointList [role="switch"]')).toHaveAttribute('aria-checked', 'false');
  await expect(page.locator('#deleteOriginals')).toBeDisabled();
  await restorePreviousOriginals(page);
  await expect(page.locator('#saveButton')).toBeEnabled();
@@ -622,4 +622,59 @@ test('failed sorting saves retain published order and allow retry', async ({ pag
  await page.reload();
  await expect(names('originalList')).toHaveText(['Main-HY2', 'Main-HK']);
  await expect(names('endpointList')).toHaveText(['优选 2', '优选 1']);
+});
+
+
+test('original and endpoint switches share header layout and publish the correct subscription state', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ const original = page.locator('[data-toggle-original]').first();
+ const endpoint = page.locator('[data-toggle-endpoint]');
+ await expect(original).toHaveAttribute('aria-checked', 'true');
+ await expect(endpoint).toHaveAttribute('aria-checked', 'true');
+ await expect(page.locator('#endpointList .main-badge')).toHaveText('VLESS / HYSTERIA2');
+ for (const selector of ['#originalList', '#endpointList']) {
+  const card = page.locator(selector + ' .subscription-card').first();
+  const badge = await card.locator('.subscription-card-controls .main-badge').boundingBox();
+  const toggle = await card.locator('[role=switch]').boundingBox();
+  expect(toggle.x).toBeGreaterThan(badge.x + badge.width);
+  expect(Math.abs(toggle.y + toggle.height / 2 - badge.y - badge.height / 2)).toBeLessThan(2);
+ }
+ const beforeToggle = await subscription(page);
+ const green = await original.evaluate(el => getComputedStyle(el).backgroundColor);
+ await original.click();
+ await expect(original).toHaveAttribute('aria-checked', 'false');
+ await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
+ expect(await original.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(green);
+ expect(await subscription(page)).toEqual(beforeToggle.filter(line => line !== first));
+ await expect(page.locator('#duplicateCount')).toHaveText('2');
+ await page.reload();
+ await expect(original).toHaveAttribute('aria-checked', 'false');
+ await expect(endpoint).toHaveAttribute('aria-checked', 'true');
+ expect(await subscription(page)).toEqual(beforeToggle.filter(line => line !== first));
+ await page.screenshot({ path: test.info().outputPath('switches.png'), fullPage: true });
+ await original.click();
+ await expect(original).toHaveAttribute('aria-checked', 'true');
+ expect(await subscription(page)).toHaveLength(4);
+ await endpoint.click();
+ await expect(endpoint).toHaveAttribute('aria-checked', 'false');
+ expect(await subscription(page)).toHaveLength(4);
+ await save(page);
+ expect(await subscription(page)).toEqual([first, second]);
+ await page.reload();
+ await expect(endpoint).toHaveAttribute('aria-checked', 'false');
+ expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('failed original switch save preserves the enabled state and subscription', async ({ page }) => {
+ await seed(page);
+ await page.route('**/', async route => {
+  if (route.request().headers()['x-node2link-action'] === 'save-originals') return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: '模拟保存失败' }) });
+  return route.continue();
+ });
+ const toggle = page.locator('[data-toggle-original]').first();
+ await toggle.click();
+ await expect(page.locator('#originalSaveStatus')).toContainText('模拟保存失败');
+ await expect(toggle).toHaveAttribute('aria-checked', 'true');
+ await expect(toggle).toBeEnabled();
+ expect(await subscription(page)).toEqual([first, second]);
 });

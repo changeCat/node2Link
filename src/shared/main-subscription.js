@@ -120,7 +120,8 @@ export function normalizeMainConfig(input, { allowIncomplete = false } = {}) {
  const originals = input.originals.map((node, index) => {
   const id = idOf(node?.id);
   if (typeof node.content !== 'string' || !node.content.trim() || /[\r\n\0]/.test(node.content)) fail(`原始节点第 ${index + 1} 项必须是单行内容`);
-  return { id, content: node.content.trim() };
+  if (node.enabled !== undefined && typeof node.enabled !== 'boolean') fail(`原始节点第 ${index + 1} 项启用状态无效`);
+  return { id, content: node.content.trim(), enabled: node.enabled ?? true };
  });
  const nodes = new Map(originals.map(node => [node.id, node]));
  const endpoints = input.endpoints.map((endpoint, index) => {
@@ -219,7 +220,7 @@ export function compileMainConfig(input) {
  for (const [index, original] of config.originals.entries()) {
   const name = mainNodeName(original.content, `主订阅节点 ${index + 1}`);
   const base = { originalId: original.id, originalName: name };
-  add(original.content, isMainNode(original.content) ? { ...base, id: `main-original-${original.id}`, kind: 'original', name } : null);
+  if (original.enabled) add(original.content, isMainNode(original.content) ? { ...base, id: `main-original-${original.id}`, kind: 'original', name } : null);
   for (const endpoint of endpointsByOriginal.get(original.id) || []) {
    const nameSuffix = endpoint.label || `${endpoint.address}:${endpoint.port}`;
    const extendedName = `${name}-${nameSuffix}`;
