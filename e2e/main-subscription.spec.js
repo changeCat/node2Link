@@ -63,6 +63,9 @@ async function subscription(page) {
 }
 test('main associations generate on save, retain identity on edit and feed share selection', async ({ page }) => {
  await seed(page); await addEndpoints(page);
+ await expect(page.locator('#previewKind')).toHaveValue('all');
+ await expect(page.locator('#mainPreview .subscription-card')).toHaveCount(6);
+ await expect(page.locator('#mainPreview .subscription-card-heading strong')).toHaveText(['Main-HK', 'Main-HK-优选 1', 'Main-HK-优选 2', 'Main-HY2', 'Main-HY2-优选 1', 'Main-HY2-优选 2']);
  await expect(page.locator('#duplicateCount')).toHaveText('4');
  await expect(page.locator('#moreOriginals')).toBeHidden();
  await expect(page.locator('#moreEndpoints')).toBeHidden();
@@ -410,7 +413,10 @@ test('custom converter addresses display in full without copy controls or fallba
 });
 
 test('wheel scrolling passes from short lists and list boundaries to the page', async ({ page }) => {
- await seed(page); await addEndpoints(page, 'cf.example.com');
+ // One original plus one extension stays short even in the default all-nodes view on mobile.
+ await setOriginals(page, first); await addEndpoints(page, 'cf.example.com');
+ await expect(page.locator('#previewKind')).toHaveValue('all');
+ await expect(page.locator('#mainPreview .subscription-card')).toHaveCount(2);
  async function wheelOnList(id) {
   const list = page.locator('#' + id);
   await list.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
