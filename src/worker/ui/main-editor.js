@@ -30,6 +30,7 @@ export const mainEditorStyles = `
  .main-action-group,.main-selection{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:7px}
  .main-action-group+.main-action-group{border-left:1px solid var(--line);padding-left:18px}
  .main-section-head p{margin:0;max-width:90ch}
+ #originalSection>.main-section-head>p{width:100%;max-width:none;overflow-wrap:anywhere}
  .editor-toolbar>.primary-button{margin-left:auto;flex-shrink:0}
  .original-management-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px 18px;max-width:100%}
  .original-filter-controls{display:flex;align-items:center;gap:10px;flex:1 1 540px;min-width:0;margin-right:auto}
