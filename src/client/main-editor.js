@@ -133,7 +133,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('validationStatus').classList.toggle('has-issues', Boolean(problem));
   el('validationStatus').querySelector('span').textContent = problem ? '配置需要修正' : '配置检查通过';
   el('validationIssues').textContent = problem;
-  el('mainPreviewNote').textContent = problem || `预览：${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 + ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。基于已生效原始节点生成；优选修改保存后发布。导出当前预览，不受筛选影响。`;
+  el('mainPreviewNote').textContent = problem || `${compiled.nodes.filter(node => node.kind === 'original').length} 个原始节点 · ${compiled.nodes.filter(node => node.kind === 'extension').length} 个扩展节点。优选修改保存后生效，导出不受筛选影响。`;
   renderPreview();
  }
  function updateMetadata(metadata) {
