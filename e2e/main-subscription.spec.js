@@ -640,11 +640,12 @@ test('original and endpoint switches share header layout and publish the correct
   expect(Math.abs(toggle.y + toggle.height / 2 - badge.y - badge.height / 2)).toBeLessThan(2);
  }
  const beforeToggle = await subscription(page);
- const green = await original.evaluate(el => getComputedStyle(el).backgroundColor);
+ await expect(original).toHaveCSS('background-color', 'rgb(13, 204, 104)');
  await original.click();
  await expect(original).toHaveAttribute('aria-checked', 'false');
  await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
- expect(await original.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(green);
+ // Saving can finish before the CSS transition; wait for the final color, not a single animation frame.
+ await expect(original).toHaveCSS('background-color', 'rgb(239, 68, 68)');
  expect(await subscription(page)).toEqual(beforeToggle.filter(line => line !== first));
  await expect(page.locator('#duplicateCount')).toHaveText('2');
  await page.reload();
@@ -654,10 +655,12 @@ test('original and endpoint switches share header layout and publish the correct
  await page.screenshot({ path: test.info().outputPath('switches.png'), fullPage: true });
  await original.click();
  await expect(original).toHaveAttribute('aria-checked', 'true');
+ await expect(original).toHaveCSS('background-color', 'rgb(13, 204, 104)');
  await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
  expect(await subscription(page)).toHaveLength(4);
  await endpoint.click();
  await expect(endpoint).toHaveAttribute('aria-checked', 'false');
+ await expect(endpoint).toHaveCSS('background-color', 'rgb(239, 68, 68)');
  expect(await subscription(page)).toHaveLength(4);
  await save(page);
  expect(await subscription(page)).toEqual([first, second]);
