@@ -14,6 +14,8 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  let originalLimit = 100, previewLimit = 100, endpointLimit = 50, targetLimit = 100;
  let editingOriginal = '', editingEndpoint = '', selectedTargets = new Set();
  let endpointInitialValue = '', originalInitialValue = '', saving = false;
+ let switchSavePromise = null;
+ const pendingOriginalSwitches = new Map();
  const selectedOriginals = new Set();
  const draftKey = 'node2link:draft:' + location.host + location.pathname;
  const state = (message, kind = '') => { el('saveStatus').textContent = message; el('saveStatus').className = 'save-state ' + kind; };
@@ -115,8 +117,8 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('exportMain').disabled = !compiled;
   el('exportExtensions').disabled = !compiled;
  }
- function render() {
-  renderOriginals(); renderEndpoints();
+ function render({ lists = true } = {}) {
+  if (lists) { renderOriginals(); renderEndpoints(); }
   const nodes = config.originals.filter(node => isMainNode(node.content));
   el('lineCount').textContent = config.originals.length;
   el('nodeCount').textContent = nodes.length;
@@ -151,6 +153,8 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  }
  async function saveContent() {
   if (saving) return;
+  if (switchSavePromise && !await switchSavePromise) return;
+  if (saving) return;
   flush(); syncText();
   if (snapshot() === saved) { state('已同步'); return; }
   try { compileMainConfig(config); } catch (error) { state(error.message, 'error'); showToast(error.message); return; }
@@ -168,6 +172,13 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  }
  async function publishOriginals(originals, { historyRevision } = {}) {
   if (saving) { showToast('正在保存，请稍后重试'); return false; }
+  if (switchSavePromise && !await switchSavePromise) return false;
+  if (saving) return false;
+  // Edits opened during a switch save must retain the latest switch choices.
+  if (!historyRevision) {
+   const enabled = new Map(config.originals.map(node => [node.id, node.enabled ?? true]));
+   originals = originals.map(node => enabled.has(node.id) ? { ...node, enabled: enabled.get(node.id) } : node);
+  }
   const previous = structuredClone(config.originals);
   saving = true; updateSaveButton(); el('originalSaveStatus').textContent = '正在保存原始节点…';
   try {
@@ -181,6 +192,52 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    return true;
   } catch (error) { el('originalSaveStatus').textContent = '保存失败：' + error.message; showToast(error.message); return false; }
   finally { saving = false; updateSaveButton(); }
+ }
+ function updateOriginalSwitches() {
+  const originals = new Map(config.originals.map(node => [node.id, node]));
+  for (const button of el('originalList').querySelectorAll('[data-toggle-original]')) {
+   const enabled = originals.get(button.dataset.toggleOriginal)?.enabled !== false;
+   button.setAttribute('aria-checked', String(enabled));
+   button.title = enabled ? '已启用，点击停用' : '已停用，点击启用';
+  }
+ }
+ function saveOriginalSwitches() {
+  if (switchSavePromise) return switchSavePromise;
+  switchSavePromise = (async () => {
+   try {
+    while (pendingOriginalSwitches.size) {
+     // Only one revision write is in flight; subsequent clicks collapse to their latest values.
+     pendingOriginalSwitches.clear();
+     const originals = structuredClone(config.originals);
+     const response = await fetch(location.href, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Node2Link-Action': 'save-originals', 'X-Node2Link-Revision': revision }, body: JSON.stringify({ originals }), cache: 'no-store' });
+     const data = await response.json();
+     if (!response.ok) throw new Error(data.message || '保存失败');
+     saved = snapshot(data.config); revision = data.metadata.revision;
+     updateMetadata(data.metadata); persistDraft();
+    }
+    el('originalSaveStatus').textContent = '原始节点已保存';
+    state(snapshot() === saved ? '已同步' : '优选配置有未保存更改', snapshot() === saved ? '' : 'dirty');
+    return true;
+   } catch (error) {
+    // Restore confirmed flags only; keep open forms and preferred-address drafts intact.
+    pendingOriginalSwitches.clear();
+    const confirmed = new Map(JSON.parse(saved).config.originals.map(node => [node.id, node.enabled]));
+    config.originals.forEach(node => { if (confirmed.has(node.id)) node.enabled = confirmed.get(node.id); });
+    updateOriginalSwitches(); render({ lists: false }); persistDraft();
+    el('originalSaveStatus').textContent = '保存失败：' + error.message;
+    showToast('开关保存失败，已恢复上次保存状态：' + error.message);
+    return false;
+   } finally { switchSavePromise = null; }
+  })();
+  return switchSavePromise;
+ }
+ function toggleOriginal(node) {
+  if (saving) return;
+  node.enabled = node.enabled === false;
+  pendingOriginalSwitches.set(node.id, node.enabled);
+  updateOriginalSwitches(); render({ lists: false }); persistDraft();
+  el('originalSaveStatus').textContent = '正在后台保存启用状态…';
+  saveOriginalSwitches();
  }
  function renderTargets() {
   const query = el('targetSearch').value.trim().toLowerCase();
@@ -274,11 +331,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const button = event.target.closest('button'); if (!button) return;
   const id = button.dataset.editOriginal || button.dataset.deleteOriginal || button.dataset.viewOriginal || button.dataset.toggleOriginal;
   const node = config.originals.find(item => item.id === id); if (!node) return;
-  if (button.dataset.toggleOriginal) {
-   const success = await publishOriginals(config.originals.map(item => item.id === id ? { ...item, enabled: item.enabled === false } : item));
-   if (success) el('originalList').querySelector(`[data-toggle-original="${id}"]`)?.focus({ preventScroll: true });
-   return;
-  }
+  if (button.dataset.toggleOriginal) return toggleOriginal(node);
   if (button.dataset.viewOriginal) return viewNode(node.content);
   if (button.dataset.editOriginal) {
    editingOriginal = id; originalInitialValue = node.content; el('originalValue').value = node.content; el('originalError').textContent = ''; el('originalDialog').showModal(); return;
@@ -430,7 +483,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
  document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!document.querySelector('dialog[open]')) saveContent(); } });
  window.addEventListener('pagehide', flush);
  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
- window.addEventListener('beforeunload', event => { flush(); if (saving || snapshot() !== saved || originalHasChanges() || endpointHasChanges() || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
+ window.addEventListener('beforeunload', event => { flush(); if (saving || switchSavePromise || snapshot() !== saved || originalHasChanges() || endpointHasChanges() || el('batchDialog').open && el('batchValue').value.trim()) { event.preventDefault(); event.returnValue = ''; } });
  for (const [listId, key] of [['originalList', 'originals'], ['endpointList', 'endpoints']]) {
   attachCardSorting(el(listId), async (id, targetId, after) => {
    if (saving) return false;

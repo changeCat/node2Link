@@ -74,7 +74,7 @@ export const mainEditorStyles = `
 
 export function renderMainEditorSections() {
  return `<section class="main-section main-workspace" id="originalSection" aria-labelledby="originalSectionTitle">
-  <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑、删除及启停后立即保存并生效。停用仅停止原始节点输出，关联扩展节点仍按优选配置生成；停用订阅源不再请求。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。拖动左侧手柄排序，立即保存并同步订阅。</p></div>
+  <div class="main-section-head"><div class="main-workspace-title"><h3 id="originalSectionTitle">原始节点</h3><span class="main-scope-badge">即时保存</span></div><p>追加、覆盖、编辑及删除后立即保存并生效。开关即时响应并后台保存，保存成功后更新订阅。停用仅停止原始节点输出，关联扩展节点仍按优选配置生成；停用订阅源不再请求。修改名称、参数或 UUID 请用“编辑”，已生效的关联扩展节点会同步更新。拖动左侧手柄排序，立即保存并同步订阅。</p></div>
   <div class="editor-actions">
    <div class="original-filter-controls"><input id="originalSearch" class="main-toolbar-search" type="search" aria-label="搜索原始节点" placeholder="搜索原始节点">
     <div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>

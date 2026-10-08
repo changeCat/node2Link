@@ -4,10 +4,10 @@ export const subscriptionCardStyles = `
 .subscription-card-heading{display:flex;align-items:center;gap:7px;min-width:0}
 .subscription-card-controls{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:0 1 auto;min-width:0;max-width:62%;margin-left:auto}
 .subscription-card .subscription-card-controls .main-badge{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.node-enable-switch{position:relative;display:inline-block;flex:none;width:40px;height:22px;min-height:22px;margin:0;padding:0;border:2px solid #bb5555;border-radius:999px;background:#f49b9b;cursor:pointer;transition:background .15s,border-color .15s}
-.node-enable-switch::after{content:'';position:absolute;top:-1px;left:-1px;width:20px;height:20px;box-sizing:border-box;border:2px solid #a74747;border-radius:50%;background:#fbc1c1;transition:transform .15s,background .15s,border-color .15s}
-.node-enable-switch[aria-checked=true]{border-color:#81a943;background:#b5e563}
-.node-enable-switch[aria-checked=true]::after{transform:translateX(18px);border-color:#6d9138;background:#b5e563}
+.node-enable-switch{position:relative;display:inline-block;flex:none;width:40px;height:22px;min-height:22px;margin:0;padding:0;border:0;border-radius:999px;background:#ef4444;cursor:pointer;transition:background .15s}
+.node-enable-switch::after{content:'';position:absolute;top:1px;left:1px;width:20px;height:20px;box-sizing:border-box;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08);transition:transform .15s}
+.node-enable-switch[aria-checked=true]{background:#0dcc68}
+.node-enable-switch[aria-checked=true]::after{transform:translateX(18px)}
 .node-enable-switch:focus-visible{outline:2px solid var(--green);outline-offset:3px}
 .node-enable-switch:disabled{opacity:.55;cursor:wait}
 @media(prefers-reduced-motion:reduce){.node-enable-switch,.node-enable-switch::after{transition:none}}

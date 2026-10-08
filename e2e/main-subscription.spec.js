@@ -654,6 +654,7 @@ test('original and endpoint switches share header layout and publish the correct
  await page.screenshot({ path: test.info().outputPath('switches.png'), fullPage: true });
  await original.click();
  await expect(original).toHaveAttribute('aria-checked', 'true');
+ await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
  expect(await subscription(page)).toHaveLength(4);
  await endpoint.click();
  await expect(endpoint).toHaveAttribute('aria-checked', 'false');
@@ -677,4 +678,119 @@ test('failed original switch save preserves the enabled state and subscription',
  await expect(toggle).toHaveAttribute('aria-checked', 'true');
  await expect(toggle).toBeEnabled();
  expect(await subscription(page)).toEqual([first, second]);
+});
+
+
+test('background switch saves keep controls responsive and coalesce rapid clicks without publishing endpoint drafts', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ let release;
+ const gate = new Promise(resolve => { release = resolve; });
+ const writes = [];
+ await page.route('**/', async route => {
+  if (route.request().headers()['x-node2link-action'] === 'save-originals') {
+   writes.push(route.request().postDataJSON());
+   if (writes.length === 1) await gate;
+  }
+  await route.continue();
+ });
+ const toggles = page.locator('[data-toggle-original]');
+ try {
+  await toggles.first().click();
+  await expect(toggles.first()).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('#originalSaveStatus')).toContainText('后台保存');
+  await expect.poll(() => writes.length).toBe(1);
+  await expect(page.locator('[data-edit-original]').first()).toBeEnabled();
+  await expect(page.locator('#addOriginals')).toBeEnabled();
+  await page.locator('[data-edit-original]').first().click();
+  await expect(page.locator('#originalValue')).toBeEditable();
+  await page.locator('#cancelOriginal').click();
+  await toggles.first().click();
+  await toggles.first().click();
+  await toggles.first().click();
+  await toggles.nth(1).click();
+  await expect(toggles.first()).toHaveAttribute('aria-checked', 'true');
+  await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'false');
+  expect(writes).toHaveLength(1);
+  await page.locator('[data-toggle-endpoint]').click();
+  await expect(page.locator('[data-toggle-endpoint]')).toHaveAttribute('aria-checked', 'false');
+ } finally { release(); }
+ await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
+ expect(writes).toHaveLength(2);
+ expect(writes[1].originals.map(node => node.enabled)).toEqual([true, false]);
+ await expect(page.locator('[data-toggle-endpoint]')).toHaveAttribute('aria-checked', 'false');
+ await expect(page.locator('#saveStatus')).toContainText('未保存');
+ const lines = await subscription(page);
+ expect(lines).toContain(first); expect(lines).not.toContain(second); expect(lines).toHaveLength(3);
+ await save(page);
+ expect(await subscription(page)).toEqual([first]);
+ await page.reload();
+ await expect(toggles.first()).toHaveAttribute('aria-checked', 'true');
+ await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'false');
+});
+
+test('editing during a background switch save waits for its revision and preserves the switch choice', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ let release;
+ const gate = new Promise(resolve => { release = resolve; });
+ const revisions = [];
+ await page.route('**/', async route => {
+  if (route.request().headers()['x-node2link-action'] === 'save-originals') {
+   revisions.push(route.request().headers()['x-node2link-revision']);
+   if (revisions.length === 1) await gate;
+  }
+  await route.continue();
+ });
+ try {
+  await page.locator('[data-toggle-original]').first().click();
+  await expect.poll(() => revisions.length).toBe(1);
+  await page.locator('[data-edit-original]').first().click();
+  await page.locator('#originalValue').fill(first.replace('uuid@', 'edited-during-save@'));
+  await page.locator('#originalForm button[type=submit]').click();
+  expect(revisions).toHaveLength(1);
+ } finally { release(); }
+ await expect(page.locator('#originalDialog')).not.toBeVisible();
+ await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
+ expect(revisions).toHaveLength(2);
+ expect(revisions[1]).not.toBe(revisions[0]);
+ await page.reload();
+ await expect(page.locator('[data-toggle-original]').first()).toHaveAttribute('aria-checked', 'false');
+ const lines = await subscription(page);
+ expect(lines).toHaveLength(3);
+ expect(lines.filter(line => line.includes('edited-during-save@'))).toHaveLength(1);
+ expect(lines.find(line => line.includes('edited-during-save@'))).toContain('@cf.example.com');
+});
+
+test('failed queued switch save restores confirmed flags and retains open edits and endpoint drafts', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ let release;
+ const gate = new Promise(resolve => { release = resolve; });
+ let writes = 0;
+ await page.route('**/', async route => {
+  if (route.request().headers()['x-node2link-action'] === 'save-originals') {
+   writes++;
+   if (writes === 1) await gate;
+   else return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: '模拟队列保存失败' }) });
+  }
+  await route.continue();
+ });
+ try {
+  await page.locator('[data-toggle-original]').first().click();
+  await expect.poll(() => writes).toBe(1);
+  await page.locator('[data-toggle-original]').nth(1).click();
+  await page.locator('[data-toggle-endpoint]').click();
+  await page.locator('[data-edit-original]').first().click();
+  await page.locator('#originalValue').fill(first + '-draft');
+ } finally { release(); }
+ await expect(page.locator('#originalSaveStatus')).toContainText('模拟队列保存失败');
+ await expect(page.locator('[data-toggle-original]').first()).toHaveAttribute('aria-checked', 'false');
+ await expect(page.locator('[data-toggle-original]').nth(1)).toHaveAttribute('aria-checked', 'true');
+ await expect(page.locator('[data-toggle-endpoint]')).toHaveAttribute('aria-checked', 'false');
+ await expect(page.locator('#originalValue')).toHaveValue(first + '-draft');
+ await expect(page.locator('#originalValue')).toBeEditable();
+ const lines = await subscription(page);
+ expect(lines).not.toContain(first); expect(lines).toContain(second); expect(lines).toHaveLength(3);
+ await page.locator('#originalValue').fill(first);
+ await page.locator('#cancelOriginal').click();
+ await save(page);
+ expect(await subscription(page)).toEqual([second]);
 });
