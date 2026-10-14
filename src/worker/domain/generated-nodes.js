@@ -49,8 +49,8 @@ export function normalizeEndpoint(payload) {
 	const addressType = isDomain(input) ? 'domain' : isIPv4(input) || isIPv6(input) ? 'ip' : '';
 	if (!addressType) throw new Error('address 参数不是有效的域名、IPv4 或 IPv6 地址');
 	const portInput = String(payload?.port ?? '').trim();
-	const port = portInput ? Number(portInput) : DEFAULT_API_PORT;
-	if (portInput && !/^\d+$/.test(portInput) || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('port 参数必须是 1 到 65535 的整数');
+	const port = portInput ? Number(portInput) : null;
+	if (portInput && (!/^\d+$/.test(portInput) || !Number.isInteger(port) || port < 1 || port > 65535)) throw new Error('port 参数必须是 1 到 65535 的整数');
 	return { kind: 'endpoint', addressType, address: input, port };
 }
 
@@ -129,13 +129,14 @@ export function generateNodesForEndpoint(settings, endpoint, createdAt) {
   if (!settings.sourceTemplates.length) throw new Error('管理员尚未选择原始节点模板');
   return settings.sourceTemplates.map(original => {
    if (!original.content) throw new Error('原始节点已不存在，请移除失效模板');
-   const effectiveEndpoint = { ...endpoint, port: original.port ?? endpoint.port ?? DEFAULT_API_PORT };
+   const effectiveEndpoint = { ...endpoint, port: endpoint.port ?? original.port ?? DEFAULT_API_PORT };
    const variables = { address: endpoint.address, port: String(effectiveEndpoint.port), type: endpoint.addressType === 'domain' ? '域名' : 'IP', name: mainNodeName(original.content) };
    const name = applyVariables(settings.nameTemplate, variables).trim().slice(0, 240);
    if (!name) throw new Error('节点名称格式生成了空名称');
    return { id: createId(), ...effectiveEndpoint, name, content: extendMainNode(original.content, effectiveEndpoint, name), createdAt };
   });
  }
+	endpoint = { ...endpoint, port: endpoint.port ?? DEFAULT_API_PORT };
 	const templates = cleanLines(settings.nodeTemplate);
 	if (!templates.length) throw new Error('管理员尚未配置节点模板');
 	const uriAddress = endpoint.addressType === 'ip' && endpoint.address.includes(':') ? `[${endpoint.address}]` : endpoint.address;

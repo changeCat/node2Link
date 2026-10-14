@@ -49,6 +49,7 @@ function syncExamples() {
  document.getElementById('directExample').textContent = 'curl -X POST "' + endpoint + '" -H "X-API-Token: ' + tokenInput.value + '" -H "Content-Type: text/plain;charset=UTF-8" --data-binary "{{node1}}\n{{node2}}"';
 }
 function renderNodes() {
+ nodes.sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0));
  document.getElementById('nodeCount').textContent = nodes.length + ' 个';
  list.innerHTML = nodes.length ? nodes.map(node => {
   const details = subscriptionNodeDetails(node.content);

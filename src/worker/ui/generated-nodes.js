@@ -30,7 +30,7 @@ export const generatedNodesMarkup = `
   <div class="api-section-head"><div><div class="api-title"><h2>节点模板</h2><span class="count-badge" id="templateCount">0 / 20</span></div><p>关联原始节点；原始节点修改后，后续 API 调用自动使用最新内容。</p></div><button class="button primary" id="saveSettings" type="submit">保存模板</button></div>
   <div class="api-toolbar"><input id="savedTemplateSearch" type="search" placeholder="搜索已有模板" aria-label="搜索已有模板"><button class="button" id="addTemplate" type="button">＋ 添加模板</button></div>
   <div id="templateList" class="api-template-grid subscription-card-grid"></div>
-  <p class="muted api-save-state">端口优先级：模板指定端口 &gt; API 传入端口 &gt; 默认 8443。</p>
+  <p class="muted api-save-state">端口优先级：API 传入端口 &gt; 模板指定端口 &gt; 默认 8443。</p>
   <p id="settingsMessage" class="api-save-state muted" role="status"></p>
  </section></form>
  <form id="apiSettingsForm" class="panel"><div class="api-section-head"><h2>API 配置</h2><button class="button primary" id="saveAPISettings" type="submit">保存 API 配置</button></div>

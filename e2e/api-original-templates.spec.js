@@ -113,7 +113,7 @@ test('template cards, duplicate prevention, optional ports and automatic origina
  const initial = await importAddress('auto-template.example.com');
  expect(initial.nodes.map(node => node.port)).toEqual([2053, 8443]);
  const supplied = await importAddress('port-template.example.com', '443');
- expect(supplied.nodes.map(node => node.port)).toEqual([2053, 443]);
+ expect(supplied.nodes.map(node => node.port)).toEqual([443, 443]);
  // Change the original without saving or refreshing any API configuration.
  const edited = { ...config, originals: [{ id: 'one', content: first.replace('secret@', 'new-secret@').replace('#Original-A', '#Updated-A') }, config.originals[1]] };
  await saveConfig(page, edited);
@@ -257,4 +257,26 @@ test('API configuration and template saves preserve each other’s pending edits
  await expect(page.locator('#nameTemplate')).toHaveValue('Saved-{{address}}');
  await expect(page.locator('#apiToken')).toHaveValue(pendingToken);
  await expect(page.locator('.api-template-card')).toHaveCount(0);
+});
+
+
+test('generated node cards sort by creation time and preserve ties after deletion', async ({ page }) => {
+ const fixtures = [
+  { id: 'newest', name: 'Newest', createdAt: '2026-10-14T03:00:00.000Z' },
+  { id: 'oldest', name: 'Oldest', createdAt: '2026-10-14T01:00:00.000Z' },
+  { id: 'middle-one', name: 'Middle One', createdAt: '2026-10-14T02:00:00.000Z' },
+  { id: 'middle-two', name: 'Middle Two', createdAt: '2026-10-14T02:00:00.000Z' }
+ ].map(node => ({ ...node, kind: 'raw', content: 'vless://secret@edge.example.com:443#' + node.id }));
+ await page.route('**/api-subscriptions', async route => {
+  const response = await route.fetch();
+  const body = (await response.text()).replace(/(<script type="application\/json" id="page-data-generated-nodes">)([\s\S]*?)(<\/script>)/, (_, start, json, end) => start + JSON.stringify({ ...JSON.parse(json), nodes: fixtures }) + end);
+  await route.fulfill({ response, body });
+ });
+ await page.goto('/api-subscriptions');
+ const names = page.locator('#nodeList .subscription-card-heading strong');
+ await expect(names).toHaveText(['Oldest', 'Middle One', 'Middle Two', 'Newest']);
+ await page.route('**/api/generated-nodes', route => route.request().method() === 'DELETE' ? route.fulfill({ json: { success: true } }) : route.continue());
+ await page.locator('[data-delete="oldest"]').click();
+ await page.locator('#confirmAccept').click();
+ await expect(names).toHaveText(['Middle One', 'Middle Two', 'Newest']);
 });

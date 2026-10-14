@@ -33,7 +33,7 @@ for (const storage of ['KV', 'D1']) test(storage + ': live original bindings, po
  assert.deepEqual(initialNodes.map(node => node.port), [2053, 8443]);
  const supplied = await call('203.0.113.2', 443);
  assert.equal(supplied.status, 201);
- assert.deepEqual((await supplied.json()).nodes.map(node => node.port), [2053, 443]);
+ assert.deepEqual((await supplied.json()).nodes.map(node => node.port), [443, 443]);
  // Editing main credentials, transport parameters and names takes effect without any API settings save.
  const edited = config();
  edited.originals[0].content = first.replace('secret@', 'updated-secret@').replace('sni=origin.example.com', 'sni=updated.example.com').replace('#原始一', '#已修改');
@@ -77,7 +77,7 @@ test('address is required and optional per-address ports preserve batch position
  const settings = { nameTemplate, sourceTemplates: [{ id: 'one', content: first, port: null }, { id: 'two', content: second, port: 2087 }] };
  assert.throws(() => generateNodesFromEndpoints(settings, { port: 443 }), /address/);
  const nodes = generateNodesFromEndpoints(settings, { address: ['first.example.com', 'second.example.com'], port: ['', '443'] });
- assert.deepEqual(nodes.map(node => node.port), [8443, 2087, 443, 2087]);
+ assert.deepEqual(nodes.map(node => node.port), [8443, 2087, 443, 443]);
  assert.ok(nodes[0].name.endsWith(':8443'));
  assert.ok(nodes[1].name.endsWith(':2087'));
  for (const port of [0, -1, 65536, 1.5, 'abc']) assert.throws(() => generateNodesFromEndpoints(settings, { address: 'edge.example.com', port }), /port/);
@@ -112,4 +112,23 @@ test('malformed originals remain visible but cannot be selected or partially imp
  assert.equal(result.status, 400);
  assert.equal((await readGeneratedNodeSettings(env.KV)).token, '');
  assert.deepEqual(await readGeneratedNodes(env.KV), []);
+});
+
+test('API ports override template ports, including explicit 8443 and batch object ports', () => {
+ const settings = { nameTemplate, sourceTemplates: [{ id: 'one', content: first, port: 2053 }, { id: 'two', content: second, port: null }] };
+ const cases = [
+  [{ address: 'edge.example.com' }, [2053, 8443]],
+  [{ address: 'edge.example.com', port: 8443 }, [8443, 8443]],
+  [{ addresses: ['one.example.com', 'two.example.com'], port: 443 }, [443, 443, 443, 443]],
+  [{ addresses: [{ address: 'one.example.com', port: 2087 }, { address: 'two.example.com' }], port: 443 }, [2087, 2087, 443, 443]],
+  [{ addresses: [{ address: 'one.example.com', port: '' }, { address: 'two.example.com', port: null }], port: 443 }, [2053, 8443, 2053, 8443]]
+ ];
+ for (const [payload, ports] of cases) {
+  const nodes = generateNodesFromEndpoints(settings, payload);
+  assert.deepEqual(nodes.map(node => node.port), ports);
+  nodes.forEach((node, index) => {
+   assert.ok(node.name.endsWith(':' + ports[index]));
+   assert.equal(new URL(node.content).port, String(ports[index]));
+  });
+ }
 });
