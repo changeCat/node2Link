@@ -145,7 +145,7 @@ vless://uuid@{{address}}:{{port}}?encryption=none&security=tls#{{name}}
 | `slice:开始:结束` | `{{address|slice:0:6}}` | `cfsaas.080112.xyz` 得到 `cfsaas` |
 | `split:分隔符:序号` | `{{address|split:.:0}}` | 按 `.` 分段后取第 1 段，得到 `cfsaas` |
 
-外部调用使用 `address` 参数，它同时支持域名、IPv4 和 IPv6。单个地址的调用方式保持不变；批量导入时可在 GET URL 中重复传入 `address`。`port` 只有一个时会应用到全部地址，重复传入时必须与地址一一对应；端口优先级为 API 传入端口 > 模板指定端口 > 默认 `8443`。右侧生成的节点按添加时间升序显示，同一时间的节点保持原有顺序。系统只保存一个有效 API Token：
+外部调用使用 `address` 参数，它同时支持域名、IPv4 和 IPv6。单个地址的调用方式保持不变；批量导入时可在 GET URL 中重复传入 `address`。`port` 只有一个时会应用到全部地址，重复传入时必须与地址一一对应；端口优先级为 API 传入端口 > 模板指定端口 > 默认 `8443`。相同地址再次上传会更新已有模板节点，同批相同地址以最后一条为准；更新保留节点 ID 和添加时间，并清理该地址的旧重复节点。接口返回 `added` 和 `updated` 分别表示新增与更新数量。右侧生成的节点按添加时间升序显示，同一时间的节点保持原有顺序。系统只保存一个有效 API Token：
 
 ```text
 https://sub.example.com/api/import?token=<API_TOKEN>&address=cdn.example.com&port=443

@@ -44,7 +44,7 @@ export async function handlePublicNodeImport(request, env, url = new URL(request
 		if (!safeEqual(token, settings.token)) return jsonResponse({ ok: false, message: 'API Token 无效' }, 401);
 		const result = await appendGeneratedNodes(env.KV, settings, input);
 		try { onImported?.(result); } catch { console.error(JSON.stringify({ event: "import.notification.failed" })); }
-		return jsonResponse({ ok: true, message: result.added.length ? `已追加 ${result.added.length} 个节点` : '节点已存在，未重复追加', added: result.added.length, duplicates: result.duplicateCount, total: result.total, bytes: result.bytes, mode: result.mode, nodes: result.added.map(node => ({ id: node.id, name: node.name, address: node.address, port: node.port })) }, result.added.length ? 201 : 200);
+		return jsonResponse({ ok: true, message: result.updated.length ? "已新增 " + result.added.length + " 个节点，更新 " + result.updated.length + " 个节点" : result.added.length ? `已追加 ${result.added.length} 个节点` : '节点已存在，未重复追加', added: result.added.length, updated: result.updated.length, duplicates: result.duplicateCount, total: result.total, bytes: result.bytes, mode: result.mode, nodes: [...result.added, ...result.updated].map(node => ({ id: node.id, name: node.name, address: node.address, port: node.port })) }, result.added.length ? 201 : 200);
 	} catch (error) { return jsonResponse({ ok: false, message: error.message || '追加节点失败' }, error instanceof StorageError ? 503 : error instanceof RequestBodyError ? error.status : 400); }
 }
 

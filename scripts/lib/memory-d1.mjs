@@ -64,6 +64,9 @@ export class MemoryD1 {
 					if ([...nodes.values()].some(row => row.sort_key === sort_key)) throw new Error('UNIQUE constraint failed: node2link_nodes.sort_key');
 					nodes.set(id, { id, sort_key, value, updated_at });
 					changes++;
+				} else if (sql.includes('ON CONFLICT(id) DO UPDATE')) {
+					nodes.set(id, { ...nodes.get(id), value, updated_at });
+					changes++;
 				}
 			}
 			return { success: true, meta: { changes } };

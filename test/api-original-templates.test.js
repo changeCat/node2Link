@@ -39,9 +39,9 @@ for (const storage of ['KV', 'D1']) test(storage + ': live original bindings, po
  edited.originals[0].content = first.replace('secret@', 'updated-secret@').replace('sni=origin.example.com', 'sni=updated.example.com').replace('#原始一', '#已修改');
  await saveMainRecord(env.KV, edited);
  const updated = await call('203.0.113.2', 443);
- assert.equal(updated.status, 201);
+ assert.equal(updated.status, 200);
  const result = await updated.json();
- assert.equal(result.added, 1); assert.equal(result.duplicates, 1);
+ assert.equal(result.added, 0); assert.equal(result.updated, 1); assert.equal(result.duplicates, 1);
  assert.equal(result.nodes[0].name, '已修改-203.0.113.2:443');
  const nodes = await readGeneratedNodes(env.KV);
  assert.match(nodes.at(-1).content, /updated-secret@203\.0\.113\.2:443.*sni=updated\.example\.com/);

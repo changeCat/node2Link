@@ -15,8 +15,10 @@ export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh
 		.filter(entry => !deleted.has(entry.node.id))
 		.sort((a, b) => a.revision.localeCompare(b.revision) || a.position - b.position)
 		.map(entry => entry.node);
+	// Later revisions replace a node in its original insertion position.
+	const current = new Map(nodes.map(node => [node.id, node]));
 	const contents = new Set();
-	return nodes.map(node => {
+	return [...current.values()].map(node => {
 		const normalized = normalize(node);
 		if (!normalized) throw new StorageError('节点存储数据格式异常，已停止操作');
 		return normalized;
@@ -27,10 +29,10 @@ export async function readNodeRecords(kv, normalize, { deduplicate = true, fresh
 	});
 }
 
-export async function appendNodeBatch(kv, nodes) {
-	if (!nodes.length) return;
+export async function appendNodeBatch(kv, nodes, deletedIds = []) {
+	if (!nodes.length && !deletedIds.length) return;
 	invalidateView(kv, PREFIX);
-	try { await appendRecord(kv, PREFIX, { nodes }); }
+	try { await appendRecord(kv, PREFIX, { nodes, ...(deletedIds.length ? { deletedIds } : {}) }); }
 	finally { invalidateView(kv, PREFIX); }
 }
 

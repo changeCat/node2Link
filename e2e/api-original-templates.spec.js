@@ -114,6 +114,20 @@ test('template cards, duplicate prevention, optional ports and automatic origina
  expect(initial.nodes.map(node => node.port)).toEqual([2053, 8443]);
  const supplied = await importAddress('port-template.example.com', '443');
  expect(supplied.nodes.map(node => node.port)).toEqual([443, 443]);
+ const replacementResponse = await page.request.post('/api/import', {
+  headers: { 'X-API-Token': token },
+  data: { addresses: [{ address: 'port-template.example.com', port: 2087 }, { address: 'PORT-template.example.com.', port: 8443 }] }
+ });
+ expect(replacementResponse.status()).toBe(200);
+ const replacement = await replacementResponse.json();
+ expect(replacement.added).toBe(0);
+ expect(replacement.updated).toBe(2);
+ expect(replacement.nodes.map(node => node.id)).toEqual(supplied.nodes.map(node => node.id));
+ expect(replacement.nodes.map(node => node.port)).toEqual([8443, 8443]);
+ await page.reload();
+ const replacementCards = page.locator('#nodeList .node-card').filter({ hasText: 'port-template.example.com' });
+ await expect(replacementCards).toHaveCount(2);
+ await expect(replacementCards.locator('.subscription-card-address')).toHaveText(['port-template.example.com:8443', 'port-template.example.com:8443']);
  // Change the original without saving or refreshing any API configuration.
  const edited = { ...config, originals: [{ id: 'one', content: first.replace('secret@', 'new-secret@').replace('#Original-A', '#Updated-A') }, config.originals[1]] };
  await saveConfig(page, edited);

@@ -92,7 +92,7 @@ class AppStorage {
 				params.push(node.id, key + '.' + String(position).padStart(3, '0'), JSON.stringify(node), now);
 				return `(?${offset + 1},?${offset + 2},?${offset + 3},?${offset + 4})`;
 			}).join(',');
-			statements.push(this.db.prepare(`INSERT INTO node2link_nodes(id,sort_key,value,updated_at) VALUES ${values} ON CONFLICT(id) DO NOTHING`).bind(...params));
+			statements.push(this.db.prepare(`INSERT INTO node2link_nodes(id,sort_key,value,updated_at) VALUES ${values} ON CONFLICT(id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`).bind(...params));
 		}
 		for (const group of chunks(deletedIds, 100)) {
 			const placeholders = group.map((_, index) => '?' + (index + 1)).join(',');

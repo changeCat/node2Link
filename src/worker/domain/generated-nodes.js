@@ -56,7 +56,7 @@ export function normalizeEndpoint(payload) {
 
 export function normalizeEndpoints(payload) {
 	const input = payload?.addresses !== undefined ? payload.addresses : payload?.address;
-	const addresses = cleanBatchValues(input);
+	const addresses = (Array.isArray(input) ? input : [input]).flatMap(item => typeof item === 'string' ? item.split(/\r?\n/).map(value => value.trim()).filter(Boolean) : item === undefined || item === null ? [] : [item]);
 	if (!addresses.length) throw new Error('请传入 address 参数');
 	if (addresses.length > MAX_IMPORT_ITEMS) throw new Error(`一次最多导入 ${MAX_IMPORT_ITEMS} 个地址`);
 	// Keep empty per-address ports in position so they fall back independently.
