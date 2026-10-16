@@ -640,10 +640,15 @@ test('original and endpoint switches share header layout and publish the correct
  await expect(page.locator('#endpointList .main-badge')).toHaveText('VLESS / HYSTERIA2');
  for (const selector of ['#originalList', '#endpointList']) {
   const card = page.locator(selector + ' .subscription-card').first();
-  const badge = await card.locator('.subscription-card-controls .main-badge').boundingBox();
+  const badge = await card.locator('.subscription-card-footer .subscription-card-protocol').boundingBox();
+  const address = await card.locator('.subscription-card-address').boundingBox();
+  const actions = await card.locator('.subscription-card-actions').boundingBox();
   const toggle = await card.locator('[role=switch]').boundingBox();
-  expect(toggle.x).toBeGreaterThan(badge.x + badge.width);
-  expect(Math.abs(toggle.y + toggle.height / 2 - badge.y - badge.height / 2)).toBeLessThan(2);
+  expect(badge.y).toBeGreaterThanOrEqual(address.y + address.height);
+  expect(Math.abs(badge.x - address.x)).toBeLessThan(1);
+  expect(badge.x + badge.width).toBeLessThan(actions.x);
+  expect(toggle.y + toggle.height).toBeLessThan(badge.y);
+  await expect(card.locator('.subscription-card-protocol')).toHaveCSS('font-size', '9px');
  }
  const beforeToggle = await subscription(page);
  await expect(original).toHaveCSS('background-color', 'rgb(13, 204, 104)');
