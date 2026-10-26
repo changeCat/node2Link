@@ -7,6 +7,8 @@ const root = new URL('../', import.meta.url);
 const dist = new URL('dist/', root);
 const assets = new URL('dist/assets/', root);
 const pathOf = url => fileURLToPath(url);
+// Capture this build's time once, regardless of the host's local timezone.
+const buildStartedAt = new Date();
 
 if (new URL('../', dist).href !== root.href || !pathOf(dist).endsWith('dist' + (process.platform === 'win32' ? '\\' : '/'))) {
 	throw new Error('Build output must remain inside this project');
@@ -55,8 +57,9 @@ const versionParts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
 	minute: '2-digit',
 	second: '2-digit',
 	hourCycle: 'h23'
-}).formatToParts(new Date()).map(part => [part.type, part.value]));
-const buildVersion = `v${versionParts.year}.${versionParts.month}.${versionParts.day}.${versionParts.hour}${versionParts.minute}${versionParts.second}`;
+}).formatToParts(buildStartedAt).map(part => [part.type, part.value]));
+const buildVersion = `${versionParts.year}${versionParts.month}${versionParts.day}${versionParts.hour}${versionParts.minute}${versionParts.second}`;
+console.log(`Build version (Asia/Shanghai): ${buildVersion}`);
 const define = {
 	'globalThis.__NODE2LINK_ASSET_VERSION__': JSON.stringify(assetVersion),
 	'globalThis.__NODE2LINK_VERSION__': JSON.stringify(buildVersion)
