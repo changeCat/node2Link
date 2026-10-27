@@ -637,7 +637,7 @@ test('original and endpoint switches share header layout and publish the correct
  const endpoint = page.locator('[data-toggle-endpoint]');
  await expect(original).toHaveAttribute('aria-checked', 'true');
  await expect(endpoint).toHaveAttribute('aria-checked', 'true');
- await expect(page.locator('#endpointList .main-badge')).toHaveText('VLESS / HYSTERIA2');
+ await expect(page.locator('#endpointList .main-badge')).toHaveText('VLESS+WS+TLS / HYSTERIA2');
  for (const selector of ['#originalList', '#endpointList']) {
   const card = page.locator(selector + ' .subscription-card').first();
   const badge = await card.locator('.subscription-card-footer .subscription-card-protocol').boundingBox();
@@ -648,7 +648,7 @@ test('original and endpoint switches share header layout and publish the correct
   expect(Math.abs(badge.x - address.x)).toBeLessThan(1);
   expect(badge.x + badge.width).toBeLessThan(actions.x);
   expect(toggle.y + toggle.height).toBeLessThan(badge.y);
-  await expect(card.locator('.subscription-card-protocol')).toHaveCSS('font-size', '9px');
+  await expect(card.locator('.subscription-card-protocol')).toHaveCSS('font-size', '8px');
  }
  const beforeToggle = await subscription(page);
  await expect(original).toHaveCSS('background-color', 'rgb(13, 204, 104)');
