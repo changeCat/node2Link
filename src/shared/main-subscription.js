@@ -56,21 +56,47 @@ export function mainNodeName(content, fallback = '未命名节点') {
  return hash >= 0 && content.slice(hash + 1) ? decodeName(content.slice(hash + 1)) : fallback;
 }
 
-// Summaries never expose credentials or query parameters. Malformed links remain editable.
-export function mainNodeSummary(content) {
+// Only recognized transport/security names enter labels; never expose arbitrary query values.
+export function mainNodeProtocol(content) {
  const protocol = content.split(':')[0].toUpperCase();
+ if (!['VLESS', 'VMESS', 'TROJAN'].includes(protocol)) return protocol;
+ try {
+  let transport, security;
+  const body = content.slice(content.indexOf('://') + 3).split('#')[0];
+  if (protocol === 'VMESS' && !body.includes('@')) {
+   const data = JSON.parse(decode64(body));
+   transport = data.net;
+   security = data.tls;
+  } else {
+   const params = new URLSearchParams(body.includes('?') ? body.slice(body.indexOf('?') + 1) : '');
+   transport = params.get('type') || params.get('network') || params.get('net');
+   security = params.get('security') || params.get('tls');
+  }
+  transport = String(transport || '').toLowerCase();
+  security = String(security || '').toLowerCase();
+  const parts = [protocol];
+  if (['ws', 'grpc', 'http', 'h2', 'httpupgrade', 'xhttp', 'splithttp', 'kcp', 'quic'].includes(transport)) parts.push(transport.toUpperCase());
+  if (['tls', 'reality'].includes(security)) parts.push(security.toUpperCase());
+  return parts.join('+');
+ } catch { return protocol; }
+}
+
+// Summaries never expose credentials or arbitrary query parameters. Malformed links remain editable.
+export function mainNodeSummary(content) {
+ const scheme = content.split(':')[0].toUpperCase();
+ const protocol = mainNodeProtocol(content);
  try {
   let body = content.slice(content.indexOf('://') + 3).split('#')[0];
-  if (protocol === 'VMESS' && !body.includes('@')) {
+  if (scheme === 'VMESS' && !body.includes('@')) {
    const data = JSON.parse(decode64(body));
    return { protocol, address: `${data.add.includes(':') ? `[${data.add}]` : data.add}:${data.port}` };
   }
-  if (protocol === 'SSR') {
+  if (scheme === 'SSR') {
    const match = decode64(body).match(/^(.*?):(\d+):/);
    if (!match) throw new Error('Invalid SSR');
    return { protocol, address: `${match[1]}:${match[2]}` };
   }
-  if (protocol === 'SS' && !body.includes('@')) body = decode64(body.split('?')[0].replace(/\/$/, ''));
+  if (scheme === 'SS' && !body.includes('@')) body = decode64(body.split('?')[0].replace(/\/$/, ''));
   const authority = body.split(/[/?]/)[0].split('@').pop();
   if (!authority) throw new Error('Missing address');
   return { protocol, address: authority };

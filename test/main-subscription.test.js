@@ -14,13 +14,35 @@ const endpoint = { id: 'endpoint-1', address: 'cf.example.com', port: 8443, labe
 const fixtureConfig = () => ({ version: 2, originals: [{ id: 'original-1', content: raw, enabled: true }, { id: 'original-2', content: other, enabled: true }], endpoints: [structuredClone(endpoint)] });
 
 test('compact summaries decode supported formats and omit credentials and query parameters', () => {
- assert.deepEqual(mainNodeSummary(raw), { protocol: 'VLESS', address: 'origin.example.com:443' });
+ assert.deepEqual(mainNodeSummary(raw), { protocol: 'VLESS+WS+TLS', address: 'origin.example.com:443' });
  assert.deepEqual(mainNodeSummary('trojan://secret@[2001:db8::1]:8443?sni=private#Name'), { protocol: 'TROJAN', address: '[2001:db8::1]:8443' });
  assert.deepEqual(mainNodeSummary('vmess://' + btoa(JSON.stringify({ add: 'host.example.com', port: 443, id: 'secret' }))), { protocol: 'VMESS', address: 'host.example.com:443' });
  assert.deepEqual(mainNodeSummary('ss://' + btoa('aes-256-gcm:secret@ss.example.com:443')), { protocol: 'SS', address: 'ss.example.com:443' });
  assert.deepEqual(mainNodeSummary('ssr://' + btoa('ssr.example.com:8443:origin:aes-256-cfb:plain:c2VjcmV0/?remarks=TmFtZQ')), { protocol: 'SSR', address: 'ssr.example.com:8443' });
  assert.deepEqual(mainNodeSummary('https://sub.example.com/private-token?secret=1'), { protocol: 'HTTPS', address: 'sub.example.com' });
  assert.equal(mainNodeSummary('vmess://invalid').address, '地址无法解析，请查看完整链接');
+});
+
+test('protocol labels include explicit transport and security without leaking other fields', () => {
+ const cases = [
+  ['vless://id@host:443?type=tcp&security=reality&pbk=private&sid=private', 'VLESS+REALITY'],
+  ['vless://id@host:443?type=raw&security=reality', 'VLESS+REALITY'],
+  ['vless://id@host:443?type=ws&security=tls', 'VLESS+WS+TLS'],
+  ['vless://id@host:443?type=grpc&security=reality', 'VLESS+GRPC+REALITY'],
+  ['vless://id@host:443?type=xhttp&security=tls', 'VLESS+XHTTP+TLS'],
+  ['vless://id@host:80?type=ws&security=none', 'VLESS+WS'],
+  ['vless://id@host:443?type=tcp&security=none', 'VLESS'],
+  ['VLESS://id@host:443?type=WS&security=TLS', 'VLESS+WS+TLS'],
+  ['trojan://secret@host:443?type=ws&security=tls', 'TROJAN+WS+TLS'],
+  ['vmess://id@host:443?network=grpc&security=tls', 'VMESS+GRPC+TLS'],
+  ['vless://id@host:443?type=private&security=private&sni=private#type=ws', 'VLESS'],
+  ['vless://id@host:443#name?type=ws&security=tls', 'VLESS'],
+  ['https://host/sub?type=ws&security=tls', 'HTTPS'],
+  ['vmess://invalid', 'VMESS'],
+  ['vmess://' + btoa(JSON.stringify({ add: 'host', port: 443, net: 'ws', tls: 'tls', type: 'none', id: 'private' })), 'VMESS+WS+TLS'],
+  ['vmess://' + btoa(JSON.stringify({ add: 'host', port: 80, net: 'tcp', tls: '', type: 'http' })), 'VMESS']
+ ];
+ for (const [content, expected] of cases) assert.equal(mainNodeSummary(content).protocol, expected, content);
 });
 
 test('main compilation preserves originals, credentials and query bytes and expands only selected pairs', () => {

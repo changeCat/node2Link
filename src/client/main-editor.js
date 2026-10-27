@@ -124,7 +124,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   el('nodeCount').textContent = nodes.length;
   el('sourceCount').textContent = config.originals.filter(node => isMainSource(node.content)).length;
   const protocols = {};
-  nodes.forEach(node => { const protocol = node.content.split(':')[0].toUpperCase(); protocols[protocol] = (protocols[protocol] || 0) + 1; });
+  nodes.forEach(node => { const protocol = subscriptionNodeDetails(node.content).protocol; protocols[protocol] = (protocols[protocol] || 0) + 1; });
   el('protocolBreakdown').textContent = Object.entries(protocols).map(([key, count]) => `${key} ${count}`).join(' · ') || '暂无节点';
   let problem = '';
   try { compiled = compileMainConfig(config); } catch (error) { compiled = null; problem = error.message; }

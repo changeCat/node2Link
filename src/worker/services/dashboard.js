@@ -1,4 +1,5 @@
 import { SUPPORTED_NODE_PROTOCOLS } from '../config.js';
+import { mainNodeProtocol } from '../../shared/main-subscription.js';
 import { isShareAvailable } from '../domain/shares.js';
 import { readMainRecord } from '../storage/main.js';
 import { readGeneratedNodes } from '../storage/generated-nodes.js';
@@ -17,7 +18,8 @@ export function summarizeDashboard(main, generated, shares, now = Date.now()) {
 		group.add(line);
 		if (nodes.has(line)) return;
 		nodes.add(line);
-		protocols.set(protocol, (protocols.get(protocol) || 0) + 1);
+		const label = mainNodeProtocol(line).toLowerCase();
+		protocols.set(label, (protocols.get(label) || 0) + 1);
 	}
 	for (const line of String(main.content || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)) {
 		if (/^https?:\/\//i.test(line)) sources.add(line);

@@ -16,7 +16,7 @@ export const subscriptionCardStyles = `
 .subscription-card small.subscription-card-address{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px/1.5 ui-monospace,monospace;color:var(--muted);margin-top:3px}
 .subscription-card-footer{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:6px}
 .subscription-card-meta{display:flex;align-items:center;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
-.subscription-card .subscription-card-protocol{max-width:100%;overflow:hidden;text-overflow:ellipsis;padding:2px 4px;font-size:9px}
+.subscription-card .subscription-card-protocol{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;padding:2px 4px;font-size:9px}
 .subscription-card-port{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:11px;white-space:nowrap}
 .subscription-card .subscription-card-port strong{font-size:12px;color:var(--text)}
 .subscription-card-actions{display:flex;align-items:center;justify-content:flex-end;flex:none;gap:4px;margin-left:auto}

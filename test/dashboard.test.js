@@ -89,3 +89,12 @@ test('dashboard supports empty bound storage and surfaces D1 failure instead of 
 	db.before = operation => { if (operation === 'first') throw new Error('outage'); };
 	assert.equal((await request()).status, 503);
 });
+
+
+test('dashboard separates transport/security combinations and deduplicates across sources', () => {
+ const reality = 'vless://id@host:443?type=tcp&security=reality';
+ const ws = 'vless://id@host:443?type=ws&security=tls';
+ const data = summarizeDashboard({ content: reality + '\n' + ws }, [{ content: reality }], [], now);
+ assert.deepEqual(data.protocols, [{ name: 'vless+reality', count: 1 }, { name: 'vless+ws+tls', count: 1 }]);
+ assert.equal(data.nodeCount, 2);
+});
