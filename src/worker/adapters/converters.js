@@ -65,11 +65,12 @@ export async function fetchCustomSubscription(converter, target, sourceURL, init
    logRemote('converter.response', converter, { status: response.status, target, durationMs: Date.now() - startedAt });
    return fail('HTTP ' + response.status);
   }
-  const content = await response.text();
+  let content = await response.text();
   if (!isConvertedContent(content, target)) {
    logRemote('converter.invalid_content', converter, { target, durationMs: Date.now() - startedAt });
    return fail('返回内容为空或格式无效');
   }
+  if (options.transformContent) content = options.transformContent(content);
   const audit = options.validateContent?.(content);
   if (audit?.check === 'incomplete') {
    logRemote('converter.incomplete', converter, { target, inputNodes: audit.inputCount, outputNodes: audit.outputCount, missingProtocols: audit.missing });
@@ -79,7 +80,7 @@ export async function fetchCustomSubscription(converter, target, sourceURL, init
   return { response: new Response(content, response), converter, audit };
  } catch (error) {
   logRemote('converter.failed', converter, { type: error.name, target, durationMs: Date.now() - startedAt });
-  return fail(init.signal?.aborted ? '请求已取消' : error.name === 'TimeoutError' ? '请求超时' : '请求失败');
+  return fail(init.signal?.aborted ? '请求已取消' : error.name === 'TimeoutError' ? '请求超时' : error.name === 'LoonPortHoppingError' ? 'HY2 端口跳跃参数无法可靠保留' : '请求失败');
  }
 }
 

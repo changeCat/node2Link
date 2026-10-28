@@ -1,5 +1,6 @@
 import { timed } from '../timing.js';
 import { inspectLoonConversion } from '../domain/conversion-audit.js';
+import { restoreLoonPortHopping } from '../domain/loon-port-hopping.js';
 import { selectSubscriptionFormat } from '../domain/formats.js';
 import { DEFAULT_FILE_NAME, BASE64_SUBSCRIPTION_USER_AGENT, CONVERTER_FETCH_TIMEOUT_MS, sanitizeSubscriptionName, SUBSCRIPTION_NO_STORE_HEADERS } from '../config.js';
 import { splitSubscriptionLinks, encodeBase64, isV2rayNUserAgent, normalizeV2rayNSubscription, clashFix } from '../domain/nodes.js';
@@ -264,6 +265,7 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 		const conversion = await timed(options.timings, 'conversion', () => fetchConfiguredConversion(
 			runtime, subscriptionFormat, converterSourceURL, conversionInit, { ...options,
 			conversionTimeoutMs: remainingConversionMs,
+    transformContent: subscriptionFormat === 'loon' ? content => restoreLoonPortHopping(requestData, content) : undefined,
     validateContent: subscriptionFormat === 'loon' ? content => inspectLoonConversion(requestData, content, { completeSource: sourceCountComplete && !upstreamFailures }) : undefined
    }
 		));
