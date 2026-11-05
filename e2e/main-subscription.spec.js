@@ -61,6 +61,41 @@ async function subscription(page) {
  expect(response.status()).toBe(200);
  return Buffer.from(await response.text(), 'base64').toString().trim().split('\n').filter(Boolean);
 }
+test('batch imports deduplicate connections and preserve existing names, switches and associations', async ({ page }) => {
+ await seed(page); await addEndpoints(page, 'cf.example.com'); await save(page);
+ await expect(page.getByRole('button', { name: '去重', exact: true })).toHaveCount(0);
+ await expect(page.locator('#toolDialog')).toHaveCount(0);
+ const originalId = await page.locator('#originalList .subscription-card').first().getAttribute('data-display-id');
+ await page.locator('#originalList [data-toggle-original]').first().click();
+ await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
+ const variant = 'vless://uuid@ORIGIN.EXAMPLE.COM:443?path=/ws&sni=origin.example.com&host=origin.example.com&type=ws&security=tls#Renamed';
+ const newNode = 'trojan://different@origin.example.com:443#New';
+ await setOriginals(page, [variant, newNode, newNode.replace('#New', '#Duplicate')].join('\n'), 'append');
+ await expect(page.locator('#toastText')).toHaveText('新增 1 条，跳过重复 2 条');
+ await expect(page.locator('#originalList .subscription-card')).toHaveCount(3);
+ await expect(page.locator('#originalList .subscription-card-heading strong')).toHaveText(['Main-HK', 'Main-HY2', 'New']);
+ await expect(page.locator('#originalList [data-toggle-original]').first()).toHaveAttribute('aria-checked', 'false');
+ let writes = 0;
+ const countWrites = request => { if (request.method() === 'POST' && request.headers()['x-node2link-action'] === 'save-originals') writes++; };
+ page.on('request', countWrites);
+ await setOriginals(page, variant, 'append');
+ await expect(page.locator('#toastText')).toHaveText('新增 0 条，跳过重复 1 条');
+ expect(writes).toBe(0);
+ page.off('request', countWrites);
+ await setOriginals(page, [variant, first, second].join('\n'));
+ await expect(page.locator('#toastText')).toHaveText('新增 0 条，跳过重复 1 条');
+ await expect(page.locator('#originalList .subscription-card')).toHaveCount(2);
+ await expect(page.locator('#originalList .subscription-card').first()).toHaveAttribute('data-display-id', originalId);
+ await page.locator('#restoreInput').setInputFiles({ name: 'nodes.txt', mimeType: 'text/plain', buffer: Buffer.from([variant, first, second].join('\n')) });
+ await page.locator('#mainConfirmDialog').getByRole('button', { name: '确认', exact: true }).click();
+ await expect(page.locator('#originalSaveStatus')).toHaveText('原始节点已保存');
+ await page.reload();
+ await expect(page.locator('#originalList .subscription-card-heading strong')).toHaveText(['Main-HK', 'Main-HY2']);
+ await expect(page.locator('#originalList .subscription-card').first()).toHaveAttribute('data-display-id', originalId);
+ await expect(page.locator('#originalList [data-toggle-original]').first()).toHaveAttribute('aria-checked', 'false');
+ await expect(page.locator('#mainPreview .subscription-card-heading strong')).toHaveText(['Main-HK-优选 1', 'Main-HY2', 'Main-HY2-优选 1']);
+});
+
 test('main associations generate on save, retain identity on edit and feed share selection', async ({ page }) => {
  await seed(page); await addEndpoints(page);
  await expect(page.locator('#previewKind')).toHaveValue('all');
@@ -354,7 +389,7 @@ test('empty batches are rejected and bulk deletion supports history restore and 
 });
 
 test('lists scroll independently and selection includes unloaded matching nodes', async ({ page }) => {
- const lines = Array.from({ length: 105 }, (_, i) => first.replace('#Main-HK', '#Node-' + i));
+ const lines = Array.from({ length: 105 }, (_, i) => first.replace('uuid@', `uuid-${i}@`).replace('#Main-HK', '#Node-' + i));
  await setOriginals(page, lines.join('\n'));
  // Enough compact cards to overflow the desktop grid as well as the mobile list.
  await addEndpoints(page, Array.from({ length: 16 }, (_, i) => `cf${i}.example.com`).join('\n'));
@@ -429,7 +464,7 @@ test('wheel scrolling passes from short lists and list boundaries to the page', 
   expect(await page.locator('#' + id).evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
   await wheelOnList(id);
  }
- await setOriginals(page, Array.from({ length: 30 }, (_, i) => first.replace('#Main-HK', '#Scroll-' + i)).join('\n'));
+ await setOriginals(page, Array.from({ length: 30 }, (_, i) => first.replace('uuid@', `uuid-${i}@`).replace('#Main-HK', '#Scroll-' + i)).join('\n'));
  await addEndpoints(page, 'scroll.example.com');
  for (const id of ['originalList', 'mainPreview']) {
   expect(await page.locator('#' + id).evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);

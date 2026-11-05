@@ -83,8 +83,7 @@ export function renderMainEditorSections() {
     <div class="main-selection"><button id="selectOriginals" class="tool-button" type="button" aria-pressed="false">全选筛选结果</button><span id="originalSelectionCount" class="main-help" role="status">已选 0 项</span><button id="deleteOriginals" class="tool-button" type="button" disabled>删除所选</button></div>
    </div>
    <div class="original-management-actions">
-   <div class="main-action-group" role="group" aria-label="整理与恢复">
-    <button class="tool-button" type="button" onclick="openDedupePreview()"><i data-lucide="list-checks"></i><span>去重</span></button>
+   <div class="main-action-group" role="group" aria-label="历史恢复">
     <button class="tool-button" type="button" onclick="openOriginalHistory()"><i data-lucide="history"></i><span>历史版本</span></button>
    </div>
    <div class="main-action-group" role="group" aria-label="导入与导出">
@@ -114,7 +113,7 @@ export function renderMainEditorSections() {
 }
 
 export function renderMainEditorDialogs() {
- return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加和覆盖都必须填写节点。删除节点请使用列表中的删除操作。追加保留当前节点。覆盖仅保留完全相同链接的关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。追加或覆盖后立即保存并更新订阅，可在历史版本中查看和还原原始节点。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖并生效</button><button type="submit" value="append" class="primary-button">追加并生效</button></div></form></dialog>
+ return `<dialog id="batchDialog" class="main-edit-dialog" aria-labelledby="batchTitle"><div class="dialog-head"><strong id="batchTitle">批量添加原始节点</strong><button id="closeBatch" type="button" class="icon-button" aria-label="关闭">×</button></div><form id="batchForm" class="dialog-body"><div class="main-field"><label for="batchValue">节点 / 订阅源（每行一条）</label><textarea id="batchValue" spellcheck="false" placeholder="vless://...&#10;https://example.com/sub"></textarea></div><p class="main-help">追加和覆盖都必须填写节点。删除节点请使用列表中的删除操作。追加、覆盖及 TXT 导入自动跳过连接配置相同的节点，忽略名称和参数顺序差异；已有节点保留原名称、启用状态和关联。追加保留当前节点，覆盖仅保留输入中的连接并合并重复关联，移除其他旧节点及其关联；修改现有节点请使用列表中的“编辑”。追加或覆盖后立即保存并更新订阅，可在历史版本中查看和还原原始节点。</p><p id="batchError" class="main-error" role="alert"></p><div class="dialog-actions"><button type="submit" value="replace" class="tool-button">覆盖并生效</button><button type="submit" value="append" class="primary-button">追加并生效</button></div></form></dialog>
  <dialog id="nodeViewDialog" class="main-edit-dialog" aria-labelledby="nodeViewTitle"><div class="dialog-head"><strong id="nodeViewTitle">完整链接</strong><button id="closeNodeView" type="button" class="icon-button" aria-label="关闭">×</button></div><div class="dialog-body"><div class="main-field"><label for="nodeViewValue">完整链接</label><textarea id="nodeViewValue" readonly spellcheck="false"></textarea></div><div class="dialog-actions"><button id="copyNodeView" class="primary-button" type="button">复制链接</button></div></div></dialog>
  <dialog id="endpointDialog" class="main-edit-dialog" aria-labelledby="endpointTitle">
   <div class="dialog-head"><strong id="endpointTitle">添加优选地址</strong><button id="closeEndpoint" class="icon-button" type="button" aria-label="关闭">×</button></div>

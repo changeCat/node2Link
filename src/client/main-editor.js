@@ -1,6 +1,6 @@
 import { reorderCards, attachCardSorting } from './main-card-sorting.js';
 import { subscriptionCard, subscriptionNodeDetails } from './subscription-card.js';
-import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS, reconcileMainEndpoints } from '../shared/main-subscription.js';
+import { compileMainConfig, legacyMainConfig, mainId, mainLines, mainNodeName, isMainNode, isMainSource, originalText, normalizeMainAddress, normalizeMainConfig, MAIN_HTTPS_PORTS, MAIN_HTTP_PORTS, reconcileMainEndpoints, importMainOriginals } from '../shared/main-subscription.js';
 
 export function initializeMainEditor(pageData, { showToast, askMainConfirm, copyText }) {
  const el = id => document.getElementById(id);
@@ -170,7 +170,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   } catch (error) { state('保存失败：' + error.message, 'error'); showToast(error.message); }
   finally { saving = false; updateSaveButton(); }
  }
- async function publishOriginals(originals, { historyRevision } = {}) {
+ async function publishOriginals(originals, { historyRevision, message } = {}) {
   if (saving) { showToast('正在保存，请稍后重试'); return false; }
   if (switchSavePromise && !await switchSavePromise) return false;
   if (saving) return false;
@@ -188,7 +188,7 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    saved = snapshot(data.config);
    revision = data.metadata.revision; syncText(); render(); persistDraft(); updateMetadata(data.metadata);
    state(snapshot() === saved ? '已同步' : '优选配置有未保存更改', snapshot() === saved ? '' : 'dirty');
-   el('originalSaveStatus').textContent = '原始节点已保存'; showToast('原始节点已生效，已发布的扩展节点同步更新');
+   el('originalSaveStatus').textContent = '原始节点已保存'; showToast(message || '原始节点已生效，已发布的扩展节点同步更新');
    return true;
   } catch (error) { el('originalSaveStatus').textContent = '保存失败：' + error.message; showToast(error.message); return false; }
   finally { saving = false; updateSaveButton(); }
@@ -403,14 +403,15 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
   const lines = mainLines(el('batchValue').value);
   const replace = event.submitter?.value === 'replace';
   if (!lines.length) { el('batchError').textContent = '请至少填写一条节点或订阅源，不能用空内容覆盖列表'; return; }
-  const byContent = new Map();
-  config.originals.forEach(node => { if (!byContent.has(node.content)) byContent.set(node.content, []); byContent.get(node.content).push(node); });
-  const originals = replace ? lines.map(content => byContent.get(content)?.shift() || { id: mainId(), content }) : [...config.originals, ...lines.map(content => ({ id: mainId(), content }))];
+  const { originals, added, duplicates } = importMainOriginals(config.originals, lines, { replace });
+  const message = `新增 ${added} 条，跳过重复 ${duplicates} 条`;
+  if (!replace && !added) { showToast(message); el('batchDialog').close(); return; }
   const ids = new Set(originals.map(node => node.id));
   const removed = config.originals.filter(node => !ids.has(node.id)).length;
-  const associations = config.endpoints.reduce((count, endpoint) => count + endpoint.originalIds.filter(id => !ids.has(id)).length, 0);
-  if (replace && !await askMainConfirm(`覆盖后保留 ${originals.length} 项，移除 ${removed} 个旧节点及 ${associations} 个优选关联。没有剩余关联的地址会停用。修改名称或 UUID 请取消并使用逐条编辑。是否覆盖？`, '覆盖原始节点')) return;
-  if (await publishOriginals(originals)) el('batchDialog').close();
+  const reconciled = reconcileMainEndpoints(config.endpoints, originals, config.originals);
+  const associations = config.endpoints.reduce((count, endpoint, index) => count + endpoint.originalIds.length - reconciled[index].originalIds.length, 0);
+  if (replace && !await askMainConfirm(`覆盖后保留 ${originals.length} 项，${message}，移除 ${removed} 个旧节点并清理或合并 ${associations} 个优选关联。相同连接的关联会转移到保留节点，没有剩余关联的地址会停用。修改名称或 UUID 请取消并使用逐条编辑。是否覆盖？`, '覆盖原始节点')) return;
+  if (await publishOriginals(originals, { message })) el('batchDialog').close();
   else el('batchError').textContent = '保存未完成，输入已保留。请根据提示修正后重试。';
  });
  el('restoreInput').addEventListener('change', async event => {
@@ -419,10 +420,10 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
    if (!file.name.toLowerCase().endsWith('.txt')) throw new Error('请选择 TXT 格式的原始节点文件');
    if (file.size > 20 * 1024 * 1024) throw new Error('TXT 文件不能超过 20 MB');
    const lines = mainLines(await file.text()); if (!lines.length) throw new Error('TXT 文件中没有节点');
-   if (!await askMainConfirm('从 TXT 覆盖原始节点并立即生效？相同链接保留关联，被移除节点的关联会清理。', '导入原始节点')) return;
-   const byContent = new Map();
-   config.originals.forEach(node => { if (!byContent.has(node.content)) byContent.set(node.content, []); byContent.get(node.content).push(node); });
-   await publishOriginals(lines.map(content => byContent.get(content)?.shift() || { id: mainId(), content }));
+   const { originals, added, duplicates } = importMainOriginals(config.originals, lines, { replace: true });
+   const message = `新增 ${added} 条，跳过重复 ${duplicates} 条`;
+   if (!await askMainConfirm(`从 TXT 覆盖原始节点并立即生效？保留 ${originals.length} 项，${message}。相同连接保留原名称、启用状态并合并关联，其余失效关联会清理。`, '导入原始节点')) return;
+   await publishOriginals(originals, { message });
   } catch (error) { showToast(error.message); }
  });
  let historyVersion = null, historyRequest = 0;
@@ -467,17 +468,6 @@ export function initializeMainEditor(pageData, { showToast, askMainConfirm, copy
     el('originalHistorySelect').innerHTML = data.versions.map((version, index) => '<option value="' + esc(version.revision) + '">' + (index === 0 ? '最新 · ' : '') + esc(new Date(version.savedAt).toLocaleString()) + ' · ' + version.count + ' 项</option>').join('');
     if (data.versions.length) await loadHistoryVersion(); else el('originalHistoryMessage').textContent = '暂无保存版本';
    } catch (error) { el('originalHistoryMessage').textContent = error.message; }
-  },
-  openDedupePreview() {
-   flush(); const lines = mainLines(textarea.value);
-   el('previewBefore').textContent = lines.length; el('previewDuplicates').textContent = lines.length - new Set(lines).size; el('previewAfter').textContent = new Set(lines).size;
-   el('applyDedupeButton').disabled = [...new Set(lines)].join('\n') === textarea.value; el('toolDialog').showModal();
-  },
-  closeToolDialog() { el('toolDialog').close(); },
-  async applyDedupe() {
-   const keep = new Map();
-   config.originals.forEach(node => { if (!keep.has(node.content)) keep.set(node.content, node); });
-   if (await publishOriginals([...keep.values()])) el('toolDialog').close();
   }
  });
  document.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (!document.querySelector('dialog[open]')) saveContent(); } });

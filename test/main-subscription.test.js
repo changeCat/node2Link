@@ -266,7 +266,7 @@ test('separate save routes isolate endpoints, propagate UUID edits, dedupe assoc
  assert.equal((await request('save-originals', { originals: [] }, first.metadata.revision)).status, 409);
  assert.equal((await request('save-endpoints', { endpoints: [] })).status, 409);
  assert.equal((await request('get-original-version', { revision: 'blob.main.not-retained' })).status, 400);
- const dupes = [{ ...config.originals[0], id: 'replacement' }, ...config.originals];
+ const dupes = [{ ...config.originals[0], id: 'replacement', content: raw.replace('#HongKong', '#Same-connection') }, ...config.originals];
  const duplicated = await (await request('save-originals', { originals: dupes }, restored.metadata.revision)).json();
  const deduped = await (await request('save-originals', { originals: [dupes[0], config.originals[1]] }, duplicated.metadata.revision)).json();
  assert.deepEqual(deduped.config.endpoints[0].originalIds, ['replacement']);

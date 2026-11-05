@@ -334,14 +334,6 @@ ${renderMainEditorSections()}
 					<div class="dialog-head"><strong id="qrTitle">扫描二维码导入</strong><button class="icon-button" type="button" onclick="closeQR()" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
 					<div class="dialog-body"><div id="qrcode"></div><p class="qr-url" id="qrUrl"></p></div>
 				</dialog>
-				<dialog id="toolDialog" class="tool-dialog" aria-labelledby="toolDialogTitle">
-					<div class="dialog-head"><strong id="toolDialogTitle">整理节点与订阅源</strong><button class="icon-button" type="button" onclick="closeToolDialog()" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
-					<div class="dialog-body">
-						<p id="dedupeDescription">将删除空行并合并完全重复的链接，原内容不会立即写入 KV。</p>
-						<div class="preview-summary"><span>原始行数<strong id="previewBefore">0</strong></span><span>重复行<strong id="previewDuplicates">0</strong></span><span>整理后<strong id="previewAfter">0</strong></span></div>
-						<div class="dialog-actions"><button class="tool-button" type="button" onclick="closeToolDialog()">取消</button><button class="primary-button" id="applyDedupeButton" type="button" onclick="applyDedupe()"><i data-lucide="list-checks"></i><span>应用整理</span></button></div>
-					</div>
-				</dialog>
 				<dialog id="mainConfirmDialog" class="tool-dialog" aria-labelledby="mainConfirmTitle">
 					<div class="dialog-head"><strong id="mainConfirmTitle">请确认操作</strong><button class="icon-button" type="button" onclick="resolveMainConfirm(false)" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
 					<div class="dialog-body"><p id="mainConfirmText"></p><div class="dialog-actions"><button class="tool-button" type="button" onclick="resolveMainConfirm(false)">取消</button><button class="primary-button" type="button" onclick="resolveMainConfirm(true)"><span>确认</span></button></div></div>

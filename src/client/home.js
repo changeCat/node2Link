@@ -82,6 +82,4 @@ document.addEventListener('DOMContentLoaded', () => {
  const confirm = document.getElementById('mainConfirmDialog');
  confirm.addEventListener('click', event => { if (event.target === confirm) resolveMainConfirm(false); });
  confirm.addEventListener('cancel', event => { event.preventDefault(); resolveMainConfirm(false); });
- const tools = document.getElementById('toolDialog');
- tools.addEventListener('click', event => { if (event.target === tools) tools.close(); });
 });

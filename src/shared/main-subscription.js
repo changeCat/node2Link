@@ -1,11 +1,16 @@
+import { nodeFingerprint } from './node-fingerprint.js';
 // Shared by the main editor and Worker. This module deliberately has no API-subscription dependencies.
 export const MAIN_VERSION = 2;
 
-// Keep explicit identities; transfer exact duplicates and prune missing targets.
+// Keep explicit identities; transfer equivalent connections and prune missing targets.
 export function reconcileMainEndpoints(endpoints, originals, previousOriginals = []) {
  const ids = new Set(originals.filter(node => isMainNode(node.content)).map(node => node.id));
- const byContent = new Map(originals.filter(node => ids.has(node.id)).map(node => [node.content, node.id]));
- const replacements = new Map(previousOriginals.filter(node => !ids.has(node.id) && byContent.has(node.content)).map(node => [node.id, byContent.get(node.content)]));
+ const byContent = new Map();
+ for (const node of originals.filter(node => ids.has(node.id))) {
+  const key = nodeFingerprint(node.content);
+  if (!byContent.has(key)) byContent.set(key, node.id);
+ }
+ const replacements = new Map(previousOriginals.filter(node => !ids.has(node.id)).map(node => [node.id, byContent.get(nodeFingerprint(node.content))]));
  return endpoints.map(endpoint => {
   const originalIds = [...new Set(endpoint.originalIds.map(id => replacements.get(id) || id).filter(id => ids.has(id)))];
   return { ...endpoint, originalIds, enabled: endpoint.enabled && originalIds.length > 0 };
@@ -24,6 +29,30 @@ export const mainLines = text => String(text || '').split(/\r?\n/).map(line => l
 export const isMainSource = text => /^https?:\/\//i.test(text);
 export const isMainNode = text => /^[a-z][a-z0-9+.-]*:\/\//i.test(text) && !isMainSource(text);
 export const originalText = config => config.originals.map(node => node.content).join('\n');
+
+// Append leaves existing records intact. Replace keeps the first existing identity
+// for each incoming connection, so names, switches and endpoint associations survive.
+export function importMainOriginals(existing, lines, { replace = false } = {}) {
+ const byConnection = new Map();
+ for (const node of existing) {
+  const key = nodeFingerprint(node.content);
+  if (!byConnection.has(key)) byConnection.set(key, node);
+ }
+ const seen = new Set(replace ? [] : byConnection.keys());
+ const originals = replace ? [] : [...existing];
+ let added = 0, duplicates = 0;
+ for (const line of lines) {
+  const content = line.trim();
+  if (!content) continue;
+  const key = nodeFingerprint(content);
+  if (seen.has(key)) { duplicates++; continue; }
+  seen.add(key);
+  const previous = byConnection.get(key);
+  originals.push(previous || { id: mainId(), content });
+  if (!previous) added++;
+ }
+ return { originals, added, duplicates };
+}
 
 export function legacyMainConfig(content) {
  return { version: MAIN_VERSION, originals: mainLines(content).map((content, i) => ({ id: `legacy-${i}`, content })), endpoints: [] };
