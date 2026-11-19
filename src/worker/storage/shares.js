@@ -44,6 +44,19 @@ async function readStoredRecord(kv, id) {
 	return readJSON(kv, PREFIX + id, null, validRecord);
 }
 
+// Check the same activation/revocation markers as the share list without loading node content.
+export async function shareExists(kv, id) {
+	if (!isValidShareId(id)) return false;
+	const key = PREFIX + id;
+	const [page, revoked] = await Promise.all([kv.list({ prefix: key, limit: 1 }), revocation(kv, id)]);
+	const entry = page.keys[0];
+	if (revoked || entry?.name !== key) return false;
+	if (!normalizeShareSummary(entry.metadata)) return Boolean(await readShare(kv, id));
+	if (entry.metadata.id !== id) throw new StorageError('分享索引格式异常');
+	const previous = entry.metadata.activationId;
+	return !previous || (await revocation(kv, previous))?.replacementId === id;
+}
+
 export async function readShare(kv, id) {
 	if (!kv || !isValidShareId(id)) return null;
 	const [record, revoked] = await Promise.all([readStoredRecord(kv, id), revocation(kv, id)]);

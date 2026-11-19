@@ -3,7 +3,7 @@ import { cachedView, invalidateView } from './view-cache.js';
 
 const REQUEST_LOG_PREFIX = 'requests.';
 const REQUEST_LOG_TTL = 30 * 24 * 60 * 60;
-const REQUEST_LOG_LIMIT = 500;
+export const REQUEST_PAGE_SIZE = 20;
 
 export function detectSubscriptionClient(userAgentHeader) {
 	const ua = String(userAgentHeader || '').toLowerCase();
@@ -62,66 +62,21 @@ export async function readSubscriptionRequestStats(kv) {
 }
 
 async function loadSubscriptionRequestStats(kv) {
-	const empty = { total: 0, truncated: false, main: { total: 0, clients: [] }, shares: [] };
-	const events = [];
-	let cursor;
-	let truncated = false;
+	const empty = () => ({ total: 0, failed: 0, latest: '', clients: [] });
+	const main = empty(), shares = new Map();
 	try {
-		do {
-			const options = { prefix: REQUEST_LOG_PREFIX, limit: Math.min(1000, REQUEST_LOG_LIMIT - events.length) };
-			if (cursor) options.cursor = cursor;
-			const page = await kv.list(options);
-			for (const key of page.keys || []) {
-				if (key.metadata) events.push(key.metadata);
-				if (events.length >= REQUEST_LOG_LIMIT) break;
-			}
-			cursor = page.list_complete ? undefined : page.cursor;
-			if (events.length >= REQUEST_LOG_LIMIT && !page.list_complete) truncated = true;
-		} while (cursor && events.length < REQUEST_LOG_LIMIT);
+		for (const row of await kv.requestGroups()) {
+			if (row.scope !== 'main' && !isValidShareId(row.scope)) continue;
+			if (row.scope !== 'main' && !shares.has(row.scope)) shares.set(row.scope, empty());
+			const group = row.scope === 'main' ? main : shares.get(row.scope);
+			group.total += row.total;
+			group.failed += row.failed;
+			if (row.latest > group.latest) group.latest = row.latest;
+			group.clients.push({ name: row.client, count: row.total });
+		}
 	} catch (error) {
 		console.error('读取订阅请求统计时发生错误:', error);
-		return { ...empty, unavailable: true };
+		return { unavailable: true };
 	}
-
-	const summarize = records => {
-		const clients = new Map();
-		for (const event of records) {
-			const clientName = String(event.client || '其他客户端');
-			let item = clients.get(clientName);
-			if (!item) {
-				item = { name: clientName, count: 0, lastRequestedAt: '', lastUserAgent: '', formats: {}, requests: [] };
-				clients.set(clientName, item);
-			}
-			item.count += 1;
-			item.requests.push(event);
-			const format = String(event.format || 'base64');
-			item.formats[format] = (item.formats[format] || 0) + 1;
-			if (!item.lastRequestedAt || String(event.requestedAt || '') > item.lastRequestedAt) {
-				item.lastRequestedAt = String(event.requestedAt || '');
-				item.lastUserAgent = String(event.userAgent || 'Unknown');
-			}
-		}
-		return {
-			total: records.length,
-			failed: records.filter(event => Number(event.status) >= 400).length,
-			clients: [...clients.values()].sort((a, b) => b.count - a.count || b.lastRequestedAt.localeCompare(a.lastRequestedAt))
-		};
-	};
-
-	const mainEvents = events.filter(event => event.access !== 'share');
-	const shareEvents = events.filter(event => event.access === 'share');
-	const shareGroups = new Map();
-	for (const event of shareEvents) {
-		if (!isValidShareId(event.subscriptionId)) continue;
-		if (!shareGroups.has(event.subscriptionId)) shareGroups.set(event.subscriptionId, []);
-		shareGroups.get(event.subscriptionId).push(event);
-	}
-	return {
-		total: events.length,
-		truncated,
-		main: summarize(mainEvents),
-		shares: [...shareGroups.entries()]
-			.map(([subscriptionId, records]) => ({ subscriptionId, ...summarize(records) }))
-			.sort((a, b) => b.total - a.total)
-	};
+	return { main, shares, total: main.total + [...shares.values()].reduce((sum, group) => sum + group.total, 0) };
 }

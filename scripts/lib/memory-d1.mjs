@@ -1,3 +1,5 @@
+import { DatabaseSync } from 'node:sqlite';
+
 class MemoryD1Statement {
 	constructor(db, sql) {
 		this.db = db;
@@ -51,6 +53,18 @@ export class MemoryD1 {
 	runStatement(statement, records, nodes) {
 		const sql = statement.sql.replace(/\s+/g, ' ').trim();
 		const params = statement.params;
+		// Run log aggregation and cursor queries against SQLite, including its JSON semantics.
+		if (sql.startsWith('SELECT') && sql.includes("key GLOB 'requests.*'")) {
+			const db = new DatabaseSync(':memory:');
+			try {
+				db.exec('CREATE TABLE node2link_records (key TEXT PRIMARY KEY, metadata TEXT, expires_at INTEGER)');
+				const insert = db.prepare('INSERT INTO node2link_records VALUES (?, ?, ?)');
+				for (const row of records.values()) {
+					if (row.key.startsWith('requests.')) insert.run(row.key, row.metadata, row.expires_at);
+				}
+				return db.prepare(sql).all(...params);
+			} finally { db.close(); }
+		}
 		if (/^INSERT INTO node2link_records/i.test(sql)) {
 			const [key, value, metadata, expires_at, updated_at] = params;
 			records.set(key, { key, value, metadata, expires_at, updated_at });

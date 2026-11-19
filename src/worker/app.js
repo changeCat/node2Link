@@ -1,4 +1,5 @@
 import { handleSharesAPI } from './routes/shares.js';
+import { handleRequestHistory } from './routes/requests.js';
 import { createRuntimeConfig, isSubscriptionTokenRequest, isAPISubscriptionEnabled, couldBeSubscriptionTokenRequest, sanitizeSubscriptionToken } from './config.js';
 import { jsonResponse, textResponse, requestHasSameOrigin } from './http.js';
 import { readLoginPresentation, readPersistedSettings, readPublicSubscriptionSettings, readSubscriptionEntry } from './storage/settings.js';
@@ -67,13 +68,14 @@ async function dispatch(request, env, ctx, timings) {
 	}
 
 	// These administrative APIs need authentication, but no display/conversion settings.
-	if (['/api/shares', '/api/generated-nodes', '/api/node-candidates', '/api/logout'].includes(url.pathname)) {
+	if (['/api/shares', '/api/requests', '/api/generated-nodes', '/api/node-candidates', '/api/logout'].includes(url.pathname)) {
 		if (!(await authenticated())) return jsonResponse({ ok: false, message: '登录已失效' }, 401);
 		if (url.pathname === '/api/logout' && request.method === 'POST') {
 			if (!requestHasSameOrigin(request)) return textResponse('请求来源无效', 403);
 			return new Response(null, { status: 303, headers: { Location: '/login', 'Set-Cookie': clearSessionCookie() } });
 		}
 		if (url.pathname === '/api/shares') return handleSharesAPI(request, env, url);
+		if (url.pathname === '/api/requests' && request.method === 'GET') return handleRequestHistory(env, url.searchParams);
 		if (url.pathname === '/api/generated-nodes') return handleGeneratedNodesAPI(request, env, url);
 		if (url.pathname === '/api/node-candidates' && request.method === 'GET') return handleNodeCandidates(request, env, apiSubscriptionEnabled, timings);
 		return jsonResponse({ ok: false, message: 'Method Not Allowed' }, 405);

@@ -17,7 +17,7 @@ Cloudflare Pages 从 `main` 自动构建并发布。运行时必须绑定：
 |---|---|---|
 | 设置、主订阅身份、API 配置 | D1 `node2link_records` | 精确主键或批量主键 |
 | 分享、撤销状态 | D1 `node2link_records` | 精确主键；管理页使用有界范围查询 |
-| 请求日志 | D1 `node2link_records` | 最多 500 条范围查询 |
+| 请求日志 | D1 `node2link_records` | 近 30 天按订阅和客户端汇总，明细按订阅和日志键分页，每页 20 条 |
 | 当前 API 节点 | D1 `node2link_nodes` | 排序键分页 |
 | 主订阅 current/previous 指针 | D1 `node2link_records` | 精确主键 |
 | 主订阅正文 | KV | D1 指针指定的精确 Get |

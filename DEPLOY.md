@@ -13,7 +13,7 @@
 
 绑定由你在 Cloudflare Dashboard 中手动创建。保存或更换绑定后，需要重新部署一次，新的 Worker 才能使用它们。缺少绑定或绑定类型错误时，应用返回 503 并指出不可用的 D1 或 KV。
 
-首次部署前必须在 D1 控制台完整执行 [0001_storage.sql](migrations/0001_storage.sql)。运行时代码不会执行 DDL、自动建表或升级 schema；以后新增 migration 时也必须先手工执行，再部署依赖该结构的代码。
+首次部署前在 D1 控制台依次执行 [0001_storage.sql](migrations/0001_storage.sql) 和 [0002_request_scope_index.sql](migrations/0002_request_scope_index.sql)。已有数据库可单独执行第二个脚本，为已有和新增请求建立分页索引。该索引仅优化查询，未建索引时也能读取旧记录。运行时代码不会执行 DDL、自动建表或升级 schema；以后新增 migration 时也必须先手工执行，再部署依赖该结构的代码。
 
 ## Pages 构建配置
 

@@ -99,36 +99,43 @@ export async function renderSharesPage(_request, env, runtime) {
 }
 
 export async function renderRequestsPage(_request, env, runtime) {
-	const [stats, shares] = await Promise.all([
-		readSubscriptionRequestStats(env.KV),
-		listShareSummaries(env.KV)
-	]);
-	const sharesById = new Map(shares.map(item => [item.id, item]));
-	const activeShareGroups = stats.shares.filter(group => sharesById.has(group.subscriptionId));
-	const formatNames = { base64: 'Base64', clash: 'Clash', singbox: 'Sing-box', surge: 'Surge', quanx: 'QuanX', loon: 'Loon' };
-	const renderRequest = event => {
-		const location = [...new Set([event.country === 'XX' ? '' : event.country, event.region, event.city].filter(Boolean))].join(' / ');
-		const time = escapeHTML(event.requestedAt || '');
-		return `<li><time data-request-time="${time}">${time || '时间未知'}</time>
-			<div>来源 IP：${escapeHTML(event.ip || '未记录')}</div><div>地区：${escapeHTML(location || '未记录')}</div>
-			<div>${escapeHTML(formatNames[event.format] || event.format || '未知格式')} · HTTP ${escapeHTML(event.status ?? '未知')} · 耗时 ${event.durationMs == null ? '未知' : escapeHTML(event.durationMs) + ' ms'}</div>
-			<code>${escapeHTML(event.userAgent || 'Unknown')}</code></li>`;
+	const [stats, shares] = await Promise.all([readSubscriptionRequestStats(env.KV), listShareSummaries(env.KV)]);
+	const rows = shares.map(share => ({ ...share, stats: stats.shares?.get(share.id) }))
+		.sort((a, b) => (b.stats?.latest || '').localeCompare(a.stats?.latest || '') || a.name.localeCompare(b.name));
+	const renderRow = (id, name, note, group) => {
+		const latest = group?.latest || '';
+		const clients = JSON.stringify((group?.clients || []).slice().sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)));
+		return `<tr data-scope="${escapeHTML(id)}" data-clients="${escapeHTML(clients)}">
+			<th scope="row" class="request-name" title="${escapeHTML(name)}">${escapeHTML(name)}</th><td class="request-note" title="${escapeHTML(note)}">${escapeHTML(note)}</td>
+			<td>${group?.total || 0} 次${group?.failed ? ` <small class="failed">失败 ${group.failed}</small>` : ''}</td>
+			<td><time datetime="${escapeHTML(latest)}">${escapeHTML(latest || '暂无请求')}</time></td>
+			<td><button type="button" class="button" data-details aria-haspopup="dialog">查看明细</button></td></tr>`;
 	};
-	const renderClients = clients => clients.slice(0, 20).map(client => {
-		const formats = Object.entries(client.formats)
-			.sort((a, b) => b[1] - a[1])
-			.map(([format, count]) => `${formatNames[format] || format} ${count}`)
-			.join(' · ');
-		return `<div class="request-client"><div class="request-client-head"><strong>${escapeHTML(client.name)}</strong><span>${client.count} 次</span></div><div class="request-client-meta"><span>${escapeHTML(formats || '未知格式')}</span><time data-request-time="${escapeHTML(client.lastRequestedAt)}">${escapeHTML(client.lastRequestedAt || '时间未知')}</time></div><code title="${escapeHTML(client.lastUserAgent)}">${escapeHTML(client.lastUserAgent)}</code><details class="request-history"><summary>逐次请求明细</summary><ol>${client.requests.map(renderRequest).join('')}</ol></details></div>`;
-	}).join('');
-	const mainHTML = stats.main.total
-		? `<div class="request-list">${renderClients(stats.main.clients)}</div>`
-		: '<div class="request-empty">暂无主订阅请求记录</div>';
-	const shareHTML = activeShareGroups.length ? activeShareGroups.map(group => {
-		const { name, note } = sharesById.get(group.subscriptionId);
-		const link = '/s/' + group.subscriptionId;
-		return `<article class="share-request"><div class="share-request-head"><div><h3>${escapeHTML(name)}</h3>${note ? `<div class="share-meta">备注：${escapeHTML(note)}</div>` : ''}<code>${escapeHTML(link)}</code></div><strong>${group.total} 次</strong></div><div class="request-list">${renderClients(group.clients)}</div></article>`;
-	}).join('') : '<div class="request-empty">暂无分享订阅请求记录</div>';
-	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>订阅请求 · ${escapeHTML(runtime.pageTitle)}</title>${renderFavicon(runtime.browserIconURL)}<style>${basePageStyles()}.request-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.request-panel{min-width:0}.request-panel h2{margin:0}.request-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.request-panel-head p{margin:5px 0 0;color:var(--muted);font-size:13px}.count-badge{flex:0 0 auto;padding:5px 10px;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:12px;font-weight:800}.request-list{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}.request-panel>.request-list,.share-request-list{max-height:min(64vh,680px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}.request-client{min-width:0;padding:12px 14px}.request-client+.request-client{border-top:1px solid var(--line-soft)}.request-client-head,.request-client-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}.request-client-head strong{font-size:13px}.request-client-head>span{padding:2px 7px;border-radius:999px;background:var(--green-soft);color:var(--green-dark);font-size:10px;font-weight:800}.request-client-meta{margin-top:5px;color:var(--muted);font-size:11px}.request-client-meta span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.request-client-meta time{flex:0 0 auto}.request-client code{display:block;margin-top:7px;overflow:hidden;color:#53605a;font-size:10px;line-height:1.45;text-overflow:ellipsis;white-space:nowrap}.request-history{margin-top:8px;font-size:12px}.request-history summary{cursor:pointer;color:var(--green-dark)}.request-history ol{list-style:none;padding:0;margin:6px 0 0}.request-history li{padding:8px 0;border-top:1px solid var(--line-soft);overflow-wrap:anywhere}.request-history time{font-weight:700}.request-history code{white-space:normal}.share-request-head .share-meta{overflow-wrap:anywhere;color:var(--muted);font-size:12px}.request-empty{padding:32px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}.share-request-list{display:grid;gap:12px;padding-right:4px}.share-request{border:1px solid var(--line);border-radius:10px;overflow:hidden}.share-request-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:13px 14px;background:#f8faf7}.share-request-head h3{margin:0 0 4px;font-size:14px}.share-request-head code{color:var(--muted);font-size:10px}.share-request-head>strong{color:var(--green);font-size:12px}.share-request .request-list{border:0;border-top:1px solid var(--line-soft);border-radius:0}@media(max-width:900px){.request-summary{grid-template-columns:1fr}.request-panel>.request-list,.share-request-list{max-height:min(56vh,580px)}}</style></head><body>${renderTopbar('requests', runtime)}<main><div class="page-head"><h1>订阅请求</h1><p>近 30 天的请求按客户端汇总，展开明细可查看每次请求的来源和结果。${stats.truncated ? ' 当前仅展示最近 500 条请求。' : ''}</p></div><div class="request-summary"><section class="panel request-panel"><div class="request-panel-head"><div><h2>主订阅请求</h2><p>仅统计主订阅入口产生的请求</p></div><span class="count-badge">${stats.main.total} 次</span></div>${mainHTML}</section><section class="panel request-panel"><div class="request-panel-head"><div><h2>分享订阅请求</h2><p>仅展示当前仍存在的分享链接请求记录</p></div><span class="count-badge">${activeShareGroups.reduce((total, item) => total + item.total, 0)} 次</span></div><div class="share-request-list">${shareHTML}</div></section></div></main>${pageScript('requests', {})}</body></html>`;
+	const heading = '<thead><tr><th>订阅名称</th><th>备注</th><th>请求次数</th><th>最近请求</th><th>操作</th></tr></thead>';
+	const pager = (id, label) => `<nav class="request-pager" id="${id}" aria-label="${label}"><button type="button" class="button" data-prev>上一页</button><span role="status"></span><button type="button" class="button" data-next>下一页</button></nav>`;
+	const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>订阅请求 · ${escapeHTML(runtime.pageTitle)}</title>${renderFavicon(runtime.browserIconURL)}
+		<style>${basePageStyles()}
+		.request-panel{padding:16px;margin-bottom:14px}.request-heading,.history-head,.history-filters,.request-pager{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+		.request-heading,.history-head{justify-content:space-between}.request-heading h2,.history-head h2{margin:0;font-size:17px}.request-heading{margin-bottom:12px}.request-heading input{max-width:290px}
+		.requests-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}.requests-table th,.requests-table td{text-align:left;padding:9px 10px;overflow-wrap:anywhere;border-bottom:1px solid var(--line-soft)}
+		.requests-table thead{background:#f6f8f5;color:var(--muted);font-size:12px}.overview-table td:last-child,.overview-table th:last-child{text-align:right;width:100px}.requests-table .button,.request-pager .button{padding:6px 10px;font-size:12px}.failed{color:var(--danger)}
+		.request-pager{justify-content:flex-end;margin-top:12px;font-size:12px}.request-pager[hidden],[hidden]{display:none!important}
+		.request-empty{color:var(--muted);text-align:center;padding:12px}.request-name,.request-note{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+		#historyDialog{width:min(1040px,calc(100% - 24px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:inherit}
+		#historyDialog[open]{display:flex;flex-direction:column}#historyDialog::backdrop{background:rgba(16,32,24,.4)}
+		.history-head,.history-filters,#historyDialog .request-pager{padding:12px 16px;margin:0}.history-head{border-bottom:1px solid var(--line)}.history-head h2{overflow-wrap:anywhere;min-width:0;flex:1}.history-filters select{width:auto}.history-filters label{font-size:13px}
+		.history-scroll{overflow:auto;min-height:0;overscroll-behavior:contain;padding:0 12px}.history-scroll th{position:sticky;top:0;background:#f6f8f5}.history-scroll small{display:block;color:var(--muted);overflow-wrap:anywhere}
+		#historyDialog .request-pager{border-top:1px solid var(--line)}#historyStatus{text-align:center;color:var(--muted)}#historyRetry{margin:0 auto 10px}
+		@media(max-width:700px){.request-panel{padding:12px}.request-heading input{max-width:none}.requests-table thead{display:none}.requests-table,.requests-table tbody{display:block}.requests-table tr{display:flex;flex-wrap:wrap;gap:5px 12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-soft)}.requests-table th,.requests-table td{padding:0;border:0}.overview-table .request-name{width:100%}.request-note:empty{display:none}.overview-table td:last-child{width:auto;margin-left:auto}.history-table td:before{content:attr(data-label) ' ';color:var(--muted)}.history-table td{max-width:100%}.history-table td:first-child{width:100%;font-weight:700}.request-pager{justify-content:center}}
+		</style></head><body>${renderTopbar('requests', runtime)}<main><div class="page-head"><h1>订阅请求</h1><p>最近 30 天</p></div>
+		${stats.unavailable ? '<p class="message" role="alert">暂时无法读取请求统计，请刷新重试。</p>' : `
+		<section class="panel request-panel"><div class="request-heading"><h2>主订阅请求</h2></div><table class="requests-table overview-table">${heading}<tbody>${renderRow('main', runtime.FileName || '主订阅', '', stats.main)}</tbody></table></section>
+		<section class="panel request-panel"><div class="request-heading"><h2>分享订阅请求</h2><input type="search" id="shareSearch" aria-label="搜索分享名称或备注" placeholder="搜索分享名称或备注"></div>
+		<table class="requests-table overview-table">${heading}<tbody id="requestShares">${rows.map(row => renderRow(row.id, row.name, row.note, row.stats)).join('')}</tbody></table>
+		<p class="request-empty" id="shareEmpty" ${rows.length ? 'hidden' : ''}>暂无分享链接</p>${pager('sharePager', '分享列表分页')}</section>`}
+		<dialog id="historyDialog" aria-labelledby="historyTitle"><div class="history-head"><h2 id="historyTitle">请求明细</h2><button class="button" id="closeHistory" type="button">关闭</button></div>
+		<div class="history-filters"><label>客户端 <select id="historyClient"></select></label><label><input type="checkbox" id="historyFailed"> 只看失败</label></div>
+		<div class="history-scroll"><table class="requests-table history-table" hidden><thead><tr><th>请求时间</th><th>客户端 / 版本</th><th>来源 IP</th><th>地区</th><th>订阅格式</th><th>HTTP 状态</th><th>耗时</th></tr></thead><tbody id="historyRows"></tbody></table><p id="historyStatus" role="status"></p></div><button class="button" id="historyRetry" type="button" hidden>重试</button>
+		${pager('historyPager', '请求明细分页')}</dialog></main>${pageScript('requests')}</body></html>`;
 	return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }

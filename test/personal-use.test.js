@@ -109,11 +109,56 @@ test('private share notes survive older edits and resets while request details s
 	assert.equal((await request('/requests')).status, 303);
 	const html = await (await request('/requests', { headers })).text();
 	assert.match(html, /小林 &lt;仅管理&gt;/);
-	assert.match(html, /来源 IP：2001:db8::1<\/div><div>地区：JP \/ Tokyo \/ Shibuya/);
-	assert.match(html, /来源 IP：192\.0\.2\.8<\/div><div>地区：未记录/);
-	assert.match(html, /Base64 · HTTP 200 · 耗时 \d+ ms/);
+	assert.doesNotMatch(html, /2001:db8::1|192\.0\.2\.8/);
+	const details = '/api/requests?scope=' + reset.share.id;
+	assert.equal((await request(details)).status, 401);
+	assert.equal((await request('/api/requests?scope=' + share.id, { headers })).status, 404);
+	const { events } = await (await request(details, { headers })).json();
+	assert.equal(events.length, 2);
+	const jp = events.find(event => event.ip === '2001:db8::1');
+	assert.deepEqual([jp.country, jp.region, jp.city, jp.status, jp.format], ['JP', 'Tokyo', 'Shibuya', 200, 'base64']);
+	assert.equal(events.find(event => event.ip === '192.0.2.8').country, '');
 	await mutate('PUT', { id: reset.share.id, name, content: node, note: '' });
 	assert.equal((await listShareSummaries(env.KV))[0].note, '');
+});
+
+test('request history pages and filters one subscription across the full retention window', async () => {
+	const { env, headers, request, mutate } = await fixture();
+	const { share } = await (await mutate('POST', { name: 'Older traffic', content: node })).json();
+	const now = Date.now();
+	async function write(index, access, expirationTtl = 86400) {
+		const at = now + index;
+		const key = 'requests.' + (9999999999999 - at) + '.' + crypto.randomUUID();
+		await env.KV.put(key, '1', { expirationTtl, metadata: {
+			requestedAt: new Date(at).toISOString(), access, subscriptionId: share.id,
+			client: index % 2 ? 'Loon' : 'Clash', status: index % 3 ? 200 : 502,
+			userAgent: 'visit-' + index
+		} });
+	}
+	for (let i = 0; i < 47; i++) await write(i, 'share');
+	for (let i = 47; i < 560; i++) await write(i, 'main');
+	await write(560, 'share', -1);
+	const url = '/api/requests?scope=' + share.id;
+	const fetchPage = async suffix => (await request(url + suffix, { headers })).json();
+	const first = await fetchPage('');
+	assert.equal(first.events.length, 20);
+	assert.equal(first.events[0].userAgent, 'visit-46');
+	await write(561, 'share');
+	const second = await fetchPage('&start=' + first.start + '&after=' + first.next);
+	const third = await fetchPage('&start=' + first.start + '&after=' + second.next);
+	assert.deepEqual([...first.events, ...second.events, ...third.events].map(event => event.userAgent),
+		Array.from({ length: 47 }, (_, index) => 'visit-' + (46 - index)));
+	assert.equal(third.next, '');
+	assert.deepEqual(await fetchPage('&start=' + first.start), first);
+	const failures = await fetchPage('&client=Clash&failed=1');
+	assert.equal(failures.events.length, 8);
+	assert.ok(failures.events.every(event => event.client === 'Clash' && event.status === 502));
+	const main = await (await request('/api/requests?scope=main', { headers })).json();
+	assert.equal(main.events[0].userAgent, 'visit-559');
+	const html = await (await request('/requests', { headers })).text();
+	assert.match(html, /513 次/);
+	assert.match(html, /48 次/);
+	assert.equal((await request(url + '&after=invalid', { headers })).status, 400);
 });
 
 test('reset keeps share restrictions and deleted shares cannot be resumed', async () => {

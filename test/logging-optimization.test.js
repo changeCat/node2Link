@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import worker from '../src/worker/app.js';
 import { MemoryKV } from '../scripts/lib/memory-kv.mjs';
 import { MemoryD1 } from '../scripts/lib/memory-d1.mjs';
+import { withStorageBindings } from '../src/worker/storage/d1.js';
 import { createRuntimeConfig } from '../src/worker/config.js';
 import { queueSubscriptionRequestLog, readSubscriptionRequestStats } from '../src/worker/storage/request-logs.js';
 import { renderRequestsPage } from '../src/worker/ui/pages.js';
@@ -19,11 +20,12 @@ async function log(kv, status = 200) {
 }
 
 test('complete logging retains every successful and failed subscription request', async () => {
-	const kv = new MemoryKV();
+	const db = new MemoryD1();
+	const kv = withStorageBindings({ KV: new MemoryKV(), DB: db }).KV;
 	await log(kv);
 	await log(kv);
 	await log(kv, 502);
-	assert.equal(kv.values.size, 3);
+	assert.equal(db.records.size, 3);
 	const stats = await readSubscriptionRequestStats(kv);
 	assert.equal(stats.total, 3);
 	assert.equal(stats.main.failed, 1);
@@ -35,7 +37,8 @@ test('complete logging retains every successful and failed subscription request'
 
 test('request statistics reuse short views, invalidate on writes and retry failed reads', async () => {
 	let lists = 0;
-	const kv = new MemoryKV({ before(op) { if (op === 'list') lists++; } });
+	const db = new MemoryD1({ before(op) { if (op === 'all') lists++; } });
+	const kv = withStorageBindings({ KV: new MemoryKV(), DB: db }).KV;
 	await log(kv);
 	assert.equal((await readSubscriptionRequestStats(kv)).total, 1);
 	assert.equal((await readSubscriptionRequestStats(kv)).total, 1);
@@ -46,9 +49,9 @@ test('request statistics reuse short views, invalidate on writes and retry faile
 	const now = Date.now;
 	try {
 		Date.now = () => now() + 16_000;
-		kv.before = () => { throw new Error('outage'); };
+		db.before = () => { throw new Error('outage'); };
 		assert.equal((await readSubscriptionRequestStats(kv)).unavailable, true);
-		kv.before = undefined;
+		db.before = undefined;
 		assert.equal((await readSubscriptionRequestStats(kv)).total, 2);
 	} finally { Date.now = now; }
 });

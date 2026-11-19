@@ -4,6 +4,9 @@ const NODE_PREFIX = 'nodes.';
 const MAIN_BODY_PREFIX = 'blob.main.';
 const SHARE_BODY_PREFIX = 'blob.share.';
 const REQUEST_PREFIX = 'requests.';
+const REQUEST_SCOPE_SQL = "CASE WHEN json_extract(metadata, '$.access') = 'share' THEN json_extract(metadata, '$.subscriptionId') ELSE 'main' END";
+const REQUEST_CLIENT_SQL = "coalesce(nullif(json_extract(metadata, '$.client'), ''), '其他客户端')";
+const LIVE_REQUESTS_SQL = "key GLOB 'requests.*' AND metadata IS NOT NULL AND (expires_at IS NULL OR expires_at > ?)";
 
 const bindings = new WeakMap();
 const isBlobKey = key => key.startsWith(MAIN_BODY_PREFIX) || key.startsWith(SHARE_BODY_PREFIX);
@@ -149,6 +152,31 @@ class AppStorage {
 		const complete = results.length <= size;
 		const page = results.slice(0, size);
 		return { page, complete, cursor: complete ? '' : page.at(-1)?.sort_key || '' };
+	}
+
+	async requestGroups() {
+		const now = Math.floor(Date.now() / 1000);
+		await this.db.prepare('DELETE FROM node2link_records WHERE expires_at IS NOT NULL AND expires_at <= ?1').bind(now).run();
+		const { results } = await this.db.prepare(`SELECT ${REQUEST_SCOPE_SQL} AS scope, ${REQUEST_CLIENT_SQL} AS client,
+			count(*) AS total, count(*) FILTER (WHERE cast(json_extract(metadata, '$.status') AS integer) >= 400) AS failed,
+			max(json_extract(metadata, '$.requestedAt')) AS latest
+			FROM node2link_records WHERE ${LIVE_REQUESTS_SQL} GROUP BY scope, client`).bind(now).all();
+		return results;
+	}
+
+	async requestPage({ scope, client, failed, after, start }, size) {
+		const conditions = [LIVE_REQUESTS_SQL, REQUEST_SCOPE_SQL + ' = ?', after ? 'key > ?' : 'key >= ?'];
+		const params = [Math.floor(Date.now() / 1000), scope, after || start || REQUEST_PREFIX];
+		if (client) { conditions.push(REQUEST_CLIENT_SQL + ' = ?'); params.push(client); }
+		if (failed) conditions.push("cast(json_extract(metadata, '$.status') AS integer) >= 400");
+		const { results } = await this.db.prepare(`SELECT key, metadata FROM node2link_records
+			WHERE ${conditions.join(' AND ')} ORDER BY key LIMIT ?`).bind(...params, size + 1).all();
+		const rows = results.slice(0, size);
+		return {
+			events: rows.map(row => parseMetadata(row.metadata)),
+			start: start || rows[0]?.key || '',
+			next: results.length > size ? rows.at(-1).key : ''
+		};
 	}
 
 	async listWithValues({ prefix = '', limit = 1000, cursor = '' } = {}) {

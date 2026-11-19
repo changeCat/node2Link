@@ -113,20 +113,72 @@ test('share picker, edit, copy, QR, reset and delete', async ({ page }) => {
 	const newLink = await card.locator('[data-copy]').getAttribute('data-copy');
 	expect(newLink).not.toBe(oldLink);
 	expect((await page.request.get(oldLink)).status()).toBe(404);
+	for (let i = 0; i < 20; i++) {
+		expect((await page.request.get(newLink + '?base64', { headers: { 'User-Agent': 'Loon/3' } })).status()).toBe(200);
+	}
 	expect((await page.request.get(newLink + '?base64', {
 		headers: { 'CF-Connecting-IP': '192.0.2.42', 'CF-IPCountry': 'JP', 'User-Agent': 'v2rayN/7' }
 	})).status()).toBe(200);
 	await page.goto('/requests');
-	const group = page.locator('.share-request').filter({ hasText: 'Browser edited' });
+	await page.getByRole('searchbox').fill('No matching share');
+	await expect(page.getByText('没有匹配的分享')).toBeVisible();
+	await page.getByRole('searchbox').fill('team A');
+	const group = page.locator('#requestShares tr').filter({ hasText: 'Browser edited' });
 	await expect(group).toContainText('Private <team A>');
-	await group.getByText('逐次请求明细').click();
-	await expect(group.getByText('来源 IP：192.0.2.42')).toBeVisible();
-	await expect(group.getByText('地区：JP')).toBeVisible();
+	await group.getByRole('button', { name: '查看明细' }).click();
+	const history = page.getByRole('dialog');
+	await expect(history.getByText('192.0.2.42')).toBeVisible();
+	await expect(history.getByText('JP', { exact: true })).toBeVisible();
+	await expect(page.locator('#historyRows tr')).toHaveCount(20);
+	await history.getByRole('button', { name: '下一页' }).click();
+	await expect(page.locator('#historyRows tr')).toHaveCount(1);
+	await history.getByRole('button', { name: '上一页' }).click();
+	await expect(page.locator('#historyRows tr')).toHaveCount(20);
+	await history.locator('select').selectOption('v2rayN');
+	await expect(page.locator('#historyRows tr')).toHaveCount(1);
+	await history.getByLabel('只看失败').check();
+	await expect(history.getByText('没有符合条件的请求')).toBeVisible();
+	await history.getByRole('button', { name: '关闭' }).click();
+	await expect(page.getByRole('searchbox')).toHaveValue('team A');
 	await page.goto('/shares');
 	await card.locator('[data-delete]').click();
 	await page.locator('#sharePromptAccept').click();
 	await expect(card).toHaveCount(0);
 	expect((await page.request.get(newLink)).status()).toBe(404);
+});
+
+test('request overview retains its search and page after history retries and closes', async ({ page }) => {
+	const ids = [];
+	try {
+		for (let i = 0; i < 21; i++) {
+			ids.push(await page.evaluate(async payload => {
+				const response = await fetch('/api/shares', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+				const data = await response.json();
+				if (!response.ok) throw new Error(data.message);
+				return data.share.id;
+			}, { name: '分页测试 ' + i, note: 'overview-fixture', content: first }));
+		}
+		await page.goto('/requests');
+		await page.getByRole('searchbox').fill('OVERVIEW-fixture');
+		const visible = page.locator('#requestShares tr:visible');
+		await expect(visible).toHaveCount(20);
+		await page.locator('#sharePager [data-next]').click();
+		await expect(visible).toHaveCount(1);
+		await page.route('**/api/requests?*', route => route.fulfill({ status: 503, json: { message: '测试读取失败' } }), { times: 1 });
+		await visible.getByRole('button', { name: '查看明细' }).click();
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByText('测试读取失败')).toBeVisible();
+		await dialog.getByRole('button', { name: '重试' }).click();
+		await expect(dialog.getByText('没有符合条件的请求')).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toBeHidden();
+		await expect(page.locator('#sharePager')).toContainText('第 2 / 2 页');
+		await expect(visible.getByRole('button', { name: '查看明细' })).toBeFocused();
+	} finally {
+		await page.evaluate(async ids => {
+			for (const id of ids) await fetch('/api/shares', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+		}, ids);
+	}
 });
 
 test('settings sections save independently and failed saves retain input', async ({ page }) => {
