@@ -146,7 +146,13 @@ export async function serveSubscription(request, env, ctx, runtime, sourceData, 
 					])
 				]));
 			}
-			if (!isSubConverterRequest && env?.KV) queueSubscriptionRequestLog(ctx, env, { client: detectSubscriptionClient(userAgentHeader), userAgent: userAgentHeader || 'Unknown', format: subscriptionFormat, access, subscriptionId, status, durationMs, upstreamFailures });
+			if (!isSubConverterRequest && env?.KV) queueSubscriptionRequestLog(ctx, env, {
+				client: detectSubscriptionClient(userAgentHeader), userAgent: userAgentHeader,
+				ip: request.headers.get('CF-Connecting-IP'),
+				country: request.cf?.country || request.headers.get('CF-IPCountry'),
+				region: request.cf?.region, city: request.cf?.city,
+				format: subscriptionFormat, access, subscriptionId, status, durationMs, upstreamFailures
+			});
 			console.log(JSON.stringify({ event: 'subscription.complete', format: subscriptionFormat, status, durationMs, upstreamFailures, converterRoute, ...(conversionAudit ? { conversionCheck: conversionAudit.check, inputNodes: conversionAudit.inputCount, outputNodes: conversionAudit.outputCount, missingProtocols: conversionAudit.missing } : {}) }));
 			return new Response(body, { status, headers });
 		};

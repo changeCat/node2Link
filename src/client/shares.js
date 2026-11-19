@@ -43,7 +43,8 @@ function render() {
     var statusIcon = state === 'paused' ? pauseIcon : state === 'expired' ? expiredIcon : activeIcon;
     var badge = '<span class="share-status">' + statusIcon + '<span>' + status + '</span></span>';
     counts += item.expiresAt ? ' · 到期 ' + new Date(item.expiresAt).toLocaleString() : ' · 长期有效';
-    return '<article class="share-card" data-state="' + state + '"><div class="share-identity">' + shareIcon + '<div class="share-title"><div class="share-heading"><h3 title="' + esc(item.name) + '">' + esc(item.name) + '</h3>' + badge + '</div><div class="share-meta">' + counts + " · " + new Date(item.updatedAt).toLocaleString() + '</div></div></div><div class="share-actions"><button class="share-action copy" type="button" data-copy="' + esc(link) + '">' + copyIcon + '<span>复制</span></button><button class="share-action icon" type="button" data-qr="' + esc(link) + '" aria-label="显示二维码" title="显示二维码">' + qrIcon + '</button><button class="share-action" type="button" data-edit="' + item.id + '">修改</button><button class="share-action danger" type="button" data-delete="' + item.id + '">删除</button></div></article>';
+    var note = item.note ? '<div class="share-meta">备注：' + esc(item.note) + '</div>' : '';
+    return '<article class="share-card" data-state="' + state + '"><div class="share-identity">' + shareIcon + '<div class="share-title"><div class="share-heading"><h3 title="' + esc(item.name) + '">' + esc(item.name) + '</h3>' + badge + '</div>' + note + '<div class="share-meta">' + counts + " · " + new Date(item.updatedAt).toLocaleString() + '</div></div></div><div class="share-actions"><button class="share-action copy" type="button" data-copy="' + esc(link) + '">' + copyIcon + '<span>复制</span></button><button class="share-action icon" type="button" data-qr="' + esc(link) + '" aria-label="显示二维码" title="显示二维码">' + qrIcon + '</button><button class="share-action" type="button" data-edit="' + item.id + '">修改</button><button class="share-action danger" type="button" data-delete="' + item.id + '">删除</button></div></article>';
   }).join("");
   addResetButtons();
   list.querySelectorAll('[data-edit]').forEach(function(edit) {
@@ -96,7 +97,7 @@ form.addEventListener("submit", function(event) {
   button.disabled = true;
   message.textContent = "正在保存…";
   var expiry = document.getElementById('shareExpiresAt').value;
-  call(id ? "PUT" : "POST", { id, name: document.getElementById("shareName").value, content: document.getElementById("shareContent").value, expiresAt: expiry ? new Date(expiry).toISOString() : '' }).then(function(data) {
+  call(id ? "PUT" : "POST", { id, name: document.getElementById("shareName").value, note: document.getElementById("shareNote").value, content: document.getElementById("shareContent").value, expiresAt: expiry ? new Date(expiry).toISOString() : '' }).then(function(data) {
     var index = shares.findIndex(function(item) {
       return item.id === data.share.id;
     });
@@ -146,6 +147,7 @@ list.addEventListener("click", function(event) {
     loadShare(editButton.dataset.edit).then(function(item) {
       document.getElementById("shareId").value = item.id;
       document.getElementById("shareName").value = item.name;
+      document.getElementById("shareNote").value = item.note || '';
       document.getElementById("shareContent").value = item.content;
       var expiry = item.expiresAt ? new Date(item.expiresAt) : null;
       document.getElementById('shareExpiresAt').value = expiry ? new Date(expiry.getTime() - expiry.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';

@@ -4,6 +4,8 @@ export function normalizeSharePayload(payload, previous = {}) {
 	const uniqueLines = [...new Set(lines)];
 	const content = uniqueLines.join('\n');
 	if (!name) throw new Error('请输入分享名称');
+	const note = String(payload.note ?? previous.note ?? '').trim().replace(/[\r\n\0]/g, '');
+	if (note.length > 200) throw new Error('备注不能超过 200 个字符');
 	if (!content) throw new Error('请至少填写一个节点或订阅链接');
 	const nodePattern = /^(vless|vmess|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic|wireguard|socks|socks5):\/\//i;
 	const isSubscriptionURL = line => {
@@ -19,7 +21,7 @@ export function normalizeSharePayload(payload, previous = {}) {
 	if (invalidIndex >= 0) throw new Error(`第 ${invalidIndex + 1} 行不是支持的节点或订阅链接`);
 	if (new TextEncoder().encode(content).length > 1024 * 1024) throw new Error('分享内容不能超过 1 MB');
 	const sourceCount = uniqueLines.filter(isSubscriptionURL).length;
-	return { name, content, nodeCount: uniqueLines.length - sourceCount, sourceCount, ...normalizeShareAvailability(payload, previous) };
+	return { name, note, content, nodeCount: uniqueLines.length - sourceCount, sourceCount, ...normalizeShareAvailability(payload, previous) };
 }
 
 export function normalizeShareAvailability(payload, previous = {}) {

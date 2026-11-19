@@ -36,6 +36,10 @@ async function recordSubscriptionRequest(kv, details) {
 	const metadata = {
 		client: String(details.client || '其他客户端').slice(0, 40),
 		userAgent: String(details.userAgent || 'Unknown').slice(0, 120),
+		ip: String(details.ip || '').slice(0, 45),
+		country: String(details.country || '').slice(0, 2),
+		region: String(details.region || '').slice(0, 80),
+		city: String(details.city || '').slice(0, 80),
 		format: String(details.format || 'base64').slice(0, 20),
 		access: details.access === 'share' ? 'share' : 'main',
 		subscriptionId: isValidShareId(details.subscriptionId) ? details.subscriptionId : '',
@@ -85,10 +89,11 @@ async function loadSubscriptionRequestStats(kv) {
 			const clientName = String(event.client || '其他客户端');
 			let item = clients.get(clientName);
 			if (!item) {
-				item = { name: clientName, count: 0, lastRequestedAt: '', lastUserAgent: '', formats: {} };
+				item = { name: clientName, count: 0, lastRequestedAt: '', lastUserAgent: '', formats: {}, requests: [] };
 				clients.set(clientName, item);
 			}
 			item.count += 1;
+			item.requests.push(event);
 			const format = String(event.format || 'base64');
 			item.formats[format] = (item.formats[format] || 0) + 1;
 			if (!item.lastRequestedAt || String(event.requestedAt || '') > item.lastRequestedAt) {

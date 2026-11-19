@@ -74,6 +74,7 @@ test('share picker, edit, copy, QR, reset and delete', async ({ page }) => {
 	await saveMain(page, first + '\n' + second + '\n' + 'vless://uuid@picker.example.com:443#Picker');
 	await page.goto('/shares');
 	await page.locator('#shareName').fill('Browser share');
+	await page.getByLabel('备注', { exact: true }).fill('Private <team A>');
 	await page.locator('#openNodePicker').click();
 	await page.locator('#nodeSearch').fill('Picker');
 	await page.locator('#selectVisibleNodes').click();
@@ -82,9 +83,12 @@ test('share picker, edit, copy, QR, reset and delete', async ({ page }) => {
 	await page.locator('#submitShare').click();
 	await expect(page.locator('#formMessage')).toContainText('已保存');
 	let card = page.locator('.share-card').filter({ hasText: 'Browser share' });
+	await page.reload();
+	await expect(card).toContainText('Private <team A>');
 	await card.locator('[data-edit]').click();
 	await expect(page.locator('#formTitle')).toHaveText('修改分享');
 	await expect(page.locator('#shareName')).toHaveValue('Browser share');
+	await expect(page.locator('#shareNote')).toHaveValue('Private <team A>');
 	await page.locator('#shareName').fill('Browser edited');
 	await page.locator('#submitShare').click();
 	card = page.locator('.share-card').filter({ hasText: 'Browser edited' });
@@ -101,7 +105,16 @@ test('share picker, edit, copy, QR, reset and delete', async ({ page }) => {
 	const newLink = await card.locator('[data-copy]').getAttribute('data-copy');
 	expect(newLink).not.toBe(oldLink);
 	expect((await page.request.get(oldLink)).status()).toBe(404);
-	expect((await page.request.get(newLink + '?b64')).status()).toBe(200);
+	expect((await page.request.get(newLink + '?base64', {
+		headers: { 'CF-Connecting-IP': '192.0.2.42', 'CF-IPCountry': 'JP', 'User-Agent': 'v2rayN/7' }
+	})).status()).toBe(200);
+	await page.goto('/requests');
+	const group = page.locator('.share-request').filter({ hasText: 'Browser edited' });
+	await expect(group).toContainText('Private <team A>');
+	await group.getByText('逐次请求明细').click();
+	await expect(group.getByText('来源 IP：192.0.2.42')).toBeVisible();
+	await expect(group.getByText('地区：JP')).toBeVisible();
+	await page.goto('/shares');
 	await card.locator('[data-delete]').click();
 	await page.locator('#sharePromptAccept').click();
 	await expect(card).toHaveCount(0);

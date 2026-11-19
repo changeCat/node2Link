@@ -86,6 +86,36 @@ test('shares can pause, resume and expire without deleting their content or chan
 	assert.equal((await request('/s/' + id + '?base64')).status, 200);
 });
 
+test('private share notes survive older edits and resets while request details stay per visit', async () => {
+	const { env, headers, request, mutate } = await fixture();
+	const name = '出差节点', note = '小林 <仅管理>';
+	const { share } = await (await mutate('POST', { name, note, content: node })).json();
+	await mutate('PUT', { id: share.id, name, content: node });
+	const reset = await (await mutate('PATCH', { id: share.id, action: 'reset' })).json();
+	assert.equal(reset.share.note, note);
+	assert.equal((await listShareSummaries(env.KV))[0].note, note);
+
+	const path = '/s/' + reset.share.id + '?base64';
+	for (const [ip, cf] of [['2001:db8::1', { country: 'JP', region: 'Tokyo', city: 'Shibuya' }], ['192.0.2.8', undefined]]) {
+		const visit = new Request(origin + path, { headers: { 'User-Agent': 'v2rayN/7', 'CF-Connecting-IP': ip } });
+		visit.cf = cf;
+		const tasks = [];
+		const response = await worker.fetch(visit, env, { waitUntil(task) { tasks.push(task); } });
+		assert.equal(Buffer.from(response.headers.get('Profile-Title').slice(7), 'base64').toString(), name);
+		assert.equal(response.headers.get('Content-Disposition'), "attachment; filename*=utf-8''" + encodeURIComponent(name));
+		assert.equal(Buffer.from(await response.text(), 'base64').toString().trim(), node);
+		await Promise.all(tasks);
+	}
+	assert.equal((await request('/requests')).status, 303);
+	const html = await (await request('/requests', { headers })).text();
+	assert.match(html, /小林 &lt;仅管理&gt;/);
+	assert.match(html, /来源 IP：2001:db8::1<\/div><div>地区：JP \/ Tokyo \/ Shibuya/);
+	assert.match(html, /来源 IP：192\.0\.2\.8<\/div><div>地区：未记录/);
+	assert.match(html, /Base64 · HTTP 200 · 耗时 \d+ ms/);
+	await mutate('PUT', { id: reset.share.id, name, content: node, note: '' });
+	assert.equal((await listShareSummaries(env.KV))[0].note, '');
+});
+
 test('reset keeps share restrictions and deleted shares cannot be resumed', async () => {
 	const { request, mutate } = await fixture();
 	const { share } = await (await mutate('POST', { name: 'Restricted', content: node, paused: true, expiresAt: '2099-01-01T00:00:00Z' })).json();
