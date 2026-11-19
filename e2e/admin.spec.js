@@ -175,11 +175,36 @@ test('share pause, expiry and renewal retain the same link', async ({ page }) =>
 	await page.goto('/shares');
 	await page.getByRole('button', { name: '添加分享' }).click();
 	await page.locator('#shareName').fill('Temporary personal share');
+	await page.locator('#shareNote').fill('仅用于布局验证的长备注'.repeat(12));
 	await page.locator('#shareContent').fill(first);
 	await page.locator('#shareExpiresAt').fill('2099-01-01T12:00');
 	await page.locator('#submitShare').click();
 	const card = page.locator('.share-card').filter({ hasText: 'Temporary personal share' });
 	await expect(card).toContainText('使用中');
+	const viewport = page.viewportSize();
+	for (const width of viewport.width > 1000 ? [1920, 1365, 1200, 1024, 768] : [390, 320]) {
+		await page.setViewportSize({ width, height: viewport.height });
+		const geometry = await card.evaluate(row => {
+			const box = row.getBoundingClientRect();
+			const cells = [...row.children].map(cell => cell.getBoundingClientRect());
+			const headers = [...document.querySelector('.share-columns').children];
+			return {
+				fits: [...row.querySelectorAll('button'), ...row.children].every(el => {
+					const rect = el.getBoundingClientRect();
+					return rect.left >= box.left - 1 && rect.right <= box.right + 1;
+				}),
+				singleLine: cells.every(cell => Math.abs(cell.top + cell.height / 2 - box.top - box.height / 2) <= 1),
+				aligned: cells.every((cell, i) => Math.abs(cell.left - headers[i].getBoundingClientRect().left) <= 1),
+				height: box.height
+			};
+		});
+		expect(geometry.fits, '内容应在行内 ' + width).toBe(true);
+		if (width >= 1200) {
+			expect(geometry.singleLine && geometry.aligned).toBe(true);
+			expect(geometry.height).toBeLessThanOrEqual(52);
+		}
+	}
+	await page.setViewportSize(viewport);
 	const link = await card.locator('[data-copy]').getAttribute('data-copy');
 	await card.locator('[data-toggle]').click();
 	await expect(card).toContainText('已暂停');
