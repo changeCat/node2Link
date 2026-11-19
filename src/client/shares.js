@@ -54,10 +54,10 @@ function render() {
     var updated = new Date(item.updatedAt).toLocaleString();
     var note = item.note ? '<span class="compact-label">备注：</span>' + esc(item.note) : '';
     return '<article class="share-card" data-state="' + state + '"><div class="share-identity"><h3 title="' + esc(item.name) + '">' + esc(item.name) + '</h3>' + badge + '</div>' +
-      '<div class="share-cell share-note" title="' + esc(item.note || '') + '">' + note + '</div>' +
       '<code class="share-url" title="' + esc(link) + '">' + esc(link) + '</code>' +
       '<div class="share-cell" title="' + esc(counts) + '">' + esc(counts) + '</div>' +
       '<div class="share-cell" title="' + esc(expiry) + '">' + (item.expiresAt ? '<span class="compact-label">到期 </span>' : '') + esc(expiry) + '</div>' +
+      '<div class="share-cell share-note" title="' + esc(item.note || '') + '">' + note + '</div>' +
       '<div class="share-cell" title="' + esc(updated) + '"><span class="compact-label">更新于 </span>' + esc(updated) + '</div>' +
       '<div class="share-actions"><button class="share-action copy" type="button" data-copy="' + esc(link) + '">' + copyIcon + '<span>复制</span></button><button class="share-action icon" type="button" data-qr="' + esc(link) + '" aria-label="显示二维码" title="显示二维码">' + qrIcon + '</button><button class="share-action" type="button" data-edit="' + item.id + '">修改</button><button class="share-action danger" type="button" data-delete="' + item.id + '">删除</button></div></article>';
   }).join("");

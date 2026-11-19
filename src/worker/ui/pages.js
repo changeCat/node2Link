@@ -56,7 +56,7 @@ export async function renderSharesPage(_request, env, runtime) {
 		.share-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
 		.share-toolbar .button{font-weight:700;white-space:nowrap}
 		.share-list{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
-		.share-columns,.share-card{display:grid;grid-template-columns:minmax(140px,1.4fr) minmax(64px,.8fr) minmax(95px,2fr) minmax(74px,.65fr) minmax(140px,.95fr) minmax(140px,.95fr) 364px;gap:12px;align-items:center;padding:8px 14px}
+		.share-columns,.share-card{display:grid;grid-template-columns:minmax(140px,1.4fr) minmax(95px,2fr) minmax(74px,.65fr) minmax(140px,.95fr) minmax(64px,.8fr) minmax(140px,.95fr) 364px;gap:12px;align-items:center;padding:8px 14px}
 		.share-columns{padding-block:10px;background:#f8faf7;color:var(--muted);font-size:12px;font-weight:700}
 		.share-columns span:last-child{text-align:right}.share-card+.share-card{border-top:1px solid var(--line-soft)}
 		.share-cell,.share-url{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px}
@@ -83,7 +83,7 @@ export async function renderSharesPage(_request, env, runtime) {
 		<div class="page-head share-toolbar"><h1>分享管理</h1><button type="button" class="button primary" id="addShare" aria-haspopup="dialog">添加分享</button></div>
 		<div id="shareFeedback" class="success" role="status"></div>
 		<section class="share-list" aria-label="已添加的订阅链接">
-			<div class="share-columns" aria-hidden="true"><span>名称与状态</span><span>备注</span><span>订阅链接</span><span>节点 / 订阅源</span><span>有效期</span><span>更新时间</span><span>操作</span></div>
+			<div class="share-columns" aria-hidden="true"><span>名称与状态</span><span>订阅链接</span><span>节点 / 订阅源</span><span>有效期</span><span>备注</span><span>更新时间</span><span>操作</span></div>
 			<div id="shareList"></div>
 		</section>
 		<dialog id="shareEditor" class="share-editor" aria-labelledby="formTitle">
