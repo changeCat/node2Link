@@ -37,6 +37,7 @@ test('originals are flat, extensions grouped and API nodes isolated in the share
  expect(imported.ok()).toBe(true);
  page.importedNodeIds = (await imported.json()).nodes.map(node => node.id);
  await page.goto('/shares');
+ await page.getByRole('button', { name: '添加分享' }).click();
  await page.locator('#openNodePicker').click();
  await expect(page.locator('[data-picker-section="original"] .picker-node')).toHaveCount(2);
  await expect(page.locator('[data-picker-section="extension:one"] .picker-node')).toHaveCount(1);

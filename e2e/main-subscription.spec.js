@@ -125,6 +125,7 @@ test('main associations generate on save, retain identity on edit and feed share
  expect(lines.filter(line => line.includes('updated-secret@'))).toHaveLength(3);
  expect(lines.filter(line => line.startsWith('hysteria2://'))).toHaveLength(3);
  await page.goto('/shares');
+ await page.getByRole('button', { name: '添加分享' }).click();
  await page.locator('#openNodePicker').click();
  await page.locator('#nodeSource').selectOption('main-extension');
  await expect(page.locator('.picker-node')).toHaveCount(4);

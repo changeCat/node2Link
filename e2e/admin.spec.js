@@ -73,6 +73,13 @@ test('original autosave, reload, history restore, copy and QR', async ({ page })
 test('share picker, edit, copy, QR, reset and delete', async ({ page }) => {
 	await saveMain(page, first + '\n' + second + '\n' + 'vless://uuid@picker.example.com:443#Picker');
 	await page.goto('/shares');
+	await page.getByRole('button', { name: '添加分享' }).click();
+	await expect(page.locator('#shareEditor')).toBeVisible();
+	await page.locator('#shareName').fill('Discarded draft');
+	await page.getByRole('button', { name: '取消', exact: true }).click();
+	await expect(page.locator('#shareEditor')).toBeHidden();
+	await page.getByRole('button', { name: '添加分享' }).click();
+	await expect(page.locator('#shareName')).toHaveValue('');
 	await page.locator('#shareName').fill('Browser share');
 	await page.getByLabel('备注', { exact: true }).fill('Private <team A>');
 	await page.locator('#openNodePicker').click();
@@ -81,7 +88,8 @@ test('share picker, edit, copy, QR, reset and delete', async ({ page }) => {
 	await page.locator('#addSelectedNodes').click();
 	await expect(page.locator('#shareContent')).toHaveValue(/picker\.example\.com/);
 	await page.locator('#submitShare').click();
-	await expect(page.locator('#formMessage')).toContainText('已保存');
+	await expect(page.locator('#shareEditor')).toBeHidden();
+	await expect(page.locator('#shareFeedback')).toHaveText('已添加分享');
 	let card = page.locator('.share-card').filter({ hasText: 'Browser share' });
 	await page.reload();
 	await expect(card).toContainText('Private <team A>');
@@ -165,6 +173,7 @@ test('stale tabs keep their edits on conflict and clearing the editor stays empt
 
 test('share pause, expiry and renewal retain the same link', async ({ page }) => {
 	await page.goto('/shares');
+	await page.getByRole('button', { name: '添加分享' }).click();
 	await page.locator('#shareName').fill('Temporary personal share');
 	await page.locator('#shareContent').fill(first);
 	await page.locator('#shareExpiresAt').fill('2099-01-01T12:00');
@@ -272,6 +281,7 @@ test('picker loads on demand and pages large results without limiting selection'
 		return route.fulfill({ json: { ok: true, nodes, hasUpstream: false } });
 	});
 	await page.goto('/shares');
+	await page.getByRole('button', { name: '添加分享' }).click();
 	expect(requests).toBe(0);
 	await page.locator('#openNodePicker').click();
 	await expect(page.locator('.picker-node')).toHaveCount(100);
@@ -304,6 +314,7 @@ test('picker keeps local selections when slow upstream results arrive', async ({
 	});
 	try {
 		await page.goto('/shares');
+		await page.getByRole('button', { name: '添加分享' }).click();
 		await page.locator('#openNodePicker').click();
 		await expect(page.locator('#nodePickerStatus')).toContainText('本地节点已就绪');
 		await page.locator('.picker-node input').check();
@@ -329,6 +340,7 @@ test('picker offers retry and keeps local nodes when the upstream request fails'
 		return route.fulfill({ json: { ok: true, nodes: [node], hasUpstream: true, upstreamFailures: 0 } });
 	});
 	await page.goto('/shares');
+	await page.getByRole('button', { name: '添加分享' }).click();
 	await page.locator('#openNodePicker').click();
 	await expect(page.locator('#retryNodePicker')).toBeVisible();
 	await expect(page.locator('.picker-node')).toHaveCount(2);
@@ -346,6 +358,7 @@ test('picker offers retry and keeps local nodes when the upstream request fails'
 
 test('expiry field opens its picker from the date area and can be cleared', async ({ page }) => {
 	await page.goto('/shares');
+	await page.getByRole('button', { name: '添加分享' }).click();
 	const input = page.locator('#shareExpiresAt');
 	await input.evaluate(element => {
 		const original = element.showPicker.bind(element);

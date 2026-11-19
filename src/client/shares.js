@@ -4,6 +4,15 @@ var shares = pageData.shares;
 var origin = window.location.origin;
 var form = document.getElementById("shareForm");
 var list = document.getElementById("shareList");
+const editor = document.getElementById('shareEditor');
+const fields = document.getElementById('shareFields');
+const feedback = document.getElementById('shareFeedback');
+const message = document.getElementById('formMessage');
+const submitButton = document.getElementById('submitShare');
+const cancelButton = document.getElementById('cancelEdit');
+const closeButton = document.getElementById('closeShareEditor');
+const addButton = document.getElementById('addShare');
+let editorSession = 0;
 const expiryInput = document.getElementById('shareExpiresAt');
 expiryInput.addEventListener('click', function(event) {
   if (typeof expiryInput.showPicker !== 'function') return;
@@ -32,7 +41,7 @@ function linkOf(id) {
 }
 function render() {
   if (!shares.length) {
-    list.innerHTML = '<div class="panel empty">还没有分享链接，请先创建一组。</div>';
+    list.innerHTML = '<div class="empty">暂无分享链接</div>';
     return;
   }
   list.innerHTML = shares.map(function(item) {
@@ -42,9 +51,12 @@ function render() {
     var status = state === 'paused' ? '已暂停' : state === 'expired' ? '已到期' : '使用中';
     var statusIcon = state === 'paused' ? pauseIcon : state === 'expired' ? expiredIcon : activeIcon;
     var badge = '<span class="share-status">' + statusIcon + '<span>' + status + '</span></span>';
-    counts += item.expiresAt ? ' · 到期 ' + new Date(item.expiresAt).toLocaleString() : ' · 长期有效';
+    var expiry = item.expiresAt ? '到期 ' + new Date(item.expiresAt).toLocaleString() : '长期有效';
     var note = item.note ? '<div class="share-meta">备注：' + esc(item.note) + '</div>' : '';
-    return '<article class="share-card" data-state="' + state + '"><div class="share-identity">' + shareIcon + '<div class="share-title"><div class="share-heading"><h3 title="' + esc(item.name) + '">' + esc(item.name) + '</h3>' + badge + '</div>' + note + '<div class="share-meta">' + counts + " · " + new Date(item.updatedAt).toLocaleString() + '</div></div></div><div class="share-actions"><button class="share-action copy" type="button" data-copy="' + esc(link) + '">' + copyIcon + '<span>复制</span></button><button class="share-action icon" type="button" data-qr="' + esc(link) + '" aria-label="显示二维码" title="显示二维码">' + qrIcon + '</button><button class="share-action" type="button" data-edit="' + item.id + '">修改</button><button class="share-action danger" type="button" data-delete="' + item.id + '">删除</button></div></article>';
+    return '<article class="share-card" data-state="' + state + '"><div class="share-identity">' + shareIcon + '<div class="share-title"><div class="share-heading"><h3 title="' + esc(item.name) + '">' + esc(item.name) + '</h3>' + badge + '</div>' + note +
+      '<code class="share-url" title="' + esc(link) + '">' + esc(link) + '</code></div></div>' +
+      '<div class="share-details"><div>' + counts + '</div><div class="share-detail-line">' + expiry + '</div><div class="share-detail-line">更新于 ' + new Date(item.updatedAt).toLocaleString() + '</div></div>' +
+      '<div class="share-actions"><button class="share-action copy" type="button" data-copy="' + esc(link) + '">' + copyIcon + '<span>复制</span></button><button class="share-action icon" type="button" data-qr="' + esc(link) + '" aria-label="显示二维码" title="显示二维码">' + qrIcon + '</button><button class="share-action" type="button" data-edit="' + item.id + '">修改</button><button class="share-action danger" type="button" data-delete="' + item.id + '">删除</button></div></article>';
   }).join("");
   addResetButtons();
   list.querySelectorAll('[data-edit]').forEach(function(edit) {
@@ -58,13 +70,43 @@ function render() {
     edit.before(toggle);
   });
 }
-function reset() {
+async function openEditor(id) {
+  const session = ++editorSession;
   form.reset();
-  document.getElementById("shareId").value = "";
-  document.getElementById("formTitle").textContent = "新建分享";
-  document.getElementById("submitShare").textContent = "生成订阅链接";
-  document.getElementById("cancelEdit").hidden = true;
+  feedback.textContent = '';
+  message.className = 'muted';
+  message.textContent = id ? '正在读取分享…' : '';
+  document.getElementById('shareId').value = id;
+  document.getElementById('formTitle').textContent = id ? '修改分享' : '新建分享';
+  submitButton.textContent = id ? '保存修改' : '生成订阅链接';
+  fields.disabled = submitButton.disabled = Boolean(id);
+  editor.showModal();
+  const name = document.getElementById('shareName');
+  if (id) {
+    try {
+      const item = await loadShare(id);
+      if (editorSession !== session || !editor.open) return;
+      name.value = item.name;
+      document.getElementById('shareNote').value = item.note || '';
+      document.getElementById('shareContent').value = item.content;
+      const expiry = item.expiresAt ? new Date(item.expiresAt) : null;
+      expiryInput.value = expiry ? new Date(expiry.getTime() - expiry.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+      fields.disabled = submitButton.disabled = false;
+      message.textContent = '';
+    } catch (error) {
+      if (editorSession === session && editor.open) {
+        message.textContent = error.message;
+        message.className = 'message';
+      }
+      return;
+    }
+  }
+  name.focus();
 }
+addButton.addEventListener('click', () => openEditor(''));
+cancelButton.addEventListener('click', () => editor.close());
+closeButton.addEventListener('click', () => editor.close());
+editor.addEventListener('cancel', event => { if (cancelButton.disabled) event.preventDefault(); });
 function call(method, body) {
   return fetch("/api/shares", { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : void 0 }).then(function(response) {
     return response.json().then(function(data) {
@@ -92,9 +134,9 @@ function showQR(link) {
 form.addEventListener("submit", function(event) {
   event.preventDefault();
   var id = document.getElementById("shareId").value;
-  var button = document.getElementById("submitShare");
-  var message = document.getElementById("formMessage");
-  button.disabled = true;
+  if (submitButton.disabled) return;
+  fields.disabled = submitButton.disabled = cancelButton.disabled = closeButton.disabled = true;
+  message.className = 'muted';
   message.textContent = "正在保存…";
   var expiry = document.getElementById('shareExpiresAt').value;
   call(id ? "PUT" : "POST", { id, name: document.getElementById("shareName").value, note: document.getElementById("shareNote").value, content: document.getElementById("shareContent").value, expiresAt: expiry ? new Date(expiry).toISOString() : '' }).then(function(data) {
@@ -103,15 +145,15 @@ form.addEventListener("submit", function(event) {
     });
     if (index >= 0) shares[index] = data.share;
     else shares.unshift(data.share);
+    editor.close();
     render();
-    reset();
-    message.textContent = "已保存，订阅链接可直接使用";
-    message.className = "success";
+    feedback.textContent = id ? '已保存修改' : '已添加分享';
+    (id ? list.querySelector('[data-edit="' + id + '"]') : addButton)?.focus();
   }).catch(function(error) {
     message.textContent = error.message;
     message.className = "message";
   }).finally(function() {
-    button.disabled = false;
+    fields.disabled = submitButton.disabled = cancelButton.disabled = closeButton.disabled = false;
   });
 });
 list.addEventListener("click", function(event) {
@@ -143,23 +185,7 @@ list.addEventListener("click", function(event) {
   }
   var editButton = event.target.closest("[data-edit]");
   if (editButton) {
-    editButton.disabled = true;
-    loadShare(editButton.dataset.edit).then(function(item) {
-      document.getElementById("shareId").value = item.id;
-      document.getElementById("shareName").value = item.name;
-      document.getElementById("shareNote").value = item.note || '';
-      document.getElementById("shareContent").value = item.content;
-      var expiry = item.expiresAt ? new Date(item.expiresAt) : null;
-      document.getElementById('shareExpiresAt').value = expiry ? new Date(expiry.getTime() - expiry.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
-      document.getElementById("formTitle").textContent = "修改分享";
-      document.getElementById("submitShare").textContent = "保存修改";
-      document.getElementById("cancelEdit").hidden = false;
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }).catch(function(error) {
-      showShareNotice(error.message, "读取失败");
-    }).finally(function() {
-      editButton.disabled = false;
-    });
+    openEditor(editButton.dataset.edit);
     return;
   }
   var deleteButton = event.target.closest("[data-delete]");
@@ -179,7 +205,6 @@ list.addEventListener("click", function(event) {
     });
   }
 });
-document.getElementById("cancelEdit").addEventListener("click", reset);
 document.getElementById("closeQR").addEventListener("click", function() {
   document.getElementById("qrDialog").close();
 });
@@ -198,3 +223,7 @@ const { askShareConfirm, showShareNotice, addResetButtons } = initializeShareCon
   }
 });
 render();
+if (new URLSearchParams(location.search).get('new') === '1') {
+  history.replaceState(history.state, '', location.pathname);
+  openEditor('');
+}
