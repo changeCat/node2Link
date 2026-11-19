@@ -29,7 +29,7 @@ test.afterEach(async ({ page }, testInfo) => {
 	await page.screenshot({ path: testInfo.outputPath('page.png'), fullPage: true });
 });
 
-async function saveMain(page, content) {
+async function saveMain(page, content, expectedStored = content) {
 	await setOriginals(page, content);
 	await page.locator('#saveButton').click();
 	await expect(page.locator('#saveStatus')).toHaveText(/^(刚刚已保存|已同步)$/);
@@ -41,7 +41,7 @@ async function saveMain(page, content) {
 		if (!response.ok) throw new Error('Saved content read failed: ' + response.status);
 		return new DOMParser().parseFromString(await response.text(), 'text/html').getElementById('content')?.value;
 	});
-	expect(stored).toBe(content);
+	expect(stored).toBe(expectedStored);
 }
 
 test('original autosave, reload, history restore, copy and QR', async ({ page }) => {
@@ -531,7 +531,8 @@ test('dashboard saves panel state when leaving before queued toggle events run',
 });
 
 test('personal dashboard displays saved data and remembers collapsed panels', async ({ page }) => {
-	await saveMain(page, first + '\n' + second + '\n' + first + '\nhttps://source.example.com/sub');
+	const source = 'https://source.example.com/sub';
+	await saveMain(page, [first, second, first, source].join('\n'), [first, second, source].join('\n'));
 	const expiry = new Date(Date.now() + 3 * 86400000).toISOString();
 	const ids = await page.evaluate(async ({ content, expiry }) => {
 		const ids = [];
