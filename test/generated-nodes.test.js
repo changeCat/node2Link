@@ -262,7 +262,8 @@ test('登录后的模板配置、公开追加、主订阅隔离、分享候选�
 	assert.doesNotMatch(settingsHTML, /customSubConfigURL|ruleMode/);
 	assert.doesNotMatch(settingsHTML, /当前默认转换后端|当前默认规则配置|默认服务后端（仅默认模式使用）/);
 	assert.doesNotMatch(settingsHTML, /客户端展示|clientsForm|clientList|clientSelect|displayFormats|formatCatalog/);
-	assert.doesNotMatch(settingsHTML, /请求记录|loggingForm|requestLog/);
+	assert.match(settingsHTML, /id="requestHistoryDays"/);
+	assert.doesNotMatch(settingsHTML, /loggingForm|requestLog/);
 	assertInlineScriptsParse(settingsHTML);
 
 	assert.equal((await (await dispatch('/api/generated-nodes', { headers: authenticatedHeaders })).json()).settings.token, '');

@@ -1,4 +1,5 @@
 import { isValidShareId } from './storage/shares.js';
+import { normalizeRequestHistoryDays } from './storage/request-logs.js';
 import { sha256Base64Url, adminPassword } from './auth.js';
 import { parseSubConverters, readCustomConverterProfiles } from './adapters/converters.js';
 
@@ -70,6 +71,7 @@ export async function createRuntimeConfig(env, persistedSettings = {}) {
 			: sanitizeSubscriptionToken(env.TOKEN || ''),
 		browserIconURL: normalizeBrowserIconURL(persistedSettings.browserIconURL),
 		displayFormats: normalizeDisplayFormats(persistedSettings.displayFormats),
+		requestHistoryDays: normalizeRequestHistoryDays(persistedSettings.requestHistoryDays),
 		originalHistoryLimit: Number.isInteger(persistedSettings.originalHistoryLimit) && persistedSettings.originalHistoryLimit >= 1 && persistedSettings.originalHistoryLimit <= 20 ? persistedSettings.originalHistoryLimit : 3,
 		apiSubscriptionEnabled: isAPISubscriptionEnabled(env)
 	};

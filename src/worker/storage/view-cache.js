@@ -18,9 +18,13 @@ export function invalidateView(kv, name) {
 	delete entry.pending;
 }
 
-export async function cachedView(kv, name, loader, { fresh = true, cacheable = () => true, ttlMs = TTL_MS } = {}) {
+export async function cachedView(kv, name, loader, { fresh = true, cacheable = () => true, ttlMs = TTL_MS, variant } = {}) {
 	if (fresh) return loader();
 	const entry = slot(kv, name);
+	if (entry.variant !== variant) {
+		invalidateView(kv, name);
+		entry.variant = variant;
+	}
 	if (entry.expires > Date.now() && Object.hasOwn(entry, 'value')) return entry.value;
 	if (entry.pending) return entry.pending;
 	const generation = entry.generation;

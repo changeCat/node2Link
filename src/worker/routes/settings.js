@@ -1,5 +1,6 @@
 import { jsonResponse, requestHasSameOrigin } from '../http.js';
 import { saveSettingsSections } from '../storage/settings.js';
+import { normalizeRequestHistoryDays, MAX_REQUEST_HISTORY_DAYS } from '../storage/request-logs.js';
 import { StorageError } from '../storage/kv.js';
 import { readJSONBody, BODY_LIMITS, RequestBodyError } from '../request-body.js';
 import { normalizeCustomConverter, readCustomConverterProfiles } from '../adapters/converters.js';
@@ -9,7 +10,7 @@ export async function saveSettings(request, env, currentSettings) {
 	if (!requestHasSameOrigin(request)) return jsonResponse({ ok: false, message: '请求来源无效' }, 403);
 	try {
 		const payload = await readJSONBody(request, BODY_LIMITS.settings);
-		const allowedSections = ['display', 'entry', 'conversion', 'clients', 'history'];
+		const allowedSections = ['display', 'entry', 'conversion', 'clients', 'history', 'requests'];
 		const section = payload.section === undefined || payload.section === 'all'
 			? 'all' : allowedSections.includes(payload.section) ? payload.section : '';
 		if (!section) return jsonResponse({ ok: false, message: '设置分区不存在' }, 400);
@@ -74,6 +75,11 @@ export async function saveSettings(request, env, currentSettings) {
    if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('历史版本数量必须为 1 到 20 的整数');
    settings.originalHistoryLimit = limit;
   }
+		if (section === 'requests' || section === 'all') {
+			const days = Object.hasOwn(payload, 'requestHistoryDays') ? payload.requestHistoryDays : normalizeRequestHistoryDays(currentSettings.requestHistoryDays);
+			if (days !== normalizeRequestHistoryDays(days)) throw new Error(`请求记录查询天数必须为 1 到 ${MAX_REQUEST_HISTORY_DAYS} 的整数`);
+			settings.requestHistoryDays = days;
+		}
 		settings.savedAt = new Date().toISOString();
 		await saveSettingsSections(env.KV, settings, section);
 		return jsonResponse({ ok: true, section, settings });

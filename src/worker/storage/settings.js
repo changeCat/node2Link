@@ -1,6 +1,7 @@
 import { isObject, readJSON, readJSONMap, writeJSON, writeJSONBatch } from './kv.js';
 import { isValidShareId } from './shares.js';
 import { cachedView, invalidateView } from './view-cache.js';
+import { normalizeRequestHistoryDays } from './request-logs.js';
 
 export const SETTINGS_PREFIX = 'settings.';
 const IDENTITY_KEY = 'identity';
@@ -10,7 +11,8 @@ export const SETTING_SECTIONS = {
 	entry: ['subscriptionToken'],
 	conversion: ['converterMode', 'customConverterURL', 'customConverterType', 'customConverters', 'activeCustomConverterId'],
 	clients: ['displayFormats'],
-	history: ['originalHistoryLimit']
+	history: ['originalHistoryLimit'],
+	requests: ['requestHistoryDays']
 };
 
 async function readSections(kv, sections, entry) {
@@ -33,6 +35,11 @@ export async function readSubscriptionEntry(env) {
 
 export async function readLoginPresentation(env) {
 	return readJSON(env.KV, SETTINGS_PREFIX + 'display', {}, isObject);
+}
+
+export async function readRequestHistoryDays(env) {
+	const settings = await readJSON(env.KV, SETTINGS_PREFIX + 'requests', {}, isObject);
+	return normalizeRequestHistoryDays(settings.requestHistoryDays);
 }
 
 export async function readPersistedSettings(env, { entry } = {}) {

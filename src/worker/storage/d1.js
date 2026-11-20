@@ -155,21 +155,21 @@ class AppStorage {
 		return { page, complete, cursor: complete ? '' : page.at(-1)?.sort_key || '' };
 	}
 
-	async requestGroups() {
+	async requestGroups(days) {
 		const now = Date.now();
 		const nowSeconds = Math.floor(now / 1000);
 		await this.db.prepare('DELETE FROM node2link_records WHERE expires_at IS NOT NULL AND expires_at <= ?1').bind(nowSeconds).run();
 		const { results } = await this.db.prepare(`SELECT ${REQUEST_SCOPE_SQL} AS scope, ${REQUEST_CLIENT_SQL} AS client,
 			count(*) AS total, count(*) FILTER (WHERE cast(json_extract(metadata, '$.status') AS integer) >= 400) AS failed,
 			max(json_extract(metadata, '$.requestedAt')) AS latest
-			FROM node2link_records WHERE ${LIVE_REQUESTS_SQL} GROUP BY scope, client`).bind(nowSeconds, ...requestHistoryBounds(now)).all();
+			FROM node2link_records WHERE ${LIVE_REQUESTS_SQL} GROUP BY scope, client`).bind(nowSeconds, ...requestHistoryBounds(now, days)).all();
 		return results;
 	}
 
-	async requestPage({ scope, client, failed, after, start }, size) {
+	async requestPage({ scope, client, failed, after, start, days }, size) {
 		const conditions = [LIVE_REQUESTS_SQL, REQUEST_SCOPE_SQL + ' = ?', after ? 'key > ?' : 'key >= ?'];
 		const now = Date.now();
-		const params = [Math.floor(now / 1000), ...requestHistoryBounds(now), scope, after || start || REQUEST_PREFIX];
+		const params = [Math.floor(now / 1000), ...requestHistoryBounds(now, days), scope, after || start || REQUEST_PREFIX];
 		if (client) { conditions.push(REQUEST_CLIENT_SQL + ' = ?'); params.push(client); }
 		if (failed) conditions.push("cast(json_extract(metadata, '$.status') AS integer) >= 400");
 		const { results } = await this.db.prepare(`SELECT key, metadata FROM node2link_records

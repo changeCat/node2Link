@@ -154,3 +154,7 @@ byId('originalHistoryLimit').value = initial.originalHistoryLimit ?? 3;
 byId('historyForm').addEventListener('submit', function(event) {
  event.preventDefault(); saveSection(this, byId('historyMessage'), { section: 'history', originalHistoryLimit: Number(byId('originalHistoryLimit').value) });
 });
+byId('requestHistoryForm').addEventListener('submit', function(event) {
+ event.preventDefault();
+ saveSection(this, byId('requestHistoryMessage'), { section: 'requests', requestHistoryDays: byId('requestHistoryDays').valueAsNumber });
+});

@@ -122,7 +122,7 @@ test('private share notes survive older edits and resets while request details s
 	assert.equal((await listShareSummaries(env.KV))[0].note, '');
 });
 
-test('request summaries, filters and cursor pages include only the rolling seven-day window', async t => {
+test('request summaries, filters and cursor pages use the configured rolling window', async t => {
 	const { env, headers, request, mutate } = await fixture();
 	const { share } = await (await mutate('POST', { name: 'Older traffic', content: node })).json();
 	const now = Date.now();
@@ -164,6 +164,26 @@ test('request summaries, filters and cursor pages include only the rolling seven
 	assert.match(html, /513 次/);
 	assert.match(html, /48 次/);
 	assert.equal((await request(url + '&after=invalid', { headers })).status, 400);
+
+	const saveDays = requestHistoryDays => request('/api/settings', {
+		method: 'POST', headers, body: JSON.stringify({ section: 'requests', requestHistoryDays })
+	});
+	const lastPage = '&start=' + first.start + '&after=' + second.next;
+	assert.equal((await saveDays(30)).status, 200);
+	const wide = await (await request('/requests', { headers })).text();
+	assert.match(wide, /最近 30 天/);
+	assert.match(wide, /514 次/);
+	assert.match(wide, /49 次/);
+	assert.equal((await fetchPage(lastPage)).events.at(-1).userAgent, 'visit--1');
+
+	assert.equal((await saveDays(1)).status, 200);
+	for (const invalid of [0, 31, 1.5, '7', null]) assert.equal((await saveDays(invalid)).status, 400);
+	const narrow = await (await request('/requests', { headers })).text();
+	assert.match(narrow, /最近 1 天/);
+	assert.match(narrow, /513 次/);
+	assert.match(narrow, /47 次/);
+	assert.equal((await fetchPage(lastPage)).events.at(-1).userAgent, 'visit-1');
+	assert.equal((await fetchPage('&client=Clash&failed=1')).events.length, 7);
 });
 
 test('reset keeps share restrictions and deleted shares cannot be resumed', async () => {

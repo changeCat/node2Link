@@ -181,6 +181,30 @@ test('request overview retains its search and page after history retries and clo
 	}
 });
 
+test('request history range survives reload and applies to the requests page', async ({ page }) => {
+	await page.goto('/settings');
+	const days = page.getByLabel('请求记录查询天数');
+	const save = page.locator('#requestHistoryForm').getByRole('button', { name: '保存' });
+	await expect(days).toHaveValue('7');
+	try {
+		await days.fill('31');
+		await save.click();
+		expect(await days.evaluate(input => input.validity.rangeOverflow)).toBe(true);
+		await days.fill('30');
+		await save.click();
+		await expect(page.locator('#requestHistoryMessage')).toHaveText('已保存');
+		await page.reload();
+		await expect(days).toHaveValue('30');
+		await page.goto('/requests');
+		await expect(page.getByText('最近 30 天', { exact: true })).toBeVisible();
+	} finally {
+		await page.goto('/settings');
+		await days.fill('7');
+		await save.click();
+		await expect(page.locator('#requestHistoryMessage')).toHaveText('已保存');
+	}
+});
+
 test('settings sections save independently and failed saves retain input', async ({ page }) => {
 	await page.goto('/settings');
 	await page.locator('#subscriptionToken').fill('browser-entry-token');

@@ -2,17 +2,22 @@ import { isValidShareId } from './shares.js';
 import { cachedView, invalidateView } from './view-cache.js';
 
 const REQUEST_LOG_PREFIX = 'requests.';
-const REQUEST_LOG_TTL = 30 * 24 * 60 * 60;
-export const REQUEST_HISTORY_DAYS = 7;
+export const MAX_REQUEST_HISTORY_DAYS = 30;
+export const DEFAULT_REQUEST_HISTORY_DAYS = 7;
+const REQUEST_LOG_TTL = MAX_REQUEST_HISTORY_DAYS * 24 * 60 * 60;
 export const REQUEST_PAGE_SIZE = 20;
+
+export function normalizeRequestHistoryDays(days) {
+	return Number.isInteger(days) && days >= 1 && days <= MAX_REQUEST_HISTORY_DAYS ? days : DEFAULT_REQUEST_HISTORY_DAYS;
+}
 
 function requestKeyPrefix(timestamp) {
 	return REQUEST_LOG_PREFIX + String(9999999999999 - timestamp).padStart(13, '0') + '.';
 }
 
-export function requestHistoryBounds(now) {
+export function requestHistoryBounds(now, days = DEFAULT_REQUEST_HISTORY_DAYS) {
 	// Keys sort newest first. Include every UUID written at the cutoff millisecond.
-	return [requestKeyPrefix(now), requestKeyPrefix(now - REQUEST_HISTORY_DAYS * 86_400_000) + '\uffff'];
+	return [requestKeyPrefix(now), requestKeyPrefix(now - days * 86_400_000) + '\uffff'];
 }
 
 export function detectSubscriptionClient(userAgentHeader) {
@@ -64,17 +69,17 @@ async function recordSubscriptionRequest(kv, details) {
 	} finally { invalidateView(kv, REQUEST_LOG_PREFIX); }
 }
 
-export async function readSubscriptionRequestStats(kv) {
-	return cachedView(kv, REQUEST_LOG_PREFIX, () => loadSubscriptionRequestStats(kv), {
-		fresh: false, ttlMs: 15_000, cacheable: value => !value.unavailable
+export async function readSubscriptionRequestStats(kv, days = DEFAULT_REQUEST_HISTORY_DAYS) {
+	return cachedView(kv, REQUEST_LOG_PREFIX, () => loadSubscriptionRequestStats(kv, days), {
+		fresh: false, variant: days, ttlMs: 15_000, cacheable: value => !value.unavailable
 	});
 }
 
-async function loadSubscriptionRequestStats(kv) {
+async function loadSubscriptionRequestStats(kv, days) {
 	const empty = () => ({ total: 0, failed: 0, latest: '', clients: [] });
 	const main = empty(), shares = new Map();
 	try {
-		for (const row of await kv.requestGroups()) {
+		for (const row of await kv.requestGroups(days)) {
 			if (row.scope !== 'main' && !isValidShareId(row.scope)) continue;
 			if (row.scope !== 'main' && !shares.has(row.scope)) shares.set(row.scope, empty());
 			const group = row.scope === 'main' ? main : shares.get(row.scope);
