@@ -6,7 +6,7 @@ import { adminPassword } from '../auth.js';
 import { assetURL, basePageStyles, pageScript } from './assets.js';
 import { listShareSummaries } from '../storage/shares.js';
 import { readGeneratedNodes, readGeneratedNodeSettings } from '../storage/generated-nodes.js';
-import { readSubscriptionRequestStats } from '../storage/request-logs.js';
+import { readSubscriptionRequestStats, REQUEST_HISTORY_DAYS } from '../storage/request-logs.js';
 export function renderFavicon(browserIconURL = '') {
 	return `<link rel="icon" href="${escapeHTML(browserIconURL || DEFAULT_BROWSER_ICON)}">`;
 }
@@ -127,7 +127,7 @@ export async function renderRequestsPage(_request, env, runtime) {
 		.history-scroll{overflow:auto;min-height:0;overscroll-behavior:contain;padding:0 12px}.history-scroll th{position:sticky;top:0;background:#f6f8f5}.history-scroll small{display:block;color:var(--muted);overflow-wrap:anywhere}
 		#historyDialog .request-pager{border-top:1px solid var(--line)}#historyStatus{text-align:center;color:var(--muted)}#historyRetry{margin:0 auto 10px}
 		@media(max-width:700px){.request-panel{padding:12px}.request-heading input{max-width:none}.requests-table thead{display:none}.requests-table,.requests-table tbody{display:block}.requests-table tr{display:flex;flex-wrap:wrap;gap:5px 12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-soft)}.requests-table th,.requests-table td{padding:0;border:0}.overview-table .request-name{width:100%}.request-note:empty{display:none}.overview-table td:last-child{width:auto;margin-left:auto}.history-table td:before{content:attr(data-label) ' ';color:var(--muted)}.history-table td{max-width:100%}.history-table td:first-child{width:100%;font-weight:700}.request-pager{justify-content:center}}
-		</style></head><body>${renderTopbar('requests', runtime)}<main><div class="page-head"><h1>订阅请求</h1><p>最近 30 天</p></div>
+		</style></head><body>${renderTopbar('requests', runtime)}<main><div class="page-head"><h1>订阅请求</h1><p>最近 ${REQUEST_HISTORY_DAYS} 天</p></div>
 		${stats.unavailable ? '<p class="message" role="alert">暂时无法读取请求统计，请刷新重试。</p>' : `
 		<section class="panel request-panel"><div class="request-heading"><h2>主订阅请求</h2></div><table class="requests-table overview-table">${heading}<tbody>${renderRow('main', runtime.FileName || '主订阅', '', stats.main)}</tbody></table></section>
 		<section class="panel request-panel"><div class="request-heading"><h2>分享订阅请求</h2><input type="search" id="shareSearch" aria-label="搜索分享名称或备注" placeholder="搜索分享名称或备注"></div>

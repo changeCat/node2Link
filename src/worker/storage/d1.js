@@ -1,4 +1,5 @@
 import { StorageError } from './kv.js';
+import { requestHistoryBounds } from './request-logs.js';
 
 const NODE_PREFIX = 'nodes.';
 const MAIN_BODY_PREFIX = 'blob.main.';
@@ -6,7 +7,7 @@ const SHARE_BODY_PREFIX = 'blob.share.';
 const REQUEST_PREFIX = 'requests.';
 const REQUEST_SCOPE_SQL = "CASE WHEN json_extract(metadata, '$.access') = 'share' THEN json_extract(metadata, '$.subscriptionId') ELSE 'main' END";
 const REQUEST_CLIENT_SQL = "coalesce(nullif(json_extract(metadata, '$.client'), ''), '其他客户端')";
-const LIVE_REQUESTS_SQL = "key GLOB 'requests.*' AND metadata IS NOT NULL AND (expires_at IS NULL OR expires_at > ?)";
+const LIVE_REQUESTS_SQL = "key GLOB 'requests.*' AND metadata IS NOT NULL AND (expires_at IS NULL OR expires_at > ?) AND key BETWEEN ? AND ?";
 
 const bindings = new WeakMap();
 const isBlobKey = key => key.startsWith(MAIN_BODY_PREFIX) || key.startsWith(SHARE_BODY_PREFIX);
@@ -155,18 +156,20 @@ class AppStorage {
 	}
 
 	async requestGroups() {
-		const now = Math.floor(Date.now() / 1000);
-		await this.db.prepare('DELETE FROM node2link_records WHERE expires_at IS NOT NULL AND expires_at <= ?1').bind(now).run();
+		const now = Date.now();
+		const nowSeconds = Math.floor(now / 1000);
+		await this.db.prepare('DELETE FROM node2link_records WHERE expires_at IS NOT NULL AND expires_at <= ?1').bind(nowSeconds).run();
 		const { results } = await this.db.prepare(`SELECT ${REQUEST_SCOPE_SQL} AS scope, ${REQUEST_CLIENT_SQL} AS client,
 			count(*) AS total, count(*) FILTER (WHERE cast(json_extract(metadata, '$.status') AS integer) >= 400) AS failed,
 			max(json_extract(metadata, '$.requestedAt')) AS latest
-			FROM node2link_records WHERE ${LIVE_REQUESTS_SQL} GROUP BY scope, client`).bind(now).all();
+			FROM node2link_records WHERE ${LIVE_REQUESTS_SQL} GROUP BY scope, client`).bind(nowSeconds, ...requestHistoryBounds(now)).all();
 		return results;
 	}
 
 	async requestPage({ scope, client, failed, after, start }, size) {
 		const conditions = [LIVE_REQUESTS_SQL, REQUEST_SCOPE_SQL + ' = ?', after ? 'key > ?' : 'key >= ?'];
-		const params = [Math.floor(Date.now() / 1000), scope, after || start || REQUEST_PREFIX];
+		const now = Date.now();
+		const params = [Math.floor(now / 1000), ...requestHistoryBounds(now), scope, after || start || REQUEST_PREFIX];
 		if (client) { conditions.push(REQUEST_CLIENT_SQL + ' = ?'); params.push(client); }
 		if (failed) conditions.push("cast(json_extract(metadata, '$.status') AS integer) >= 400");
 		const { results } = await this.db.prepare(`SELECT key, metadata FROM node2link_records

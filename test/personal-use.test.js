@@ -122,12 +122,13 @@ test('private share notes survive older edits and resets while request details s
 	assert.equal((await listShareSummaries(env.KV))[0].note, '');
 });
 
-test('request history pages and filters one subscription across the full retention window', async () => {
+test('request summaries, filters and cursor pages include only the rolling seven-day window', async t => {
 	const { env, headers, request, mutate } = await fixture();
 	const { share } = await (await mutate('POST', { name: 'Older traffic', content: node })).json();
 	const now = Date.now();
-	async function write(index, access, expirationTtl = 86400) {
-		const at = now + index;
+	t.mock.method(Date, 'now', () => now);
+	const cutoff = now - 7 * 86400_000;
+	async function write(index, access, expirationTtl = 86400, at = now - 1000 + index) {
 		const key = 'requests.' + (9999999999999 - at) + '.' + crypto.randomUUID();
 		await env.KV.put(key, '1', { expirationTtl, metadata: {
 			requestedAt: new Date(at).toISOString(), access, subscriptionId: share.id,
@@ -135,9 +136,12 @@ test('request history pages and filters one subscription across the full retenti
 			userAgent: 'visit-' + index
 		} });
 	}
-	for (let i = 0; i < 47; i++) await write(i, 'share');
+	await write(0, 'share', 86400, cutoff);
+	for (let i = 1; i < 47; i++) await write(i, 'share');
 	for (let i = 47; i < 560; i++) await write(i, 'main');
 	await write(560, 'share', -1);
+	await write(-1, 'share', 86400, cutoff - 1);
+	await write(-2, 'main', 86400, cutoff - 1);
 	const url = '/api/requests?scope=' + share.id;
 	const fetchPage = async suffix => (await request(url + suffix, { headers })).json();
 	const first = await fetchPage('');
@@ -156,6 +160,7 @@ test('request history pages and filters one subscription across the full retenti
 	const main = await (await request('/api/requests?scope=main', { headers })).json();
 	assert.equal(main.events[0].userAgent, 'visit-559');
 	const html = await (await request('/requests', { headers })).text();
+	assert.match(html, /最近 7 天/);
 	assert.match(html, /513 次/);
 	assert.match(html, /48 次/);
 	assert.equal((await request(url + '&after=invalid', { headers })).status, 400);

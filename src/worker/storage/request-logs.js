@@ -3,7 +3,17 @@ import { cachedView, invalidateView } from './view-cache.js';
 
 const REQUEST_LOG_PREFIX = 'requests.';
 const REQUEST_LOG_TTL = 30 * 24 * 60 * 60;
+export const REQUEST_HISTORY_DAYS = 7;
 export const REQUEST_PAGE_SIZE = 20;
+
+function requestKeyPrefix(timestamp) {
+	return REQUEST_LOG_PREFIX + String(9999999999999 - timestamp).padStart(13, '0') + '.';
+}
+
+export function requestHistoryBounds(now) {
+	// Keys sort newest first. Include every UUID written at the cutoff millisecond.
+	return [requestKeyPrefix(now), requestKeyPrefix(now - REQUEST_HISTORY_DAYS * 86_400_000) + '\uffff'];
+}
 
 export function detectSubscriptionClient(userAgentHeader) {
 	const ua = String(userAgentHeader || '').toLowerCase();
@@ -31,7 +41,6 @@ export function queueSubscriptionRequestLog(ctx, env, details) {
 async function recordSubscriptionRequest(kv, details) {
 	invalidateView(kv, REQUEST_LOG_PREFIX);
 	const now = Date.now();
-	const reverseTimestamp = String(9999999999999 - now).padStart(13, '0');
 	const randomID = crypto.randomUUID();
 	const metadata = {
 		client: String(details.client || '其他客户端').slice(0, 40),
@@ -49,7 +58,7 @@ async function recordSubscriptionRequest(kv, details) {
 		upstreamFailures: Math.max(0, Number(details.upstreamFailures) || 0)
 	};
 	try {
-		await kv.put(REQUEST_LOG_PREFIX + reverseTimestamp + '.' + randomID, '1', {
+		await kv.put(requestKeyPrefix(now) + randomID, '1', {
 			metadata, expirationTtl: REQUEST_LOG_TTL
 		});
 	} finally { invalidateView(kv, REQUEST_LOG_PREFIX); }
