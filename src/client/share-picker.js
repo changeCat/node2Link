@@ -1,4 +1,4 @@
-const pageData = JSON.parse(document.getElementById('page-data-share-picker').textContent);
+import { currentShareLines, applyPickerChanges } from './share-content.js';
 const dialog = document.getElementById('nodePickerDialog');
 const pickerList = document.getElementById('nodePickerList');
 const searchInput = document.getElementById('nodeSearch');
@@ -7,10 +7,13 @@ const status = document.getElementById('nodePickerStatus');
 const retryButton = document.getElementById('retryNodePicker');
 const moreButton = document.getElementById('morePickerNodes');
 const selectButton = document.getElementById('selectVisibleNodes');
-const selected = new Set();
+let initialLines = new Set();
+let selected = new Set();
+const changes = new Map();
 let availableNodes = [];
 let candidatesLoaded = false;
 let loading;
+let pickerSession = 0;
 let searchTimer;
 let visibleLimit = 100;
 function esc(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -20,7 +23,7 @@ function visibleNodes() {
 }
 function updateSelectedCount() {
  document.getElementById('selectedNodeCount').textContent = '已选择 ' + selected.size + ' 个';
- document.getElementById('addSelectedNodes').disabled = !selected.size;
+ document.getElementById('addSelectedNodes').disabled = !selected.size && !changes.size;
 }
 function renderPicker() {
  clearTimeout(searchTimer);
@@ -43,7 +46,7 @@ function renderPicker() {
   if (!shown.length) return '';
   const heading = group.originalId || group.key === 'api' || ordered.length > 1
    ? '<div class="picker-main-group"><strong>' + esc(group.title) + '</strong>' + (group.originalId ? '<button type="button" class="button" data-main-group="' + esc(group.originalId) + '">选择本组</button>' : group.key === 'api' ? '<button type="button" class="button" data-api-group>选择本组</button>' : '') + '</div>' : '';
-  return '<section class="picker-section" data-picker-section="' + esc(group.key) + '">' + heading + shown.map(node => '<label class="picker-node"><input type="checkbox" data-node-id="' + esc(node.id) + '"' + (selected.has(node.selectionKey) ? ' checked' : '') + '><span><strong>' + esc(node.name) + '<span class="source-tag">' + esc(node.sourceName) + '</span></strong><small title="' + esc(node.content) + '">' + esc(node.content) + '</small></span></label>').join('') + '</section>';
+  return '<section class="picker-section" data-picker-section="' + esc(group.key) + '">' + heading + shown.map(node => '<label class="picker-node"><input type="checkbox" data-content="' + esc(node.content) + '" data-node-id="' + esc(node.id) + '"' + (selected.has(node.content) ? ' checked' : '') + '><span><strong>' + esc(node.name) + '<span class="source-tag">' + esc(node.sourceName) + '</span></strong><small title="' + esc(node.content) + '">' + esc(node.content) + '</small></span></label>').join('') + '</section>';
  }).join('') : '<div class="picker-empty">没有符合条件的节点</div>';
  document.getElementById('nodePickerProgress').textContent = '显示 ' + Math.min(visibleLimit, visible.length) + ' / ' + visible.length + ' 个结果';
  moreButton.hidden = visible.length <= visibleLimit;
@@ -53,8 +56,7 @@ function applyNodes(nodes, retainLoaded = false) {
  const merged = new Map(retainLoaded ? availableNodes.map(node => [node.selectionKey, node]) : []);
  for (const node of nodes) merged.set(node.source + '\n' + node.content, node);
  availableNodes = [...merged.values()].map((node, index) => ({ ...node, id: 'picker-' + index, searchText: (node.name + '\n' + node.content).toLowerCase(), selectionKey: node.source + '\n' + node.content }));
- const keys = new Set(availableNodes.map(node => node.selectionKey));
- for (const key of selected) if (!keys.has(key)) selected.delete(key);
+ selected = new Set(availableNodes.filter(node => changes.get(node.content) ?? initialLines.has(node.content)).map(node => node.content));
  selectButton.disabled = false;
  renderPicker();
 }
@@ -67,15 +69,18 @@ async function fetchCandidates(suffix = '') {
 function loadCandidates() {
  if (loading) return loading;
  if (candidatesLoaded) { renderPicker(); return Promise.resolve(); }
+ const session = pickerSession;
  retryButton.hidden = true;
  selectButton.disabled = !availableNodes.length;
- status.textContent = '正在读取' + pageData.sourceLabel + '节点…';
+ status.textContent = '正在读取' + dialog.dataset.sourceLabel + '节点…';
  loading = (async () => {
   const local = await fetchCandidates('?source=local');
+  if (session !== pickerSession) return;
   applyNodes(local.nodes, local.hasUpstream);
   if (local.hasUpstream) {
    status.textContent = '本地节点已就绪，正在补充上游节点，可先选择本地节点…';
    const full = await fetchCandidates();
+   if (session !== pickerSession) return;
    applyNodes(full.nodes, Boolean(full.upstreamFailures));
    candidatesLoaded = !full.upstreamFailures;
    status.textContent = full.upstreamFailures ? '部分上游读取失败，已保留本地及可用节点。' : '节点已加载；选择当前结果会选中全部筛选结果。';
@@ -85,14 +90,25 @@ function loadCandidates() {
    status.textContent = '节点已加载；选择当前结果会选中全部筛选结果。';
   }
  })().catch(error => {
+  if (session !== pickerSession) return;
   status.textContent = error.message + (availableNodes.length ? '，已保留已加载的节点。' : '，请重试。');
   retryButton.hidden = false;
- }).finally(() => { loading = null; });
+ }).finally(() => { if (session === pickerSession) loading = null; });
  return loading;
+}
+function setChecked(node, checked) {
+ if (checked) selected.add(node.content); else selected.delete(node.content);
+ if (checked === initialLines.has(node.content)) changes.delete(node.content);
+ else changes.set(node.content, checked);
 }
 function closePicker() { dialog.close(); }
 document.getElementById('openNodePicker').addEventListener('click', () => {
+ pickerSession++;
+ loading = null;
+ initialLines = new Set(currentShareLines());
+ changes.clear();
  selected.clear();
+ availableNodes = [];
  candidatesLoaded = false;
  searchInput.value = '';
  sourceSelect.value = 'all';
@@ -113,7 +129,7 @@ retryButton.addEventListener('click', loadCandidates);
 pickerList.addEventListener('click', event => {
  const button = event.target.closest('[data-main-group], [data-api-group]');
  if (!button) return;
- visibleNodes().filter(node => button.hasAttribute('data-api-group') ? node.source === 'api' : node.source === 'main' && node.kind === 'extension' && node.originalId === button.dataset.mainGroup).forEach(node => selected.add(node.selectionKey));
+ visibleNodes().filter(node => button.hasAttribute('data-api-group') ? node.source === 'api' : node.source === 'main' && node.kind === 'extension' && node.originalId === button.dataset.mainGroup).forEach(node => setChecked(node, true));
  renderPicker();
 });
 pickerList.addEventListener('change', event => {
@@ -121,27 +137,24 @@ pickerList.addEventListener('change', event => {
  if (!checkbox) return;
  const node = availableNodes.find(node => node.id === checkbox.dataset.nodeId);
  if (!node) return;
- if (checkbox.checked) selected.add(node.selectionKey); else selected.delete(node.selectionKey);
+ setChecked(node, checkbox.checked);
+ for (const input of pickerList.querySelectorAll('[data-node-id]')) {
+  if (input !== checkbox && input.dataset.content === checkbox.dataset.content) input.checked = checkbox.checked;
+ }
  updateSelectedCount();
 });
 selectButton.addEventListener('click', () => {
- visibleNodes().forEach(node => selected.add(node.selectionKey));
+ visibleNodes().forEach(node => setChecked(node, true));
  renderPicker();
 });
 document.getElementById('addSelectedNodes').addEventListener('click', () => {
- const textarea = document.getElementById('shareContent');
- const current = textarea.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
- const seen = new Set(current);
- let added = 0;
- availableNodes.forEach(node => {
-  if (selected.has(node.selectionKey) && !seen.has(node.content)) { current.push(node.content); seen.add(node.content); added++; }
- });
- textarea.value = current.join('\n');
- textarea.dispatchEvent(new Event('input', { bubbles: true }));
+ applyPickerChanges(changes);
  closePicker();
- const message = document.getElementById('formMessage');
- message.textContent = added ? '已加入 ' + added + ' 个节点，尚未保存' : '所选节点已在内容中';
- message.className = added ? 'success' : 'muted';
+ if (changes.size) {
+  const message = document.getElementById('formMessage');
+  message.textContent = '节点选择已更新，尚未保存';
+  message.className = 'success';
+ }
 });
 document.getElementById('closeNodePicker').addEventListener('click', closePicker);
 document.getElementById('cancelNodePicker').addEventListener('click', closePicker);

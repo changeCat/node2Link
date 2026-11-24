@@ -30,7 +30,7 @@ for (const path of ['/', '/settings', '/shares', '/requests', '/api-subscription
 	}
 }
 for (const asset of assets) new Function(await readFile(new URL('../dist/assets/' + asset, import.meta.url), 'utf8'));
-for (const required of ['home.js', 'settings.js', 'shares.js', 'share-picker.js', 'generated-nodes.js', 'requests.js', 'dashboard.js']) assert.ok(assets.has(required), required);
+for (const required of ['home.js', 'settings.js', 'shares.js', 'generated-nodes.js', 'requests.js', 'dashboard.js']) assert.ok(assets.has(required), required);
 
 const manual = 'trojan://manual@manual.example.com:443#Manual';
 assert.equal((await request('/', { method: 'POST', headers, body: manual })).status, 200);

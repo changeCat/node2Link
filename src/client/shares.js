@@ -1,4 +1,8 @@
 import { initializeShareConfirm } from "./share-confirm.js";
+import './share-picker.js';
+import { loadShareContent, shareContentPayload } from './share-content.js';
+import { shareLines, isShareSource } from '../shared/share-content.js';
+import { mainNodeName, mainNodeSummary } from '../shared/main-subscription.js';
 const pageData = JSON.parse(document.getElementById("page-data-shares").textContent);
 var shares = pageData.shares;
 var origin = window.location.origin;
@@ -53,7 +57,7 @@ function render() {
     var expiry = item.expiresAt ? new Date(item.expiresAt).toLocaleString() : '长期有效';
     var updated = new Date(item.updatedAt).toLocaleString();
     var note = item.note ? '<span class="compact-label">备注：</span>' + esc(item.note) : '';
-    return '<article class="share-card" data-state="' + state + '"><div class="share-identity"><h3 title="' + esc(item.name) + '">' + esc(item.name) + '</h3>' + badge + '</div>' +
+    return '<article class="share-card" data-state="' + state + '" data-share-id="' + esc(item.id) + '"><div class="share-identity"><h3><button type="button" class="share-view" aria-haspopup="dialog" title="查看订阅 · ' + esc(item.name) + '">' + esc(item.name) + '</button></h3>' + badge + '</div>' +
       '<code class="share-url" title="' + esc(link) + '">' + esc(link) + '</code>' +
       '<div class="share-cell" title="' + esc(counts) + '">' + esc(counts) + '</div>' +
       '<div class="share-cell" title="' + esc(expiry) + '">' + (item.expiresAt ? '<span class="compact-label">到期 </span>' : '') + esc(expiry) + '</div>' +
@@ -76,6 +80,7 @@ function render() {
 async function openEditor(id) {
   const session = ++editorSession;
   form.reset();
+  loadShareContent();
   feedback.textContent = '';
   message.className = 'muted';
   message.textContent = id ? '正在读取分享…' : '';
@@ -91,7 +96,7 @@ async function openEditor(id) {
       if (editorSession !== session || !editor.open) return;
       name.value = item.name;
       document.getElementById('shareNote').value = item.note || '';
-      document.getElementById('shareContent').value = item.content;
+      loadShareContent(item);
       const expiry = item.expiresAt ? new Date(item.expiresAt) : null;
       expiryInput.value = expiry ? new Date(expiry.getTime() - expiry.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
       fields.disabled = submitButton.disabled = false;
@@ -126,6 +131,40 @@ function loadShare(id) {
     });
   });
 }
+const details = document.getElementById('shareDetails');
+let detailSession = 0;
+async function viewShare(id) {
+  const session = ++detailSession;
+  const status = document.getElementById('shareDetailsStatus');
+  const rows = document.getElementById('shareDetailsList');
+  const title = document.getElementById('shareDetailsTitle');
+  title.textContent = shares.find(item => item.id === id).name;
+  rows.replaceChildren();
+  status.textContent = '正在读取节点…';
+  details.showModal();
+  try {
+    const share = await loadShare(id);
+    if (!details.open || session !== detailSession) return;
+    title.textContent = share.name;
+    const nodes = [], sources = [];
+    for (const line of shareLines(share.content)) (isShareSource(line) ? sources : nodes).push(line);
+    status.textContent = nodes.length + ' 个节点 · ' + sources.length + ' 个订阅源';
+    for (const [label, lines] of [['已保存节点', nodes], ['订阅源（客户端更新时拉取）', sources]]) {
+      if (!lines.length) continue;
+      const heading = document.createElement('strong');
+      heading.textContent = label;
+      const content = document.createElement('pre');
+      content.textContent = lines.map(line => {
+        if (isShareSource(line)) return line;
+        const { protocol, address } = mainNodeSummary(line);
+        return mainNodeName(line) + ' · ' + protocol + ' · ' + address;
+      }).join('\n');
+      rows.append(heading, content);
+    }
+  } catch (error) {
+    if (details.open && session === detailSession) status.textContent = error.message;
+  }
+}
 function showQR(link) {
   var container = document.getElementById("qrcode");
   container.innerHTML = "";
@@ -142,7 +181,7 @@ form.addEventListener("submit", function(event) {
   message.className = 'muted';
   message.textContent = "正在保存…";
   var expiry = document.getElementById('shareExpiresAt').value;
-  call(id ? "PUT" : "POST", { id, name: document.getElementById("shareName").value, note: document.getElementById("shareNote").value, content: document.getElementById("shareContent").value, expiresAt: expiry ? new Date(expiry).toISOString() : '' }).then(function(data) {
+  call(id ? "PUT" : "POST", { id, name: document.getElementById("shareName").value, note: document.getElementById("shareNote").value, ...shareContentPayload(), expiresAt: expiry ? new Date(expiry).toISOString() : '' }).then(function(data) {
     var index = shares.findIndex(function(item) {
       return item.id === data.share.id;
     });
@@ -160,6 +199,11 @@ form.addEventListener("submit", function(event) {
   });
 });
 list.addEventListener("click", function(event) {
+  const card = event.target.closest('[data-share-id]');
+  if (card && !event.target.closest('.share-actions')) {
+    if (event.target.closest('.share-view') || !window.getSelection()?.toString()) viewShare(card.dataset.shareId);
+    return;
+  }
   var toggle = event.target.closest('[data-toggle]');
   if (toggle) {
     var item = shares.find(function(share) { return share.id === toggle.dataset.toggle; });

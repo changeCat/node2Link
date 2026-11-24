@@ -32,7 +32,7 @@ await build({
 	legalComments: 'none'
 });
 
-const pageScripts = ['home', 'settings', 'generated-nodes', 'share-picker', 'shares', 'requests', 'dashboard'];
+const pageScripts = ['home', 'settings', 'generated-nodes', 'shares', 'requests', 'dashboard'];
 await Promise.all(pageScripts.map(name => build({
  entryPoints: [pathOf(new URL('src/client/' + name + '.js', root))],
  outfile: pathOf(new URL(name + '.js', assets)), bundle: true, format: 'iife',

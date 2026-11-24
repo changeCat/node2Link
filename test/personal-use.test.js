@@ -230,3 +230,17 @@ test('management JSON validation returns 400 for malformed or non-object payload
 	}
 	assert.equal(env.KV.kv.values.size, 0);
 });
+
+test('share entry methods follow deduplicated lines across legacy edits and link resets', async () => {
+	const { mutate } = await fixture();
+	const source = 'https://example.com/sub';
+	const payload = { name: 'Entry methods', content: [node, node, source].join('\n') };
+	const { share } = await (await mutate('POST', { ...payload, lineOrigins: 'pm' })).json();
+	assert.equal(share.lineOrigins, 'pm');
+	const updated = { ...payload, id: share.id, content: [source, node, node + '2'].join('\n') };
+	assert.equal((await mutate('PUT', { ...updated, lineOrigins: 'p' })).status, 400);
+	const edit = await (await mutate('PUT', updated)).json();
+	assert.equal(edit.share.lineOrigins, 'mpu');
+	const reset = await (await mutate('PATCH', { id: share.id, action: 'reset' })).json();
+	assert.equal(reset.share.lineOrigins, 'mpu');
+});

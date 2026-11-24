@@ -1,7 +1,8 @@
+import { shareLines, shareOrigins } from '../../shared/share-content.js';
+
 export function normalizeSharePayload(payload, previous = {}) {
 	const name = String(payload && payload.name || '').trim().replace(/[\r\n\0]/g, '').slice(0, 80);
-	const lines = String(payload && payload.content || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-	const uniqueLines = [...new Set(lines)];
+	const uniqueLines = shareLines(payload && payload.content);
 	const content = uniqueLines.join('\n');
 	if (!name) throw new Error('请输入分享名称');
 	const note = String(payload.note ?? previous.note ?? '').trim().replace(/[\r\n\0]/g, '');
@@ -21,7 +22,15 @@ export function normalizeSharePayload(payload, previous = {}) {
 	if (invalidIndex >= 0) throw new Error(`第 ${invalidIndex + 1} 行不是支持的节点或订阅链接`);
 	if (new TextEncoder().encode(content).length > 1024 * 1024) throw new Error('分享内容不能超过 1 MB');
 	const sourceCount = uniqueLines.filter(isSubscriptionURL).length;
-	return { name, note, content, nodeCount: uniqueLines.length - sourceCount, sourceCount, ...normalizeShareAvailability(payload, previous) };
+	let lineOrigins = payload.lineOrigins;
+	if (lineOrigins === undefined) {
+		// Older clients send only content. Carry provenance across reordering and edits.
+		const previousOrigins = shareOrigins(previous.content, previous.lineOrigins);
+		lineOrigins = uniqueLines.map(line => previousOrigins.get(line) || 'u').join('');
+	} else if (typeof lineOrigins !== 'string' || lineOrigins.length !== uniqueLines.length || /[^pmu]/.test(lineOrigins)) {
+		throw new Error('节点录入方式与分享内容不匹配');
+	}
+	return { name, note, content, lineOrigins, nodeCount: uniqueLines.length - sourceCount, sourceCount, ...normalizeShareAvailability(payload, previous) };
 }
 
 export function normalizeShareAvailability(payload, previous = {}) {
